@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "CT-1",
+  "status": "Closed",
+  "baselineRevision": "be34f33",
+  "candidateRevision": null,
+  "review": {
+    "status": "Completed",
+    "findings": [],
+    "summary": "PASS - NO ISSUES DETECTED"
+  },
+  "verification": {
+    "focusedCommand": {
+      "result": "Passed",
+      "command": "dotnet test tests/SeqDoc.Persistence.Tests/SeqDoc.Persistence.Tests.csproj -c Release --filter FullyQualifiedName~LoopNode",
+      "summary": "The Test Writer first observed the exact NotSupportedException red failure; after the JsonConstructor repair, the focused LoopNode activation test passed 1/1."
+    },
+    "finalGate": {
+      "result": "Passed",
+      "command": "dotnet test tests/SeqDoc.Persistence.Tests/SeqDoc.Persistence.Tests.csproj -c Release",
+      "summary": "23 passed, 0 failed, 0 skipped."
+    }
+  },
+  "notes": [
+    "Inserted as the immediate generic prerequisite after CT-0 exposed the exact LoopNode activation crash.",
+    "Test Writer added one regression with three distinct claims: activation success, polymorphic LoopNode reconstruction, and byte-stable canonical behavior round-trip.",
+    "Implementation is one JsonConstructor annotation on the existing complete LoopNode constructor; no schema or semantic change.",
+    "After rebuilding the CLI, the CreditTransfer Web partition completed persistence activation without the LoopNode crash. Documentation remained withheld with SD4008 because the current product admitted no net9.0 Web flows; this is the next measured capability boundary."
+  ]
+}

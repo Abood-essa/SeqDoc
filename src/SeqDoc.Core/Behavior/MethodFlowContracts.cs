@@ -269,6 +269,7 @@ public sealed record LoopNode(
         init => _bodyBlockOrdinals = CanonicalizeBodyBlockOrdinals(value);
     }
 
+    [JsonConstructor]
     public LoopNode(
         FlowNodeId id,
         MethodId method,

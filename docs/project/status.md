@@ -9,7 +9,10 @@ new work proceeds only in this repository.
 The canonical repository has been published privately to GitHub. The owner approved uninterrupted execution through
 the CreditTransfer-first bounded sequence. CT-0 closed with output correctly withheld: the buildable Web partition
 exposed a generic `LoopNode` persistence deserialization defect during activation. That repair is the immediate
-prerequisite to generating the first CreditTransfer diagrams.
+prerequisite to generating the first CreditTransfer diagrams. CT-1 repaired and regression-tested the defect; the
+Web partition now activates successfully but produces `SD4008` because no `net9.0` Web flows are admitted. Generic
+configurable roots are therefore the shortest next path to useful diagrams, with predicate presentation following
+before the first diagram milestone.
 
 ## Next execution order
 

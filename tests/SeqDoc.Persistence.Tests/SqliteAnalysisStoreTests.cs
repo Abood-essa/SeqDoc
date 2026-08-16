@@ -41,6 +41,24 @@ public sealed class SqliteAnalysisStoreTests
     }
 
     [Fact]
+    public async Task LoopNodeSnapshotActivatesWithCanonicalShape()
+    {
+        using var database = new TemporaryDatabase();
+        var index = CreateSnapshot("net10.0", 'l');
+        var behavior = CreateBehavior(index, includeLoop: true);
+
+        var activation = await new SqliteAnalysisStore(database.Path).ActivateAsync(
+            new AnalysisPersistenceRequest([new AnalysisProfileSnapshot(index, behavior)]),
+            CancellationToken.None);
+
+        Assert.Equal(ApplicationOutcome.Succeeded, activation.Outcome);
+        var active = await new SqliteAnalysisStore(database.Path).ReadActiveAsync(index.Profile.Id, CancellationToken.None);
+        var activeBehavior = active.Value!.ActiveProfile!.Behavior!;
+        Assert.IsType<LoopNode>(Assert.Single(activeBehavior.MethodFlows[0].Nodes.Where(node => node is LoopNode)));
+        Assert.Equal(BehaviorSnapshotJsonCodec.Serialize(behavior), BehaviorSnapshotJsonCodec.Serialize(activeBehavior));
+    }
+
+    [Fact]
     public async Task ProgramIndexOnlySnapshotReportsBehaviorUnavailable()
     {
         using var database = new TemporaryDatabase();
@@ -193,7 +211,7 @@ public sealed class SqliteAnalysisStoreTests
         Assert.Null(active.Value.ActiveProfile.Behavior);
     }
 
-    private static BehaviorSnapshot CreateBehavior(ProgramIndexSnapshot index)
+    private static BehaviorSnapshot CreateBehavior(ProgramIndexSnapshot index, bool includeLoop = false)
     {
         var methodId = new MethodId("method:v1:test");
         var entry = new EntryFlowNode(
@@ -206,10 +224,25 @@ public sealed class SqliteAnalysisStoreTests
             methodId,
             [],
             CertaintyLevel.Exact);
+        var nodes = includeLoop
+            ? ImmutableArray.Create<FlowNode>(
+                entry,
+                exit,
+                new LoopNode(
+                    new("flow-node:test-loop"),
+                    methodId,
+                    new("flow-region:test-loop"),
+                    entry.Id,
+                    [entry.Id],
+                    [exit.Id],
+                    [],
+                    CertaintyLevel.Exact,
+                    [7, 3, 7, 2]))
+            : [entry, exit];
         var flow = new MethodFlowSnapshot(
             methodId,
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-            [entry, exit],
+            nodes,
             [],
             [],
             [],
