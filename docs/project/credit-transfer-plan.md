@@ -2,9 +2,9 @@
 
 ## Status
 
-The owner approved this delivery direction on 2026-08-16. Product execution remains idle until explicit activation.
-CreditTransfer is the primary whole-solution acceptance target; other supplied and open-source applications remain
-generalization, regression, and false-positive evidence.
+The owner approved this delivery direction and activated its bounded execution sequence on 2026-08-16. CreditTransfer
+is the primary whole-solution acceptance target; other supplied and open-source applications remain generalization,
+regression, and false-positive evidence. Durable execution state identifies the one active checkpoint.
 
 ## Outcome
 

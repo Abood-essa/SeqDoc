@@ -6,9 +6,10 @@ The clean canonical repository begins at `42f8819` (`Initial public release`) an
 snapshot through selected dispatch handler-flow expansion. The historical repository remains historical evidence;
 new work proceeds only in this repository.
 
-The canonical repository has been published privately to GitHub. The owner approved the CreditTransfer-first
-delivery strategy, but execution remains idle. No product checkpoint is active, and no implementation should begin
-until the owner explicitly starts execution.
+The canonical repository has been published privately to GitHub. The owner approved uninterrupted execution through
+the CreditTransfer-first bounded sequence. CT-0 closed with output correctly withheld: the buildable Web partition
+exposed a generic `LoopNode` persistence deserialization defect during activation. That repair is the immediate
+prerequisite to generating the first CreditTransfer diagrams.
 
 ## Next execution order
 

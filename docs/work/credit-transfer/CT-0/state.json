@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "CT-0",
+  "status": "Closed",
+  "baselineRevision": "cc94ff9",
+  "candidateRevision": null,
+  "review": {
+    "status": "Completed",
+    "findings": [
+      {
+        "id": "CT-0-F1",
+        "severity": "High",
+        "disposition": "Fixed",
+        "summary": "Recorded matching sanitized before/after owner-checkout status digest, revision, ahead count, tracked-change count, and untracked-entry count without retaining paths or source content."
+      },
+      {
+        "id": "CT-0-F2",
+        "severity": "Medium",
+        "disposition": "Fixed",
+        "summary": "Updated the governing CreditTransfer plan to record owner activation and defer active-checkpoint identity to durable execution state."
+      }
+    ]
+  },
+  "verification": {
+    "focusedCommand": {
+      "result": "WithheldOutput",
+      "summary": "Solution analysis failed closed with SD1012; the buildable Web partition then exposed a LoopNode persistence deserialization crash during staged activation validation after one generated-assets repair rerun."
+    },
+    "finalGate": {
+      "result": "Passed",
+      "command": "dotnet test tests/SeqDoc.AcceptanceTests/SeqDoc.AcceptanceTests.csproj -c Release --filter FullyQualifiedName~BehaviorDocumentationFourFlowTests|FullyQualifiedName~BehaviorDocumentationGetTests|FullyQualifiedName~BehaviorDocumentationGetPresentationTests|FullyQualifiedName~BehaviorDocumentationM1WordingTests",
+      "summary": "20 passed, 0 failed, 0 skipped after restoring the two internal fixture projects."
+    }
+  },
+  "notes": [
+    "Owner authorized uninterrupted progression through the approved CreditTransfer-first bounded sequence on 2026-08-16.",
+    "The external owner checkout remained unchanged; only the disposable worktree acquired an untracked .seqdoc directory.",
+    "No Desktop output was produced and no diagrams were manually fabricated.",
+    "A documentation-only Builder delegation was attempted, but its role correctly lacked docs write permission; the Orchestrator recorded baseline evidence without editing product or external source.",
+    "Final-gate attempt 1 used the broad planned filter and failed in 19 tests because internal fixture assets had not been restored and clean-snapshot external sample paths were absent; 5 tests passed.",
+    "After restoring internal fixture projects, repair attempt 1 passed 20 tests and failed only the CorpusMediatR test because its external eShop sample path is absent from the clean snapshot.",
+    "Repair attempt 2 excluded unavailable external lanes and passed all 20 internal behavior-documentation acceptance tests.",
+    "The historical workflow verifier is not present in this clean snapshot; closure used the structured state, independent review dispositions, diff inspection, and declared final gate."
+  ]
+}

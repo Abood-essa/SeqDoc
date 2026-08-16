@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "mode": "idle",
-  "activePlanPath": null,
-  "activeCheckpointPath": null,
-  "activeCheckpointId": null,
-  "nextAction": "Await owner authorization to activate the CreditTransfer admission baseline, followed by the approved bounded execution sequence."
+  "mode": "active",
+  "activePlanPath": "docs/project/credit-transfer-plan.md",
+  "activeCheckpointPath": "docs/work/credit-transfer/CT-0",
+  "activeCheckpointId": "CT-0",
+  "nextAction": "CT-0 is closed; activate the LoopNode persistence prerequisite before retrying CreditTransfer diagram generation."
 }
