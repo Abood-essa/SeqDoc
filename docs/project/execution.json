@@ -4,5 +4,5 @@
   "activePlanPath": null,
   "activeCheckpointPath": null,
   "activeCheckpointId": null,
-  "nextAction": "Await owner authorization to activate the generic predicate and branch presentation checkpoint."
+  "nextAction": "Await owner authorization to activate the CreditTransfer admission baseline, followed by the approved bounded execution sequence."
 }

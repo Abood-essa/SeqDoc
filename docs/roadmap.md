@@ -3,6 +3,10 @@
 SeqDoc's immediate direction is to broaden compiler-evidenced traversal while keeping evidence-backed
 output, explicit certainty, and deterministic results.
 
+CreditTransfer is the primary whole-solution acceptance target for this direction. It determines delivery priority,
+while unrelated supplied and open-source applications protect generality and false-positive boundaries. See
+`docs/project/credit-transfer-plan.md` for the bounded delivery sequence.
+
 ## Planned order
 
 - **Generic predicate and branch presentation.** Complete the compiler-evidenced predicate projection before
@@ -18,8 +22,13 @@ output, explicit certainty, and deterministic results.
   degradation at unresolved, ambiguous, metadata-only, recursive, or budget boundaries.
 - **Multi-project source bodies.** Extend traversal across project references while preserving profile
   and target-framework separation.
-- **Narrow standard Microsoft DI.** Cover a deliberately small, evidence-backed set of conventional
-  registrations and resolutions.
+- **First useful CreditTransfer milestone.** Regenerate and inspect technical diagrams immediately after the generic
+  traversal foundation; accurate code-like labels are acceptable and natural-language polish remains deferred.
+- **High-value framework expansion.** Prioritize generic CoreWCF/WCF, EF6/EDMX, background/recovery, outbound
+  SOAP/HTTP, and outcome capabilities measured from CreditTransfer. Cover only the narrow standard Microsoft DI
+  subset required by exact composition evidence.
+- **Whole-solution CreditTransfer acceptance.** Audit every admitted executable entry and report complete/useful,
+  partial, diagnostic-only, and uncovered behavior without weakening evidence rules.
 - **Broad corpus.** Measure and expand coverage across representative supplied and open-source applications and
   framework shapes. Prefer reusable compiler and framework capabilities that improve many projects; external
   applications are acceptance evidence and never product vocabulary.
