@@ -90,6 +90,7 @@ public static class DocumentationPlanner
 {
     private const string EntryPhraseKey = "entry";
     private const string ActionPhraseKey = "action";
+    private const string MethodCallPhraseKey = "method-call";
     private const string ServiceCallPhraseKey = "service-call";
     private const string EntityQueryPhraseKey = "entity-query";
     private const string StateAssignmentPhraseKey = "state-assignment";
@@ -101,6 +102,7 @@ public static class DocumentationPlanner
     private const string ResultPhraseKey = "result";
     private const string OutcomePhraseKey = "outcome";
     private const string FallbackPhraseKeyPrefix = "fallback";
+    private static readonly string[] ReservedParticipantKeys = ["client", "action", "dispatch", "handler", "service", "data"];
 
     public static DocumentationPlan Plan(ScenarioGraph graph)
     {
@@ -169,6 +171,17 @@ public static class DocumentationPlanner
                         WordingPhraseKind.Statement,
                         ServiceCallPhraseKey,
                         BuildServiceCallText(node),
+                        node.Evidence,
+                        node.Certainty);
+                    break;
+                case ScenarioNodeKind.MethodCall:
+                    CreatePhrase(
+                        graph,
+                        phraseOrdinals,
+                        phrases,
+                        WordingPhraseKind.Statement,
+                        MethodCallPhraseKey,
+                        BuildMethodCallText(node),
                         node.Evidence,
                         node.Certainty);
                     break;
@@ -380,6 +393,7 @@ public static class DocumentationPlanner
         var serviceNode = graph.Nodes.FirstOrDefault(node => node.Kind == ScenarioNodeKind.ServiceCall);
         var dataNode = graph.Nodes.FirstOrDefault(node =>
             node.Kind is ScenarioNodeKind.EntityQuery or ScenarioNodeKind.EntityMutation);
+        var methodCallParticipantKeys = BuildMethodCallParticipantKeys(graph);
 
         // Participant labels come from typed presentation facts only. The client is a fixed role;
         // the controller, DI-resolved implementation, and DbContext use concise names resolved with
@@ -401,7 +415,21 @@ public static class DocumentationPlanner
                 "Handler", DiagramParticipantKind.Service),
             ("service", serviceNode, serviceNode?.Presentation?.ImplementationTypeName, "Service", DiagramParticipantKind.Service),
             ("data", dataNode, dataNode?.Presentation?.DbContextTypeName, "Data store", DiagramParticipantKind.Data),
-        };
+        }.ToList();
+        foreach (var group in graph.Nodes
+                     .Where(node => node.Kind == ScenarioNodeKind.MethodCall
+                         && !string.IsNullOrWhiteSpace(node.Presentation?.TargetContainingTypeName))
+                     .GroupBy(node => node.Presentation!.TargetContainingTypeName!, StringComparer.Ordinal)
+                     .OrderBy(group => group.Key, StringComparer.Ordinal))
+        {
+            var node = group.OrderBy(item => item.Id.Value, StringComparer.Ordinal).First();
+            participantSources.Add((
+                methodCallParticipantKeys[group.Key],
+                node,
+                group.Key,
+                ShortTypeName(group.Key),
+                DiagramParticipantKind.Unknown));
+        }
         var participantLabels = ResolveParticipantLabels(
             participantSources.Select(source => (source.Key, source.FullTypeName, source.FallbackLabel)));
         if (actionNode?.Presentation is { ActionKind: ScenarioActionKind.MinimalApiHandler, ControllerTypeName: { Length: > 0 } controllerType, ActionMethodName: { Length: > 0 } actionMethod })
@@ -422,6 +450,10 @@ public static class DocumentationPlanner
         if (graph.Composition is not null && participantLabels.ContainsKey("service"))
         {
             participantLabels["service"] = BuildCompositionServiceLabel(graph.Composition.ServiceType);
+        }
+        foreach (var typeName in methodCallParticipantKeys)
+        {
+            participantLabels[typeName.Value] = typeName.Key;
         }
 
         foreach (var source in participantSources)
@@ -457,12 +489,19 @@ public static class DocumentationPlanner
                     orderedMessageRefs.Add((edge.Target, CreateMessageRef(edge)));
                     break;
                 case ScenarioEdgeKind.Call:
+                    var callTarget = graph.Nodes.FirstOrDefault(node => node.Id == edge.Target);
+                    var targetKey = callTarget?.Kind == ScenarioNodeKind.MethodCall
+                        && !string.IsNullOrWhiteSpace(callTarget.Presentation?.TargetContainingTypeName)
+                        ? methodCallParticipantKeys[callTarget.Presentation.TargetContainingTypeName!]
+                        : "service";
                     messages.Add(CreateMessage(
                         graph,
                         edge,
                         "action",
-                        "service",
-                        ServiceCalledMemberLabel(graph, edge) ?? edge.Detail,
+                        targetKey,
+                        callTarget?.Kind == ScenarioNodeKind.MethodCall
+                            ? callTarget.Presentation?.TargetMemberName ?? edge.Detail
+                            : ServiceCalledMemberLabel(graph, edge) ?? edge.Detail,
                         DiagramMessageKind.Request));
                     orderedMessageRefs.Add((edge.Target, CreateMessageRef(edge)));
                     break;
@@ -2126,6 +2165,7 @@ public static class DocumentationPlanner
     {
         ScenarioNodeKind.EntryPoint => 0,
         ScenarioNodeKind.Action => 1,
+        ScenarioNodeKind.MethodCall => 2,
         ScenarioNodeKind.ServiceCall => 2,
         ScenarioNodeKind.EntityQuery => 3,
         ScenarioNodeKind.StateAssignment => 4,
@@ -2175,7 +2215,7 @@ public static class DocumentationPlanner
     {
         int segment = node.Kind switch
         {
-            ScenarioNodeKind.EntryPoint or ScenarioNodeKind.Action or ScenarioNodeKind.ServiceCall => 0,
+            ScenarioNodeKind.EntryPoint or ScenarioNodeKind.Action or ScenarioNodeKind.MethodCall or ScenarioNodeKind.ServiceCall => 0,
             ScenarioNodeKind.EntityQuery or ScenarioNodeKind.StateAssignment or ScenarioNodeKind.EntityMutation => 1,
             ScenarioNodeKind.SourceObservation => 2,
             ScenarioNodeKind.Delay or ScenarioNodeKind.Outcome when node.Presentation?.ActionKind == ScenarioActionKind.MinimalApiHandler => 2,
@@ -2184,6 +2224,8 @@ public static class DocumentationPlanner
         int rank = SemanticNodeRank(graph, node);
         int ordinal = segment == 1
             ? node.SequenceOrdinal
+            : node.Kind == ScenarioNodeKind.MethodCall
+                ? node.SequenceOrdinal
             : segment == 2 && node.Presentation?.ActionKind == ScenarioActionKind.MinimalApiHandler
                 ? node.Presentation.SourceOrdinal ?? int.MaxValue
                 : rank;
@@ -2204,7 +2246,7 @@ public static class DocumentationPlanner
             _ => 3,
         };
         int rank = SemanticEdgeRank(edge.Kind);
-        int ordinal = segment == 1 ? edge.SequenceOrdinal : rank;
+        int ordinal = edge.Kind == ScenarioEdgeKind.Call ? edge.SequenceOrdinal : segment == 1 ? edge.SequenceOrdinal : rank;
         return (segment, ordinal, rank);
     }
 
@@ -2498,6 +2540,62 @@ public static class DocumentationPlanner
     private static string ShortTypeName(string fullyQualifiedName)
         => ParseTypeDisplay(fullyQualifiedName).Name;
 
+    private static Dictionary<string, string> BuildMethodCallParticipantKeys(ScenarioGraph graph)
+    {
+        var types = graph.Nodes
+            .Where(node => node.Kind == ScenarioNodeKind.MethodCall
+                && !string.IsNullOrWhiteSpace(node.Presentation?.TargetContainingTypeName))
+            .Select(node => node.Presentation!.TargetContainingTypeName!)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(type => type, StringComparer.Ordinal)
+            .ToArray();
+        var reserved = ReservedParticipantKeys.ToHashSet(StringComparer.Ordinal);
+        var bases = types.ToDictionary(type => type, NormalizeParticipantKey, StringComparer.Ordinal);
+        var counts = bases.Values.GroupBy(value => value, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        var keys = types.ToDictionary(
+            type => type,
+            type => counts[bases[type]] == 1 && !reserved.Contains(bases[type])
+                ? bases[type]
+                : bases[type] + "_" + TypeKeySuffix(type),
+            StringComparer.Ordinal);
+
+        while (keys.Values.GroupBy(value => value, StringComparer.Ordinal).Any(group => group.Count() > 1))
+        {
+            var collisions = keys.Values.GroupBy(value => value, StringComparer.Ordinal)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .ToHashSet(StringComparer.Ordinal);
+            foreach (var type in types.Where(type => collisions.Contains(keys[type])))
+            {
+                keys[type] += "_" + TypeKeySuffix(type);
+            }
+        }
+
+        return keys;
+    }
+
+    private static string NormalizeParticipantKey(string fullyQualifiedName)
+    {
+        var key = new StringBuilder();
+        foreach (var character in fullyQualifiedName)
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                key.Append(char.ToLowerInvariant(character));
+            }
+            else if (key.Length > 0 && key[^1] != '_')
+            {
+                key.Append('_');
+            }
+        }
+
+        return key.ToString().TrimEnd('_');
+    }
+
+    private static string TypeKeySuffix(string canonicalTypeName)
+        => Convert.ToHexString(Encoding.UTF8.GetBytes(canonicalTypeName)).ToLowerInvariant();
+
     /// <summary>Structurally derived display parts of a canonical compiler type name.</summary>
     private sealed record TypeDisplay(string[] Namespace, string Name);
 
@@ -2565,6 +2663,19 @@ public static class DocumentationPlanner
         }
 
         return "The action calls a service resolved through dependency injection.";
+    }
+
+    private static string BuildMethodCallText(ScenarioNode node)
+    {
+        var presentation = node.Presentation;
+        if (presentation is not null
+            && !string.IsNullOrWhiteSpace(presentation.TargetContainingTypeName)
+            && !string.IsNullOrWhiteSpace(presentation.TargetMemberName))
+        {
+            return $"The action calls {ShortTypeName(presentation.TargetContainingTypeName)}.{presentation.TargetMemberName}.";
+        }
+
+        return "The action makes an exact method call.";
     }
 
     /// <summary>

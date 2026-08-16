@@ -12,6 +12,43 @@ namespace SeqDoc.Wording.Tests;
 public sealed class DocumentationPlannerTests
 {
     [Fact]
+    public void GenericMethodCallUsesDeterministicParticipantAndMemberMessageWithoutServiceWording()
+    {
+        var plan = DocumentationPlanner.Plan(ScenarioGraphTestFactory.CreateGenericMethodCallGraph());
+
+        var call = Assert.Single(plan.Wording.Phrases, phrase => phrase.Key == "method-call");
+        Assert.Contains("SendAsync", call.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("service", call.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(["action", "payments_transfergateway"], plan.Diagram.Participants.Select(item => item.Key));
+        Assert.Equal("Payments.TransferGateway", Assert.Single(plan.Diagram.Participants, item => item.Key == "payments_transfergateway").Label);
+        var message = Assert.Single(plan.Diagram.Messages);
+        Assert.Equal("SendAsync", message.Label);
+        Assert.Equal(("action", "payments_transfergateway"), (message.Source, message.Target));
+    }
+
+    [Fact]
+    public void GenericMethodCallParticipantsRemainCollisionFreeAndReservedSafe()
+    {
+        var plan = DocumentationPlanner.Plan(ScenarioGraphTestFactory.CreateCollidingGenericMethodCallGraph());
+        var participants = plan.Diagram.Participants;
+        var targetParticipants = participants.Where(item => item.Key != "action").ToArray();
+        var declaredKeys = participants.Select(item => item.Key).ToHashSet(StringComparer.Ordinal);
+
+        Assert.Equal(3, targetParticipants.Length);
+        Assert.Equal(3, targetParticipants.Select(item => item.Key).Distinct(StringComparer.Ordinal).Count());
+        Assert.DoesNotContain(targetParticipants, item => item.Key == "action");
+        Assert.Equal("Acme.A_B", Assert.Single(targetParticipants, item => item.Label == "Acme.A_B").Label);
+        Assert.Equal("Acme.A.B", Assert.Single(targetParticipants, item => item.Label == "Acme.A.B").Label);
+        Assert.Equal("Action", Assert.Single(targetParticipants, item => item.Label == "Action").Label);
+        Assert.All(plan.Diagram.Messages, message =>
+        {
+            Assert.Contains(message.Source, declaredKeys);
+            Assert.Contains(message.Target, declaredKeys);
+            Assert.NotEqual(("action", "action"), (message.Source, message.Target));
+        });
+    }
+
+    [Fact]
     public void ExactDispatchUsesCanonicalRequestAndHandlerWording()
     {
         var evidence = ImmutableArray.Create(ScenarioGraphTestFactory.SourceEvidence("dispatch-wording"));

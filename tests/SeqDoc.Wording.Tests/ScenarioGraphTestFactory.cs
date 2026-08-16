@@ -21,6 +21,50 @@ internal static class ScenarioGraphTestFactory
 
     internal static readonly EntryPointId GetEntryPoint = new("entry-point:v1:GET-api-Gadgets");
 
+    internal static ScenarioGraph CreateGenericMethodCallGraph()
+    {
+        var evidence = ImmutableArray.Create(SourceEvidence("generic-method-call"));
+        var action = new ScenarioNode(
+            new("scenario-node:v1:generic-call:action"), ScenarioNodeKind.Action, "action", new("method:v1:Payments.Api.Transfer"), null,
+            "controller action", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(ActionKind: ScenarioActionKind.ControllerAction));
+        var call = new ScenarioNode(
+            new("scenario-node:v1:generic-call:call"), ScenarioNodeKind.MethodCall, "method-call", new("method:v1:Payments.TransferGateway.SendAsync"),
+            new("operation:v1:root.transfer"), "internal call detail must not control wording", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(TargetContainingTypeName: "Payments.TransferGateway", TargetMemberName: "SendAsync"));
+        return new ScenarioGraph(
+            new EntryPointId("entry-point:v1:generic-call"), Profile.Id, new("method:v1:Payments.Api.Transfer"), HttpMethodKind.Post,
+            "/transfers", "POST /transfers", [action, call],
+            [new ScenarioEdge(new("scenario-edge:v1:generic-call"), action.Id, call.Id, ScenarioEdgeKind.Call, "generic call", evidence, CertaintyLevel.Exact)],
+            [], "generic-method-call", ScenarioTopology.Empty);
+    }
+
+    internal static ScenarioGraph CreateCollidingGenericMethodCallGraph()
+    {
+        var evidence = ImmutableArray.Create(SourceEvidence("colliding-generic-method-call"));
+        var action = new ScenarioNode(
+            new("scenario-node:v1:collision:action"), ScenarioNodeKind.Action, "action", new("method:v1:Collision.Api.Run"), null,
+            "controller action", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(ActionKind: ScenarioActionKind.ControllerAction));
+        var targets = new[]
+        {
+            ("Acme.A_B", "First", "one"),
+            ("Acme.A.B", "Second", "two"),
+            ("Action", "Third", "three"),
+        }.Select(item => new ScenarioNode(
+            new($"scenario-node:v1:collision:{item.Item3}"), ScenarioNodeKind.MethodCall,
+            $"method-call:{item.Item3}", new($"method:v1:{item.Item1}.{item.Item2}"), new($"operation:v1:collision:{item.Item3}"),
+            $"calls {item.Item1}.{item.Item2}", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(TargetContainingTypeName: item.Item1, TargetMemberName: item.Item2)))
+            .ToArray();
+        var edges = targets.Select((target, index) => new ScenarioEdge(
+            new($"scenario-edge:v1:collision:{index}"), action.Id, target.Id, ScenarioEdgeKind.Call,
+            "generic call", evidence, CertaintyLevel.Exact, index)).ToImmutableArray();
+        return new ScenarioGraph(
+            new EntryPointId("entry-point:v1:collision"), Profile.Id, new("method:v1:Collision.Api.Run"), HttpMethodKind.Post,
+            "/collision", "POST /collision", [action, .. targets], edges, [], "collision", ScenarioTopology.Empty);
+    }
+
     internal static ScenarioGraph CreateMinimalApiHandlerGraph(string? actionParticipant = null)
     {
         var evidence = ImmutableArray.Create(SourceEvidence("minimal-handler"));

@@ -55,6 +55,10 @@ internal static class ScenarioTestFactory
     internal static readonly SemanticFactId ServiceRegistrationId = new("semantic-fact:v1:di-registration:GadgetService");
     internal static readonly SemanticFactId OtherServiceRegistrationId = new("semantic-fact:v1:di-registration:MemoryGadgetService");
 
+    internal static readonly OperationId RootDirectCallOperation = new("operation:v1:root.transfer");
+    internal static readonly MethodId RootDirectCallTarget = new("method:v1:Payments.TransferGateway.SendAsync");
+    internal static readonly MethodId NestedDirectCallTarget = new("method:v1:Payments.TransferGateway.ValidateAsync");
+
     // accepted contract conditional DI composition anchors. The top-level method identity is the synthesized
     // Program entry that owns the if/else; the condition/read operations and the toggle key join the
     // alternative group to the accepted contract configuration facts.
@@ -586,6 +590,108 @@ internal static class ScenarioTestFactory
             structural,
             nonGet,
             PredicateSemanticFacts: predicateFacts);
+    }
+
+    internal static ScenarioAnalysisRequest CreateRootDirectCallRequest(
+        bool decisionGuarded = false,
+        string? exclusion = null,
+        bool duplicateAnchor = false,
+        bool reverseConstruction = false)
+    {
+        var baseRequest = CreateGetRequest();
+        var evidence = SourceEvidence("root-direct-call");
+        var validateOperation = new OperationId("operation:v1:root.validate");
+        var validateTarget = new MethodId("method:v1:Payments.TransferValidator.ValidateAsync");
+        var decisionId = new FlowNodeId("flow-node:v1:root-direct:decision");
+        var entryId = new FlowNodeId("flow-node:v1:root-direct:entry");
+        var exitId = new FlowNodeId("flow-node:v1:root-direct:exit");
+
+        var calls = new List<InvocationFlowNode>
+        {
+            new(new FlowNodeId("flow-node:v1:root-direct:send"), ActionMethod, RootDirectCallOperation,
+                exclusion is "unresolved" ? null : RootDirectCallTarget,
+                false, exclusion is "delegate", false, exclusion is "constructor", exclusion is "dynamic",
+                [evidence], CertaintyLevel.Exact, "Payments.TransferGateway", "SendAsync",
+                exclusion is "nested", IsSourceBacked: exclusion is not "unresolved",
+                IsLoadedProjectTarget: true, BlockOrdinal: decisionGuarded ? 1 : 0,
+                EvaluationOrdinal: 1, TargetAssemblyName: "Payments", IsPlatformTarget: exclusion is "platform"),
+        };
+        if (decisionGuarded)
+        {
+            calls.Add(new InvocationFlowNode(new FlowNodeId("flow-node:v1:root-direct:validate"), ActionMethod, validateOperation,
+                validateTarget, false, false, false, false, false, [evidence], CertaintyLevel.Exact,
+                "Payments.TransferValidator", "ValidateAsync", IsSourceBacked: true,
+                IsLoadedProjectTarget: true, BlockOrdinal: 0, EvaluationOrdinal: 0,
+                TargetAssemblyName: "Payments"));
+        }
+        if (duplicateAnchor)
+        {
+            calls.Add(calls[0] with { Id = new FlowNodeId("flow-node:v1:root-direct:send-duplicate") });
+        }
+        if (reverseConstruction)
+        {
+            calls.Reverse();
+        }
+
+        var flowNodes = new List<FlowNode>
+        {
+            new EntryFlowNode(entryId, ActionMethod, [evidence], CertaintyLevel.Exact),
+            new ExitFlowNode(exitId, ActionMethod, [evidence], CertaintyLevel.Exact),
+        };
+        if (decisionGuarded)
+        {
+            flowNodes.Add(new DecisionFlowNode(decisionId, ActionMethod, PredicateOperation, [evidence], CertaintyLevel.Exact));
+        }
+        flowNodes.AddRange(calls);
+        var flowEdges = new List<FlowEdge>();
+        if (decisionGuarded)
+        {
+            flowEdges.Add(new FlowEdge(new("flow-edge:v1:root-direct:entry"), ActionMethod, entryId, decisionId, FlowEdgeKind.Normal, null, [evidence], CertaintyLevel.Exact));
+            flowEdges.Add(new FlowEdge(new("flow-edge:v1:root-direct:true"), ActionMethod, decisionId, calls[0].Id, FlowEdgeKind.True, PredicateOperation, [evidence], CertaintyLevel.Exact));
+            flowEdges.Add(new FlowEdge(new("flow-edge:v1:root-direct:false"), ActionMethod, decisionId, calls[1].Id, FlowEdgeKind.False, PredicateOperation, [evidence], CertaintyLevel.Exact));
+        }
+        else
+        {
+            for (var i = 0; i < calls.Count; i++)
+            {
+                flowEdges.Add(new FlowEdge(new($"flow-edge:v1:root-direct:{i}"), ActionMethod,
+                    i == 0 ? entryId : calls[i - 1].Id, calls[i].Id, FlowEdgeKind.Normal, null, [evidence], CertaintyLevel.Exact));
+            }
+        }
+
+        var canonicalCalls = calls
+            .GroupBy(call => call.Operation)
+            .OrderBy(group => group.Key.Value, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToArray();
+        var resolutionEvidence = exclusion is "conservative-resolution"
+            ? ImmutableArray.Create(ConservativeEvidence("root-direct-call-resolution"))
+            : ImmutableArray.Create(evidence);
+        var callSites = canonicalCalls.Select((call, ordinal) => new CallSite(
+            new CallSiteId($"call-site:v1:root-direct:{ordinal}"), ActionMethod, call.Operation, CallKind.Instance,
+            call.Target, new CallTargetResolution(
+                exclusion is "ambiguous" ? CallResolutionKind.Cha : CallResolutionKind.DirectExact,
+                exclusion is "ambiguous"
+                    ? ImmutableArray.Create(RootDirectCallTarget, NestedDirectCallTarget)
+                    : call.Target is null
+                        ? ImmutableArray<MethodId>.Empty
+                        : ImmutableArray.Create(call.Target.Value),
+                "source", exclusion is not "unresolved", [], resolutionEvidence,
+                exclusion is "conservative-resolution" ? CertaintyLevel.Conservative : CertaintyLevel.Exact),
+            [evidence], CertaintyLevel.Exact)).ToImmutableArray();
+        var targetFlow = new MethodFlowSnapshot(NestedDirectCallTarget, "nested-target", [], [], [], [], new LocalValueGraph([], []), [], null, [], "nested-target");
+        var behavior = baseRequest.Behavior with
+        {
+            MethodFlows = [new MethodFlowSnapshot(ActionMethod, "root-direct", flowNodes.ToImmutableArray(), flowEdges.ToImmutableArray(), [], [], new LocalValueGraph([], []),
+                decisionGuarded ? [new ControlDependence(decisionId, calls[0].Id, true, [evidence], CertaintyLevel.Exact)] : [], null, [], "root-direct"), targetFlow],
+            CallGraph = new CallGraph(callSites.Select(site => new CallGraphEdge(ActionMethod, site.Id,
+                site.Resolution.Candidates.Length == 0 ? RootDirectCallTarget : site.Resolution.Candidates[0])).ToImmutableArray(), callSites),
+        };
+        return baseRequest with
+        {
+            Behavior = behavior,
+            DependencyInjectionFacts = new DependencyInjectionFactSet(1, "test", Profile, baseRequest.ProgramIndex.IndexFingerprint, [], [], [], "empty-di"),
+        };
     }
 
     internal static ScenarioAnalysisRequest CreateMinimalApiRequest(MinimalApiRouteFact route)

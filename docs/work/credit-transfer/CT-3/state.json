@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "CT-3",
+  "status": "Closed",
+  "baselineRevision": "5f9fbe9",
+  "candidateRevision": null,
+  "review": {
+    "status": "Completed",
+    "findings": [
+      {
+        "id": "CT-3-F1",
+        "severity": "Medium",
+        "disposition": "Fixed",
+        "summary": "Built a deterministic per-graph canonical-type key map that preserves unique readable keys and uses a full UTF-8 hex suffix for collisions/reserved roles; planner regression coverage passes."
+      },
+      {
+        "id": "CT-3-F2",
+        "severity": "Medium",
+        "disposition": "Fixed",
+        "summary": "MethodCall admission now requires exact resolution certainty and exact invocation, CallSite, and resolution evidence; the conservative-resolution negative passes."
+      }
+    ]
+  },
+  "verification": {
+    "focusedCommand": {
+      "result": "Passed",
+      "command": "dotnet test SeqDoc.slnx -c Release --filter FullyQualifiedName~RootDirectCall|FullyQualifiedName~ScenarioTopology|FullyQualifiedName~DocumentationPlanner",
+      "summary": "Test Writer observed the intended missing-contract red failures; after implementation and bounded hardening, 39 Scenario and 12 Wording focused tests passed."
+    },
+    "finalGate": {
+      "result": "Passed",
+      "command": "dotnet test tests/SeqDoc.Scenarios.Tests/SeqDoc.Scenarios.Tests.csproj -c Release && dotnet test tests/SeqDoc.Wording.Tests/SeqDoc.Wording.Tests.csproj -c Release",
+      "summary": "105 Scenario and 92 Wording tests passed with zero failures or skips."
+    }
+  },
+  "notes": [
+    "Bounded local presentation precedes configurable roots because CT-2 already supplies exact Web roots and the owner prioritized the earliest useful diagrams.",
+    "Five distinct test claims cover root-only SC001 projection, exact order/branch membership, consolidated material negatives, duplicate-anchor determinism, and generic planner presentation.",
+    "Projection requires one complete DirectExact CallSite per canonical operation and never traverses the target body.",
+    "Review resolution added two distinct claims for conservative resolution withholding and collision/reserved-safe participant keys; focused verification passes 40 Scenario and 13 Wording tests.",
+    "External regeneration proved exact root-call phrases for configuration, generated SOAP-client transfer, and notification calls. Their Mermaid messages were correctly withheld because existing SC013 topology cannot safely place these guarded calls; the first useful diagram milestone remains open and predicate/terminal topology is next."
+  ]
+}

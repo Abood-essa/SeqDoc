@@ -220,7 +220,16 @@ public static class ScenarioGraphBuilder
                 "SC001",
                 "The action call could not be joined to exactly one DI-resolved service implementation.",
                 $"{entryPoint.RootMethod.Value}\u001f{ambiguityReason ?? "unknown"}"));
-            return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, ScenarioTopology.Empty, composition: null);
+            AddRootDirectCalls(request, entryPoint, profileId, actionNode, nodes, edges);
+            var rootTopology = BuildTopology(
+                request,
+                profileId,
+                entryPointId,
+                entryPoint,
+                entryPoint.RootMethod,
+                nodes.ToImmutableArray(),
+                diagnostics);
+            return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, rootTopology, composition: null);
         }
 
         var serviceNode = CreateNodeWithPresentation(
@@ -320,6 +329,89 @@ public static class ScenarioGraphBuilder
             nodes.ToImmutableArray(),
             diagnostics);
         return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, topology);
+    }
+
+    private static void AddRootDirectCalls(
+        ScenarioAnalysisRequest request,
+        NormalizedEntry entryPoint,
+        CompilationProfileId profileId,
+        ScenarioNode actionNode,
+        List<ScenarioNode> nodes,
+        List<ScenarioEdge> edges)
+    {
+        var flow = request.Behavior.MethodFlows.SingleOrDefault(candidate => candidate.Method == entryPoint.RootMethod);
+        if (flow is null)
+        {
+            return;
+        }
+
+        var admitted = flow.Nodes.OfType<InvocationFlowNode>()
+            .GroupBy(invocation => invocation.Operation)
+            .Select(group => group.OrderBy(invocation => invocation.Id.Value, StringComparer.Ordinal).First())
+            .Where(invocation => invocation.Certainty == CertaintyLevel.Exact
+                && !invocation.Evidence.IsDefaultOrEmpty
+                && invocation.Target is not null
+                && invocation.IsSourceBacked
+                && !invocation.IsPlatformTarget
+                && !invocation.IsInsideNestedFunction
+                && !invocation.IsDynamic
+                && !invocation.IsDelegateOrEventInvoke
+                && !invocation.IsConstructor
+                && !string.IsNullOrWhiteSpace(invocation.TargetContainingTypeName)
+                && !string.IsNullOrWhiteSpace(invocation.TargetMethodName))
+            .Select(invocation => (Invocation: invocation, Sites: request.Behavior.CallGraph.CallSites
+                .Where(site => site.ContainingMethod == entryPoint.RootMethod
+                    && site.InvocationOperation == invocation.Operation)
+                .OrderBy(site => site.Id.Value, StringComparer.Ordinal)
+                .ToArray()))
+            .Where(item => item.Sites.Length == 1
+                && item.Sites.Select(site => site.DeclaredTarget).Distinct().Count() == 1)
+            .Where(item =>
+            {
+                var site = item.Sites[0];
+                var target = item.Invocation.Target!.Value;
+                return site.DeclaredTarget == target
+                    && site.Certainty == CertaintyLevel.Exact
+                    && !site.Evidence.IsDefaultOrEmpty
+                    && site.Resolution.Kind == CallResolutionKind.DirectExact
+                    && site.Resolution.IsComplete
+                    && site.Resolution.Certainty == CertaintyLevel.Exact
+                    && site.Resolution.Candidates.Length == 1
+                    && site.Resolution.Candidates[0] == target
+                    && !site.Resolution.Evidence.IsDefaultOrEmpty
+                    && site.Resolution.Evidence.All(evidence => evidence.Certainty == CertaintyLevel.Exact)
+                    && site.Evidence.All(evidence => evidence.Certainty == CertaintyLevel.Exact)
+                    && item.Invocation.Evidence.All(evidence => evidence.Certainty == CertaintyLevel.Exact);
+            })
+            .OrderBy(item => item.Invocation.BlockOrdinal)
+            .ThenBy(item => item.Invocation.EvaluationOrdinal)
+            .ThenBy(item => item.Invocation.Id.Value, StringComparer.Ordinal)
+            .ToArray();
+
+        for (var ordinal = 0; ordinal < admitted.Length; ordinal++)
+        {
+            var invocation = admitted[ordinal].Invocation;
+            var site = admitted[ordinal].Sites[0];
+            var evidence = Combine(invocation.Evidence, site.Evidence, site.Resolution.Evidence);
+            var node = CreateNodeWithPresentation(
+                profileId,
+                entryPoint.EntryPointId,
+                ScenarioNodeKind.MethodCall,
+                $"method-call:{invocation.Operation.Value}",
+                invocation.Target,
+                invocation.Operation,
+                $"calls {invocation.TargetContainingTypeName}.{invocation.TargetMethodName}",
+                new ScenarioNodePresentation(
+                    TargetContainingTypeName: invocation.TargetContainingTypeName,
+                    TargetMemberName: invocation.TargetMethodName),
+                evidence,
+                CertaintyLevel.Exact,
+                ordinal);
+            nodes.Add(node);
+            edges.Add(CreateEdge(profileId, entryPoint.EntryPointId, actionNode, node, ScenarioEdgeKind.Call,
+                "direct method call", evidence, CertaintyLevel.Exact, ordinal));
+        }
+
     }
 
     private static bool TryGetHandlerFacts(ScenarioAnalysisRequest request, NormalizedEntry entry, out MinimalApiHandlerFact fact)
@@ -1930,6 +2022,8 @@ public static class ScenarioGraphBuilder
 
         var flows = request.Behavior.MethodFlows
             .Where(flow => flow.Method == rootMethod || flow.Method == serviceMethod)
+            .GroupBy(flow => flow.Method)
+            .Select(group => group.OrderBy(flow => flow.FlowFingerprint, StringComparer.Ordinal).First())
             .OrderBy(flow => flow.Method.Value, StringComparer.Ordinal)
             .ToArray();
 
@@ -2146,6 +2240,7 @@ public static class ScenarioGraphBuilder
     /// </summary>
     private static bool IsMaterialTopologyNode(ScenarioNode node)
         => node.Kind is ScenarioNodeKind.ServiceCall
+            or ScenarioNodeKind.MethodCall
             or ScenarioNodeKind.EntityQuery
             or ScenarioNodeKind.StateAssignment
             or ScenarioNodeKind.EntityMutation
@@ -2898,9 +2993,10 @@ public static class ScenarioGraphBuilder
         string detail,
         ScenarioNodePresentation presentation,
         ImmutableArray<EvidenceRef> evidence,
-        CertaintyLevel certainty)
+        CertaintyLevel certainty,
+        int sequenceOrdinal = 0)
         => CreateNode(profileId, entryPointId, kind, key, method, operation, detail, evidence, certainty,
-            presentation: presentation);
+            sequenceOrdinal, presentation);
 
     private static ScenarioNode CreateNode(
         CompilationProfileId profileId,

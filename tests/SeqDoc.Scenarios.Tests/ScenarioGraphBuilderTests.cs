@@ -12,6 +12,76 @@ namespace SeqDoc.Scenarios.Tests;
 
 public sealed class ScenarioGraphBuilderTests
 {
+    /// <summary>CT-3 claim: exact root-local calls are projected without turning the unresolved service composition into a false service claim.</summary>
+    [Fact]
+    public void RootDirectCallsAreTypedRootOnlyNodesAndRetainSC001()
+    {
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(
+            ScenarioTestFactory.CreateRootDirectCallRequest()).Graphs);
+
+        var call = Assert.Single(graph.Nodes, node => node.Kind == ScenarioNodeKind.MethodCall);
+        Assert.Equal(ScenarioTestFactory.RootDirectCallOperation, call.Operation);
+        Assert.Equal(ScenarioTestFactory.RootDirectCallTarget, call.Method);
+        Assert.Equal("Payments.TransferGateway", call.Presentation!.TargetContainingTypeName);
+        Assert.Equal("SendAsync", call.Presentation.TargetMemberName);
+        Assert.DoesNotContain(graph.Nodes, node => node.Kind == ScenarioNodeKind.ServiceCall);
+        Assert.Contains(graph.Diagnostics, diagnostic => diagnostic.Code == "SC001");
+
+        // The projection is root-only: a target flow is present in the behavior snapshot but is not traversed.
+        Assert.DoesNotContain(graph.Nodes, node => node.Method == ScenarioTestFactory.NestedDirectCallTarget);
+    }
+
+    /// <summary>CT-3 claims: compiler ordinals and exact topology membership govern order and branch presentation.</summary>
+    [Fact]
+    public void RootDirectCallsUseCompilerOrderAndExactDecisionArmMembership()
+    {
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(
+            ScenarioTestFactory.CreateRootDirectCallRequest(decisionGuarded: true)).Graphs);
+
+        var calls = graph.Nodes.Where(node => node.Kind == ScenarioNodeKind.MethodCall).ToArray();
+        Assert.Equal(["ValidateAsync", "SendAsync"], calls.Select(node => node.Presentation!.TargetMemberName));
+
+        var decision = Assert.Single(graph.Topology.Decisions);
+        var trueArm = Assert.Single(graph.Topology.Arms, arm => arm.Decision == decision.Id && arm.IsTrue);
+        var guarded = Assert.Single(calls, node => node.Presentation!.TargetMemberName == "SendAsync");
+        var unguarded = Assert.Single(calls, node => node.Presentation!.TargetMemberName == "ValidateAsync");
+        Assert.Contains(graph.Topology.Memberships, membership => membership.Arm == trueArm.Id && membership.ScenarioNode == guarded.Id);
+        Assert.DoesNotContain(graph.Topology.Memberships, membership => membership.ScenarioNode == unguarded.Id);
+    }
+
+    /// <summary>CT-3 negative equivalence partitions: material non-exact or non-source calls are withheld together.</summary>
+    [Theory]
+    [InlineData("platform")]
+    [InlineData("unresolved")]
+    [InlineData("ambiguous")]
+    [InlineData("dynamic")]
+    [InlineData("delegate")]
+    [InlineData("constructor")]
+    [InlineData("nested")]
+    [InlineData("conservative-resolution")]
+    public void RootDirectCallMaterialNegativesAreWithheld(string exclusion)
+    {
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(
+            ScenarioTestFactory.CreateRootDirectCallRequest(exclusion: exclusion)).Graphs);
+
+        Assert.DoesNotContain(graph.Nodes, node => node.Kind == ScenarioNodeKind.MethodCall);
+        Assert.Contains(graph.Diagnostics, diagnostic => diagnostic.Code == "SC001");
+    }
+
+    [Fact]
+    public void RootDirectCallDuplicateAnchorsProduceOneStableNodeAndProjection()
+    {
+        var first = Assert.Single(ScenarioGraphBuilder.Build(
+            ScenarioTestFactory.CreateRootDirectCallRequest(duplicateAnchor: true)).Graphs);
+        var second = Assert.Single(ScenarioGraphBuilder.Build(
+            ScenarioTestFactory.CreateRootDirectCallRequest(duplicateAnchor: true, reverseConstruction: true)).Graphs);
+
+        Assert.Single(first.Nodes, node => node.Kind == ScenarioNodeKind.MethodCall);
+        Assert.Equal(first.DebugProjection, second.DebugProjection);
+        Assert.Equal(first.Nodes.Where(node => node.Kind == ScenarioNodeKind.MethodCall).Select(node => node.Id),
+            second.Nodes.Where(node => node.Kind == ScenarioNodeKind.MethodCall).Select(node => node.Id));
+    }
+
     /// <summary>
     /// CR-2 write-first contract: one exact source predicate may own two lowered decisions. Only the
     /// first ordinal receives the complete presentation tree; later lowered decisions retain a typed

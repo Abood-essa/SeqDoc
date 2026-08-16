@@ -14,7 +14,10 @@ Web partition now activates successfully but produces `SD4008` because no `net9.
 configurable roots remain the broad foundation, but CT-2 first adds the smaller exact ASP.NET Core 9 version-table
 admission needed to attempt useful Web diagrams immediately. Predicate presentation follows before the first diagram
 milestone is accepted. CT-2 is now closed: two exact Web entry diagrams are generated on the Desktop, but both remain
-sparse at `SC001`, so generic root/method-flow presentation is the next value boundary.
+sparse at `SC001`. CT-3 now projects exact root-local call facts without inventing service composition or traversing
+callees. CreditTransfer regeneration exposes those calls in behavior text, while Mermaid correctly withholds their
+messages because current `SC013` topology cannot place guarded calls safely. Compiler-evidenced predicate and
+supported terminal/rejoin presentation is therefore the next boundary before the first useful diagram milestone.
 
 ## Next execution order
 

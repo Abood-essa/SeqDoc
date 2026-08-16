@@ -14,6 +14,7 @@ public enum ScenarioNodeKind
     Unknown,
     EntryPoint,
     Action,
+    MethodCall,
     ServiceCall,
     EntityQuery,
     StateAssignment,
@@ -166,7 +167,9 @@ public sealed record ScenarioNodePresentation(
     string? RequestTypeName = null,
     string? ResponseTypeName = null,
     string? HandlerTypeName = null,
-    bool? HandlerBodyAvailable = null);
+    bool? HandlerBodyAvailable = null,
+    string? TargetContainingTypeName = null,
+    string? TargetMemberName = null);
 
 /// <summary>
 /// One evidence-backed scenario-graph edge connecting two nodes. Every edge carries non-empty

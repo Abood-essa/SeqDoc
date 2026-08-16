@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "mode": "active",
   "activePlanPath": "docs/project/credit-transfer-plan.md",
-  "activeCheckpointPath": "docs/work/credit-transfer/CT-2",
-  "activeCheckpointId": "CT-2",
-  "nextAction": "CT-2 is closed with two current CreditTransfer Web diagrams; activate generic configurable roots and direct method-flow presentation to move beyond the sparse controller boundary."
+  "activeCheckpointPath": "docs/work/credit-transfer/CT-3",
+  "activeCheckpointId": "CT-3",
+  "nextAction": "CT-3 is closed; activate compiler-evidenced predicate and supported terminal/rejoin presentation so exact guarded root calls can appear in the first useful CreditTransfer diagrams."
 }
