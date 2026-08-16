@@ -1,0 +1,13 @@
+<Project>
+  <Import Project="..\..\..\..\Directory.Build.props" />
+
+  <PropertyGroup>
+    <!-- The fixture intentionally mirrors the TicketReservation ServiceResult<T> generic
+         static-factory shape to prove the structural-result projection; CA1000 is scoped to
+         the fixture only. -->
+    <NoWarn>$(NoWarn);CA1000</NoWarn>
+    <BaseIntermediateOutputPath>obj-custom\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj\**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

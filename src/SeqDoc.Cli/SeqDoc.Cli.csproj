@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- Prevent the adapter's compile-time MSBuild contract from being copied ahead of Locator registration. -->
+    <PackageReference Include="Microsoft.Build.Framework" ExcludeAssets="runtime" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SeqDoc.Application\SeqDoc.Application.csproj" />
+    <ProjectReference Include="..\SeqDoc.Analysis.Roslyn\SeqDoc.Analysis.Roslyn.csproj" />
+    <ProjectReference Include="..\SeqDoc.Analysis.Behavior\SeqDoc.Analysis.Behavior.csproj" />
+    <ProjectReference Include="..\SeqDoc.Analysis.Scenarios\SeqDoc.Analysis.Scenarios.csproj" />
+    <ProjectReference Include="..\SeqDoc.FrameworkModels\SeqDoc.FrameworkModels.csproj" />
+    <ProjectReference Include="..\SeqDoc.Persistence.Sqlite\SeqDoc.Persistence.Sqlite.csproj" />
+    <ProjectReference Include="..\SeqDoc.Configuration\SeqDoc.Configuration.csproj" />
+    <ProjectReference Include="..\SeqDoc.Rendering.Markdown\SeqDoc.Rendering.Markdown.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+</Project>

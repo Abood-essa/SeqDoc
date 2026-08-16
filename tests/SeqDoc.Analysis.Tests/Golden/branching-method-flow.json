@@ -1,0 +1,4039 @@
+{
+  "BehaviorFingerprint": "c25f0b59f751fd67ec2e076e911e68ea127d7cc8ab2ec15ad8a7ed768171dec1",
+  "CallSiteCount": 9,
+  "CallEdgeCount": 9,
+  "CallSites": [
+    {
+      "ContainingMethod": "CaughtByBaseType",
+      "Kind": "Constructor",
+      "Resolution": "DirectExact",
+      "CandidateCount": 1,
+      "CandidateTargets": [
+        "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc"
+      ],
+      "Certainty": "Exact"
+    },
+    {
+      "ContainingMethod": "MixedSwitchAndThrow",
+      "Kind": "Constructor",
+      "Resolution": "DirectExact",
+      "CandidateCount": 1,
+      "CandidateTargets": [
+        "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc"
+      ],
+      "Certainty": "Exact"
+    },
+    {
+      "ContainingMethod": "MixedSwitchAndThrow",
+      "Kind": "Constructor",
+      "Resolution": "DirectExact",
+      "CandidateCount": 1,
+      "CandidateTargets": [
+        "method:v1:4e2e7d9f24cf269ff045c7b946eadac5e12d66e6de165074e7f243ed43b034d9"
+      ],
+      "Certainty": "Exact"
+    },
+    {
+      "ContainingMethod": "RethrowCaughtByOuter",
+      "Kind": "Constructor",
+      "Resolution": "DirectExact",
+      "CandidateCount": 1,
+      "CandidateTargets": [
+        "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc"
+      ],
+      "Certainty": "Exact"
+    },
+    {
+      "ContainingMethod": "SwitchShape",
+      "Kind": "Constructor",
+      "Resolution": "DirectExact",
+      "CandidateCount": 1,
+      "CandidateTargets": [
+        "method:v1:4e2e7d9f24cf269ff045c7b946eadac5e12d66e6de165074e7f243ed43b034d9"
+      ],
+      "Certainty": "Exact"
+    },
+    {
+      "ContainingMethod": "ThrowShape",
+      "Kind": "Static",
+      "Resolution": "DirectExact",
+      "CandidateCount": 1,
+      "CandidateTargets": [
+        "method:v1:4d6b62981e8f8136ebd05462ff347dab0121855ab573bc73466869089934e96f"
+      ],
+      "Certainty": "Exact"
+    },
+    {
+      "ContainingMethod": "ThrowShape",
+      "Kind": "Constructor",
+      "Resolution": "DirectExact",
+      "CandidateCount": 1,
+      "CandidateTargets": [
+        "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc"
+      ],
+      "Certainty": "Exact"
+    },
+    {
+      "ContainingMethod": "WrongCatchType",
+      "Kind": "Constructor",
+      "Resolution": "DirectExact",
+      "CandidateCount": 1,
+      "CandidateTargets": [
+        "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc"
+      ],
+      "Certainty": "Exact"
+    },
+    {
+      "ContainingMethod": "UncaughtThrow",
+      "Kind": "Constructor",
+      "Resolution": "DirectExact",
+      "CandidateCount": 1,
+      "CandidateTargets": [
+        "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc"
+      ],
+      "Certainty": "Exact"
+    }
+  ],
+  "CallEdges": [
+    {
+      "Caller": "method:v1:08b255aec506b3fec86fc36d6dd4148da3137c0c71c722112bdd6dfea0f40067",
+      "CandidateTarget": "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc"
+    },
+    {
+      "Caller": "method:v1:3ace52c03ac8ed6c29641f88468c62399c4e71e9e93b7d7e564c570f92126480",
+      "CandidateTarget": "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc"
+    },
+    {
+      "Caller": "method:v1:3ace52c03ac8ed6c29641f88468c62399c4e71e9e93b7d7e564c570f92126480",
+      "CandidateTarget": "method:v1:4e2e7d9f24cf269ff045c7b946eadac5e12d66e6de165074e7f243ed43b034d9"
+    },
+    {
+      "Caller": "method:v1:3bfdcf4b9f2d99a85a3beb7db29bc0dda3f5f7b8e82738f171b7332ed4f7e4c2",
+      "CandidateTarget": "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc"
+    },
+    {
+      "Caller": "method:v1:5ca3aa286d2fb0d104973407f1654ffdf910aa0d66ea6bd0b77cb9ddc56021ce",
+      "CandidateTarget": "method:v1:4e2e7d9f24cf269ff045c7b946eadac5e12d66e6de165074e7f243ed43b034d9"
+    },
+    {
+      "Caller": "method:v1:82ea3bd5cf72b26e4dd3894dc465f3d499ae1ecaff6ca9125d0367807e0c3db1",
+      "CandidateTarget": "method:v1:4d6b62981e8f8136ebd05462ff347dab0121855ab573bc73466869089934e96f"
+    },
+    {
+      "Caller": "method:v1:82ea3bd5cf72b26e4dd3894dc465f3d499ae1ecaff6ca9125d0367807e0c3db1",
+      "CandidateTarget": "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc"
+    },
+    {
+      "Caller": "method:v1:8e353c8b43f49243e51aa301b6ea2ae3dd8bf1a661c4d0b57250bf5d9d618485",
+      "CandidateTarget": "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc"
+    },
+    {
+      "Caller": "method:v1:afef7c031be566c615e06d3a74561e468d5cbc9e968b2e143ed7b8dd9d2b659c",
+      "CandidateTarget": "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc"
+    }
+  ],
+  "MethodFlows": [
+    {
+      "Name": "CaughtByBaseType",
+      "FlowFingerprint": "f08be45200a51932838b791638f8599a20ad46e4d5eba42fc6f5b70e4c985a70",
+      "NodeCount": 9,
+      "EdgeCount": 8,
+      "RegionCount": 3,
+      "OutcomeCount": 2,
+      "ValueNodeCount": 5,
+      "ValueEdgeCount": 3,
+      "ControlDependenceCount": 0,
+      "Nodes": [
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:d88d5fa3f62a404ceec3662c2cb5296c5284c5fdce80c0ecfae397495fc7f888",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Invocation",
+          "Operation": "behavior-operation:v1:ed1739b9788d075f92f5e7f996ee7980bd63900070bfccea5a5a5285025666a8",
+          "Target": "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc",
+          "IsDispatchable": false,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:8eafc9b75efb370841c45188c1d27ba71bda363da05844250577aeb4c0a61f5a",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:59cce488d8924ac4f49804793fc86f35b40d5c12369ea0e8e9945164d4e2b2f0",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Return",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:97f517f3dcdfa3373e41d5bb74c04bb41a7fd49d049a37eef981d3cc7c964bac",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Entry",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Throw",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": false
+        },
+        {
+          "Kind": "Exit",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        }
+      ],
+      "Edges": [
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:d9956e80e7deb5f7ac01b72f088eb719ba90a8e0bf413f625530d4f28b4a442e",
+          "Target": "flow-node:v1:f711ac8ce2175e4f5e1aa60657bc0db01f9b5f98608c8adc039d0849eed26595"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:d4d84b2efac977403dbce89cd3d24eb66236dadfdb0171b2ede0d9baeb718aa2",
+          "Target": "flow-node:v1:981f2324ef02a1785efe976847628db7ea9e540d84c837c32c96bcac83e88637"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:77ee51a46c7c33c61f1c9d6eefe07b3bc3e854eb5630455005f12cd5f39c33ba",
+          "Target": "flow-node:v1:c5b3c242ac3c58a967470167e456e725c993f0c98a2d7ffb34750ace81e105f5"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:c5b3c242ac3c58a967470167e456e725c993f0c98a2d7ffb34750ace81e105f5",
+          "Target": "flow-node:v1:f711ac8ce2175e4f5e1aa60657bc0db01f9b5f98608c8adc039d0849eed26595"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:981f2324ef02a1785efe976847628db7ea9e540d84c837c32c96bcac83e88637",
+          "Target": "flow-node:v1:c67ccb55f6ad19a1959c42c6ec69a88bdf9dc5231e208502c86668f548869cae"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:56d5e8464e80d6e65df533ddc7a78a43e9072897b89723174005c341b84f7b87",
+          "Target": "flow-node:v1:014e02d09aa1e4ba054606f2ab09659149436f04f48eacb7b16e72482c79c9eb"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:014e02d09aa1e4ba054606f2ab09659149436f04f48eacb7b16e72482c79c9eb",
+          "Target": "flow-node:v1:d9956e80e7deb5f7ac01b72f088eb719ba90a8e0bf413f625530d4f28b4a442e"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:c67ccb55f6ad19a1959c42c6ec69a88bdf9dc5231e208502c86668f548869cae",
+          "Target": "flow-node:v1:56d5e8464e80d6e65df533ddc7a78a43e9072897b89723174005c341b84f7b87"
+        }
+      ],
+      "Regions": [
+        {
+          "Kind": "Root",
+          "Parent": null,
+          "ExceptionType": null
+        },
+        {
+          "Kind": "Try",
+          "Parent": "flow-region:v1:f1c4737b16a6fd05b2c7705135572388a0dda4e36bde0746bf899a8de63b138f",
+          "ExceptionType": null
+        },
+        {
+          "Kind": "Catch",
+          "Parent": "flow-region:v1:f1c4737b16a6fd05b2c7705135572388a0dda4e36bde0746bf899a8de63b138f",
+          "ExceptionType": "System.Exception"
+        }
+      ],
+      "Outcomes": [
+        {
+          "Kind": "NormalCompletion",
+          "Block": null
+        },
+        {
+          "Kind": "ExplicitReturn",
+          "Block": 2
+        }
+      ],
+      "ValueNodes": [
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "x"
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "1"
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        }
+      ],
+      "ValueEdges": [
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:f941baca3d1b1f7c997a7a861e11951ab6c690fb4353432261819688c55e1d5b",
+          "Target": "value-node:v1:f654c4285d89df2ba002593ec3054886f4ba5dfdc97f88d23af732284c917d43"
+        },
+        {
+          "Kind": "Conversion",
+          "Source": "value-node:v1:f654c4285d89df2ba002593ec3054886f4ba5dfdc97f88d23af732284c917d43",
+          "Target": "value-node:v1:42228234ec44dd1264116a1c82f8b199c6440dad2d35ada967a4455749f11be6"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:94130e0f1f6ad0d3a707953bb7ae8044f6d95d9274bc2970434b949a79d9a646",
+          "Target": "value-node:v1:f941baca3d1b1f7c997a7a861e11951ab6c690fb4353432261819688c55e1d5b"
+        }
+      ],
+      "ControlDependences": [],
+      "Summary": {
+        "IsComplete": false,
+        "Certainty": "Conservative",
+        "StateReadCount": 0,
+        "StateWriteCount": 0,
+        "ParameterFlows": [
+          {
+            "Name": "input",
+            "FlowsToReturn": false,
+            "InfluencesStateWrite": false
+          }
+        ]
+      }
+    },
+    {
+      "Name": "NonVoidTerminal",
+      "FlowFingerprint": "cd6714fa5f59ae90b01fc8eea475f386fa99db5947a479fa57e9d3d146baafe2",
+      "NodeCount": 7,
+      "EdgeCount": 7,
+      "RegionCount": 1,
+      "OutcomeCount": 3,
+      "ValueNodeCount": 3,
+      "ValueEdgeCount": 0,
+      "ControlDependenceCount": 4,
+      "Nodes": [
+        {
+          "Kind": "Entry",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Decision",
+          "Operation": "behavior-operation:v1:2e6bb9adcd68cd733a331a88d6d4c43fa5ac3329cba3126f16fafd604768c42a",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Return",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:6280957367f0cde4b656eedfe8fd140c5210795b68534be7ab21a6d34cf99d91",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:03d88122bc92edbb5d5d1f9afbafd1fc5b608d6c9d1d670f9e17692bf46dfbf8",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Exit",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Return",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        }
+      ],
+      "Edges": [
+        {
+          "Kind": "False",
+          "Source": "flow-node:v1:3ea6935a127f77aa10e8a7c05c2cdacf45f6ffae9808a08918ceff66c4fda0f5",
+          "Target": "flow-node:v1:deebd16b01accbc44ee84ab9eda98cc65bdae9747c2b9bb48b800560869e0726"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:125129692c88c1eef590eac5ff8b258031d071ece5c9b8181c71f32e473a8feb",
+          "Target": "flow-node:v1:3ea6935a127f77aa10e8a7c05c2cdacf45f6ffae9808a08918ceff66c4fda0f5"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:deebd16b01accbc44ee84ab9eda98cc65bdae9747c2b9bb48b800560869e0726",
+          "Target": "flow-node:v1:fcc67e5c60682a0de9b34b1a4d4325821242d3289fbf161d4463ea54602947b7"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:9775317ce056a34c05b126ca0382e3a69f09c7987e6d3bffde6901a98a16d852",
+          "Target": "flow-node:v1:62b3536fcfc1c4070d1c5615f04d9f5a45e7b9db049681049dd56d6ba1eefbca"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:fcc67e5c60682a0de9b34b1a4d4325821242d3289fbf161d4463ea54602947b7",
+          "Target": "flow-node:v1:e24375d331d21b1820b8874e2795bfc532d2ea2b79fc4c95c78b81aee0b98c7b"
+        },
+        {
+          "Kind": "True",
+          "Source": "flow-node:v1:3ea6935a127f77aa10e8a7c05c2cdacf45f6ffae9808a08918ceff66c4fda0f5",
+          "Target": "flow-node:v1:9775317ce056a34c05b126ca0382e3a69f09c7987e6d3bffde6901a98a16d852"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:62b3536fcfc1c4070d1c5615f04d9f5a45e7b9db049681049dd56d6ba1eefbca",
+          "Target": "flow-node:v1:e24375d331d21b1820b8874e2795bfc532d2ea2b79fc4c95c78b81aee0b98c7b"
+        }
+      ],
+      "Regions": [
+        {
+          "Kind": "Root",
+          "Parent": null,
+          "ExceptionType": null
+        }
+      ],
+      "Outcomes": [
+        {
+          "Kind": "NormalCompletion",
+          "Block": null
+        },
+        {
+          "Kind": "ExplicitReturn",
+          "Block": 2
+        },
+        {
+          "Kind": "ExplicitReturn",
+          "Block": 3
+        }
+      ],
+      "ValueNodes": [
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "False"
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "True"
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        }
+      ],
+      "ValueEdges": [],
+      "ControlDependences": [
+        {
+          "Decision": "flow-node:v1:3ea6935a127f77aa10e8a7c05c2cdacf45f6ffae9808a08918ceff66c4fda0f5",
+          "Controlled": "flow-node:v1:62b3536fcfc1c4070d1c5615f04d9f5a45e7b9db049681049dd56d6ba1eefbca",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:3ea6935a127f77aa10e8a7c05c2cdacf45f6ffae9808a08918ceff66c4fda0f5",
+          "Controlled": "flow-node:v1:9775317ce056a34c05b126ca0382e3a69f09c7987e6d3bffde6901a98a16d852",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:3ea6935a127f77aa10e8a7c05c2cdacf45f6ffae9808a08918ceff66c4fda0f5",
+          "Controlled": "flow-node:v1:deebd16b01accbc44ee84ab9eda98cc65bdae9747c2b9bb48b800560869e0726",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:3ea6935a127f77aa10e8a7c05c2cdacf45f6ffae9808a08918ceff66c4fda0f5",
+          "Controlled": "flow-node:v1:fcc67e5c60682a0de9b34b1a4d4325821242d3289fbf161d4463ea54602947b7",
+          "OnTrue": false
+        }
+      ],
+      "Summary": {
+        "IsComplete": true,
+        "Certainty": "Exact",
+        "StateReadCount": 0,
+        "StateWriteCount": 0,
+        "ParameterFlows": [
+          {
+            "Name": "flag",
+            "FlowsToReturn": false,
+            "InfluencesStateWrite": false
+          }
+        ]
+      }
+    },
+    {
+      "Name": "ShortCircuit",
+      "FlowFingerprint": "b897f7405c6aa74390ab05edbbb0d278467faa96f256f028c5a6938cc313cf50",
+      "NodeCount": 8,
+      "EdgeCount": 9,
+      "RegionCount": 1,
+      "OutcomeCount": 3,
+      "ValueNodeCount": 6,
+      "ValueEdgeCount": 2,
+      "ControlDependenceCount": 7,
+      "Nodes": [
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:8452202cc002cd719498eca6bf2bad64d451b4012e9e4a585b96f65083177353",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Decision",
+          "Operation": "behavior-operation:v1:8896dcad62fc804668b060c8d251dace94ad9f240e92a1f8ae82203ab02585c6",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Decision",
+          "Operation": "behavior-operation:v1:545a2bec022b257f6aca8da8d412bbeab456087619fe56b1d625d334765d6725",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Entry",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Return",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:1c2ee426f0660af327de73d0d1c04b7340d61590dd4aa50612e7631b150ff2a0",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Exit",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Return",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        }
+      ],
+      "Edges": [
+        {
+          "Kind": "True",
+          "Source": "flow-node:v1:615283fec9abb1cf6a5e8ee6ecc62ef9ed2af56638c242b9be1112ab746d34c3",
+          "Target": "flow-node:v1:1f848d412e58642de16eddcc3303e585ebe62a45e38152b0c99422a7c1e9ef4c"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:6f5cc5a623210bbef4aa624f0042ee3980fb9fa2c3ce364243c63d6de0a4beba",
+          "Target": "flow-node:v1:a471c7c549438e744feed34d0ced88c2d839da4812f33fa80c36cb9cd3868764"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:864275163d820378e6552648a7c8d5c67dd6291643a4b6e05393eac94794359b",
+          "Target": "flow-node:v1:6f5cc5a623210bbef4aa624f0042ee3980fb9fa2c3ce364243c63d6de0a4beba"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:641beaf8e0dfb1867e24208f5ac5b6707e50667e61a91c0415f6fed6f89a0457",
+          "Target": "flow-node:v1:4a3c797c82a5449c2bafef309e6bc1ab9b1bc312ea2f95f1549d1813c0f93e45"
+        },
+        {
+          "Kind": "False",
+          "Source": "flow-node:v1:615283fec9abb1cf6a5e8ee6ecc62ef9ed2af56638c242b9be1112ab746d34c3",
+          "Target": "flow-node:v1:864275163d820378e6552648a7c8d5c67dd6291643a4b6e05393eac94794359b"
+        },
+        {
+          "Kind": "False",
+          "Source": "flow-node:v1:4a3c797c82a5449c2bafef309e6bc1ab9b1bc312ea2f95f1549d1813c0f93e45",
+          "Target": "flow-node:v1:615283fec9abb1cf6a5e8ee6ecc62ef9ed2af56638c242b9be1112ab746d34c3"
+        },
+        {
+          "Kind": "True",
+          "Source": "flow-node:v1:4a3c797c82a5449c2bafef309e6bc1ab9b1bc312ea2f95f1549d1813c0f93e45",
+          "Target": "flow-node:v1:1f848d412e58642de16eddcc3303e585ebe62a45e38152b0c99422a7c1e9ef4c"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:fcddb6e6247f2fd180b094b4905220bf68bdaf2aadb04ee9e49979268c61565d",
+          "Target": "flow-node:v1:a471c7c549438e744feed34d0ced88c2d839da4812f33fa80c36cb9cd3868764"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:1f848d412e58642de16eddcc3303e585ebe62a45e38152b0c99422a7c1e9ef4c",
+          "Target": "flow-node:v1:fcddb6e6247f2fd180b094b4905220bf68bdaf2aadb04ee9e49979268c61565d"
+        }
+      ],
+      "Regions": [
+        {
+          "Kind": "Root",
+          "Parent": null,
+          "ExceptionType": null
+        }
+      ],
+      "Outcomes": [
+        {
+          "Kind": "NormalCompletion",
+          "Block": null
+        },
+        {
+          "Kind": "ExplicitReturn",
+          "Block": 3
+        },
+        {
+          "Kind": "ExplicitReturn",
+          "Block": 4
+        }
+      ],
+      "ValueNodes": [
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 1,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "0"
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 1,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "2"
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        }
+      ],
+      "ValueEdges": [
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:9028fccb7cb129034e0d004eb83587554d2e5371ada03f5c15d112f43e75273a",
+          "Target": "value-node:v1:e840468393d3aab07fa07b81925f371de6fcb3c577bea54a337af51cb7d7ad87"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:55dd0ded22f29fb354c34a2831dfdd580f4b8a4a99a3edafd31fb8247ad95039",
+          "Target": "value-node:v1:e840468393d3aab07fa07b81925f371de6fcb3c577bea54a337af51cb7d7ad87"
+        }
+      ],
+      "ControlDependences": [
+        {
+          "Decision": "flow-node:v1:4a3c797c82a5449c2bafef309e6bc1ab9b1bc312ea2f95f1549d1813c0f93e45",
+          "Controlled": "flow-node:v1:1f848d412e58642de16eddcc3303e585ebe62a45e38152b0c99422a7c1e9ef4c",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:4a3c797c82a5449c2bafef309e6bc1ab9b1bc312ea2f95f1549d1813c0f93e45",
+          "Controlled": "flow-node:v1:615283fec9abb1cf6a5e8ee6ecc62ef9ed2af56638c242b9be1112ab746d34c3",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:4a3c797c82a5449c2bafef309e6bc1ab9b1bc312ea2f95f1549d1813c0f93e45",
+          "Controlled": "flow-node:v1:fcddb6e6247f2fd180b094b4905220bf68bdaf2aadb04ee9e49979268c61565d",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:615283fec9abb1cf6a5e8ee6ecc62ef9ed2af56638c242b9be1112ab746d34c3",
+          "Controlled": "flow-node:v1:1f848d412e58642de16eddcc3303e585ebe62a45e38152b0c99422a7c1e9ef4c",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:615283fec9abb1cf6a5e8ee6ecc62ef9ed2af56638c242b9be1112ab746d34c3",
+          "Controlled": "flow-node:v1:6f5cc5a623210bbef4aa624f0042ee3980fb9fa2c3ce364243c63d6de0a4beba",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:615283fec9abb1cf6a5e8ee6ecc62ef9ed2af56638c242b9be1112ab746d34c3",
+          "Controlled": "flow-node:v1:864275163d820378e6552648a7c8d5c67dd6291643a4b6e05393eac94794359b",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:615283fec9abb1cf6a5e8ee6ecc62ef9ed2af56638c242b9be1112ab746d34c3",
+          "Controlled": "flow-node:v1:fcddb6e6247f2fd180b094b4905220bf68bdaf2aadb04ee9e49979268c61565d",
+          "OnTrue": true
+        }
+      ],
+      "Summary": {
+        "IsComplete": true,
+        "Certainty": "Exact",
+        "StateReadCount": 0,
+        "StateWriteCount": 0,
+        "ParameterFlows": [
+          {
+            "Name": "first",
+            "FlowsToReturn": false,
+            "InfluencesStateWrite": false
+          },
+          {
+            "Name": "input",
+            "FlowsToReturn": true,
+            "InfluencesStateWrite": false
+          }
+        ]
+      }
+    },
+    {
+      "Name": "MixedSwitchAndThrow",
+      "FlowFingerprint": "c8174d6d98a741e5db68e6f2e8894c2106c395633f3db32e920029fe9ca40f18",
+      "NodeCount": 23,
+      "EdgeCount": 25,
+      "RegionCount": 1,
+      "OutcomeCount": 3,
+      "ValueNodeCount": 20,
+      "ValueEdgeCount": 10,
+      "ControlDependenceCount": 17,
+      "Nodes": [
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:5c0b10be289d8e00fc61db4a1d69a4ad6c44f48ea9250070f0a0b02c6b8bd611",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:f521cfee60af9ce9904fb8e9b231a55eede4dc30ff45de4f7d2e340c9306b80c",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:0303865fd68e7f2b9d33d0cbb9a90bd3bb38c8f4b8a8ac806bed88e9aec1eb4b",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Throw",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": false
+        },
+        {
+          "Kind": "Throw",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": false
+        },
+        {
+          "Kind": "Invocation",
+          "Operation": "behavior-operation:v1:1342384d93d7d1b954f3d551cbd5b83549c099b247635e594fe85626f69bbe73",
+          "Target": "method:v1:4e2e7d9f24cf269ff045c7b946eadac5e12d66e6de165074e7f243ed43b034d9",
+          "IsDispatchable": false,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:d6f53253b57b8186a34e494ec117fb1f3755ab35b6629e98d665fc47016f9677",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:b8c74c83cfb40c69e529180548e5a251582e16be6606b1e235243a3340f51e14",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:92feb56db4eb4fb69d94ada89528fc7212a4e2c5947647e293408cbacca7f6a7",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Decision",
+          "Operation": "behavior-operation:v1:8e50531fde8b9e9b222fe24842d2c76aaae3d740fcbb9b8f398674c7d29ae2de",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Return",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:a1b5eb45088b88fdeb2a9e9a4b35ad8a9828a8649023a45393367300c2285e46",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:6cbeb80feeb1cd2ef4581cbce626024a716689f05e7dba3bed0c0c986ea6f4a8",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:17f5e65376f7cdc64f641e73cbb04952fc7b258e808581563e4603df4e5722be",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Exit",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Invocation",
+          "Operation": "behavior-operation:v1:2a4fb1d3f8ad2e59520d1424906f834963638f22b60c18fde7774296ed66e53d",
+          "Target": "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc",
+          "IsDispatchable": false,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Entry",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Decision",
+          "Operation": "behavior-operation:v1:913645a67610c637fd60382afa32ea34cb0cbbe012d51818aee5c076b20aa27c",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:8a41589dff66039c6eabeccb4da2d26d28a099b2d677c8b3165dd39f3afb14c2",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Decision",
+          "Operation": "behavior-operation:v1:6cc88533d38abe5fb3f0739b857de6817b6d9470ee0f65f274a561765b89c271",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:4b77d85187846a170a0e2079eac3478ad06779e105057cf6f3d9d5aefe30fb53",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:05607c77b6d4aa31f9255055112955878b5fb372842f885d729101b163773201",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:ab4e2695dbc83aafa5676dd999015fce9da85300a19da4160f5a4026e8f37ed0",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        }
+      ],
+      "Edges": [
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:c5e4049f28cfe25c8381571fcbcf1c58a53151e1719dc408bdbf57b996b69b60",
+          "Target": "flow-node:v1:fc559aaf6e992350f0d4c21d299ee43a1e6e6d5394da6bc07d720a5cb79c1f45"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:033812ed8138d50d77b0e1157b16628b5fe1dccdc2fd7115d1dbfa1117882a37",
+          "Target": "flow-node:v1:5bbff08856d25b3d8093402ecfef256720d30893df959df454f9018db80a43b9"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:7ea3ecc0a8aa99c01079ddfa4e6c6bf5a5f6c978d888e9a85a0b2506349ff0ef",
+          "Target": "flow-node:v1:033812ed8138d50d77b0e1157b16628b5fe1dccdc2fd7115d1dbfa1117882a37"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:0195540dee20048a000e0eb94e670cc7caa09324470c13cd0011e485001a9413",
+          "Target": "flow-node:v1:2df79f8cb541e48360746598c187936604f3994075f0430e49e70b1da22f8d45"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:962c8000514588d765d74f1129f0fe9bdf8ed8300c1b77ec43528b33756e0797",
+          "Target": "flow-node:v1:0195540dee20048a000e0eb94e670cc7caa09324470c13cd0011e485001a9413"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:4731f6409dda779dd75ecdc8b53ce9685546449ac3cb6ccace6d794d24830c44",
+          "Target": "flow-node:v1:962c8000514588d765d74f1129f0fe9bdf8ed8300c1b77ec43528b33756e0797"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:65699ff020dfb3c69b4752776d3bfcfbf02a5389afa15350446dcb7c137aea0b",
+          "Target": "flow-node:v1:80a1687e772f78aa8c72c93ecf669ba4c75001f4452f42000778c51f53a7735a"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:f5fb9d118beb851fad59c419c7ddb804d51c3389154d6b95c77c9cc4547a2491",
+          "Target": "flow-node:v1:c5e4049f28cfe25c8381571fcbcf1c58a53151e1719dc408bdbf57b996b69b60"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:2df79f8cb541e48360746598c187936604f3994075f0430e49e70b1da22f8d45",
+          "Target": "flow-node:v1:80a1687e772f78aa8c72c93ecf669ba4c75001f4452f42000778c51f53a7735a"
+        },
+        {
+          "Kind": "True",
+          "Source": "flow-node:v1:c2d0e8bc26b641475bbda4b622be3196067ad65ea4fccee951bfd78687e1bf3a",
+          "Target": "flow-node:v1:4f21217491395abeb13c7cc705c186010d66724783297d90b65198e85c460dde"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:996f33df4355535f9371e802c010c75f89f16e30a7a41ea546b6fd3736bc9715",
+          "Target": "flow-node:v1:7ea3ecc0a8aa99c01079ddfa4e6c6bf5a5f6c978d888e9a85a0b2506349ff0ef"
+        },
+        {
+          "Kind": "True",
+          "Source": "flow-node:v1:5bbff08856d25b3d8093402ecfef256720d30893df959df454f9018db80a43b9",
+          "Target": "flow-node:v1:e6ce8e540722a23892c3b567cc48666943754d510a69ef93c27ba9e15c269ad6"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:7220823a398aaa7c6e0c589c9f22ff0e4ee805b37047d06f4b3504c5b750a0de",
+          "Target": "flow-node:v1:1d265347d5cfc39088a98012041209e34048d97ad3be9e6838d70c7579c06a89"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:1d265347d5cfc39088a98012041209e34048d97ad3be9e6838d70c7579c06a89",
+          "Target": "flow-node:v1:c5e4049f28cfe25c8381571fcbcf1c58a53151e1719dc408bdbf57b996b69b60"
+        },
+        {
+          "Kind": "True",
+          "Source": "flow-node:v1:e6ce8e540722a23892c3b567cc48666943754d510a69ef93c27ba9e15c269ad6",
+          "Target": "flow-node:v1:4246ea948b3e4aad0b5829e8979471ddbe13e1923ea94506d758018ef0b418a2"
+        },
+        {
+          "Kind": "False",
+          "Source": "flow-node:v1:c2d0e8bc26b641475bbda4b622be3196067ad65ea4fccee951bfd78687e1bf3a",
+          "Target": "flow-node:v1:4dc21e659f8264591a5d36b4a2958f23d6e3e25da6dc43ef8a01cfd822f25770"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:eee5afb82bf99706e00e1a709b4672d9de184f82b386256e88a8cac6ff40d3ae",
+          "Target": "flow-node:v1:f5fb9d118beb851fad59c419c7ddb804d51c3389154d6b95c77c9cc4547a2491"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:3fe7d72d5791923d7ed51929eb7504cfff030c3522b9b5941ddba0c88486ea17",
+          "Target": "flow-node:v1:80a1687e772f78aa8c72c93ecf669ba4c75001f4452f42000778c51f53a7735a"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:4dc21e659f8264591a5d36b4a2958f23d6e3e25da6dc43ef8a01cfd822f25770",
+          "Target": "flow-node:v1:4731f6409dda779dd75ecdc8b53ce9685546449ac3cb6ccace6d794d24830c44"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:76616aa11e0518b29ad40907eb973ca790bb124e13581c71b915e60d9d478e6e",
+          "Target": "flow-node:v1:c2d0e8bc26b641475bbda4b622be3196067ad65ea4fccee951bfd78687e1bf3a"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:fc559aaf6e992350f0d4c21d299ee43a1e6e6d5394da6bc07d720a5cb79c1f45",
+          "Target": "flow-node:v1:76616aa11e0518b29ad40907eb973ca790bb124e13581c71b915e60d9d478e6e"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:4f21217491395abeb13c7cc705c186010d66724783297d90b65198e85c460dde",
+          "Target": "flow-node:v1:65699ff020dfb3c69b4752776d3bfcfbf02a5389afa15350446dcb7c137aea0b"
+        },
+        {
+          "Kind": "False",
+          "Source": "flow-node:v1:5bbff08856d25b3d8093402ecfef256720d30893df959df454f9018db80a43b9",
+          "Target": "flow-node:v1:7220823a398aaa7c6e0c589c9f22ff0e4ee805b37047d06f4b3504c5b750a0de"
+        },
+        {
+          "Kind": "False",
+          "Source": "flow-node:v1:e6ce8e540722a23892c3b567cc48666943754d510a69ef93c27ba9e15c269ad6",
+          "Target": "flow-node:v1:eee5afb82bf99706e00e1a709b4672d9de184f82b386256e88a8cac6ff40d3ae"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:4246ea948b3e4aad0b5829e8979471ddbe13e1923ea94506d758018ef0b418a2",
+          "Target": "flow-node:v1:3fe7d72d5791923d7ed51929eb7504cfff030c3522b9b5941ddba0c88486ea17"
+        }
+      ],
+      "Regions": [
+        {
+          "Kind": "Root",
+          "Parent": null,
+          "ExceptionType": null
+        }
+      ],
+      "Outcomes": [
+        {
+          "Kind": "NormalCompletion",
+          "Block": null
+        },
+        {
+          "Kind": "EscapingThrow",
+          "Block": 8
+        },
+        {
+          "Kind": "ExplicitReturn",
+          "Block": 9
+        }
+      ],
+      "ValueNodes": [
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "1"
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": "text",
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "one"
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "0"
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "other"
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        },
+        {
+          "Kind": "LocalDefinition",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": "text",
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        }
+      ],
+      "ValueEdges": [
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:277f02777eabc8ee9bbe9abcaaac54329cff5ce29c3f511e9454dca7cbbdf0b4",
+          "Target": "value-node:v1:e12914e6b6b06bc34d5189a7e32cd365ac9ce0fb64f9b766643c5f629411ae6a"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:5d69106ceeff43ddd5f40ccfbbe299faed8b502e3163ee3161c53020ed5aa4bc",
+          "Target": "value-node:v1:ae7899ffaf9b3749c5a228caa24a40cb0ceaaa06fc4d6e2d330d182a5f546f66"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:2e2957121870401559b3ec370e961f1f4204d9ee125576ea1194631a53c27ffd",
+          "Target": "value-node:v1:c5aeef044855c0028ccc0348e1c433ee39f8c15bee2965e762f63a6b675a11c0"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:ddf10bcca16608f1204516138374a396afd00d6711ce3a78f090aac36f011a71",
+          "Target": "value-node:v1:8d8c5c482c826472aefdfa80069a50a99a63580d3b3e1cb94ed8c3fb7b0e7c2d"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:95e80f52205ef963445e68d9e23e530b9fc8d61f31f2a8f6ad9334414f2301cd",
+          "Target": "value-node:v1:0b86c0a5df8ec4fb672a0512448a5642634dcb8cc10e192af01af9d0927848e4"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:886eb924752c7077ff7ae0e4bc5d096874780ccae7cb89acd1b4f0ecfcf9c516",
+          "Target": "value-node:v1:53639cce0c7c439dedfc933c7aa3b1dd6b9c777bc9b535b773223a1437f7449c"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:27448cbfd109838f207e90028e77726d0368056343914255f14918cd54c04b99",
+          "Target": "value-node:v1:95e80f52205ef963445e68d9e23e530b9fc8d61f31f2a8f6ad9334414f2301cd"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:50aa9b693b50a24a5040e7f8a50981c1181d4d2569cd7d0f62d4085f0b6ea908",
+          "Target": "value-node:v1:53639cce0c7c439dedfc933c7aa3b1dd6b9c777bc9b535b773223a1437f7449c"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:e12914e6b6b06bc34d5189a7e32cd365ac9ce0fb64f9b766643c5f629411ae6a",
+          "Target": "value-node:v1:54a9ead475bf3e32f7640f11cbccf2970eb4345e3d60d26c2aad875435420fc7"
+        },
+        {
+          "Kind": "Conversion",
+          "Source": "value-node:v1:54a9ead475bf3e32f7640f11cbccf2970eb4345e3d60d26c2aad875435420fc7",
+          "Target": "value-node:v1:192335b87344ae1124401b95fa429466eb15eec034e6b5e04938f70a82b694c6"
+        }
+      ],
+      "ControlDependences": [
+        {
+          "Decision": "flow-node:v1:5bbff08856d25b3d8093402ecfef256720d30893df959df454f9018db80a43b9",
+          "Controlled": "flow-node:v1:7220823a398aaa7c6e0c589c9f22ff0e4ee805b37047d06f4b3504c5b750a0de",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:5bbff08856d25b3d8093402ecfef256720d30893df959df454f9018db80a43b9",
+          "Controlled": "flow-node:v1:76616aa11e0518b29ad40907eb973ca790bb124e13581c71b915e60d9d478e6e",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:5bbff08856d25b3d8093402ecfef256720d30893df959df454f9018db80a43b9",
+          "Controlled": "flow-node:v1:c2d0e8bc26b641475bbda4b622be3196067ad65ea4fccee951bfd78687e1bf3a",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:5bbff08856d25b3d8093402ecfef256720d30893df959df454f9018db80a43b9",
+          "Controlled": "flow-node:v1:c5e4049f28cfe25c8381571fcbcf1c58a53151e1719dc408bdbf57b996b69b60",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:5bbff08856d25b3d8093402ecfef256720d30893df959df454f9018db80a43b9",
+          "Controlled": "flow-node:v1:e6ce8e540722a23892c3b567cc48666943754d510a69ef93c27ba9e15c269ad6",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:c2d0e8bc26b641475bbda4b622be3196067ad65ea4fccee951bfd78687e1bf3a",
+          "Controlled": "flow-node:v1:0195540dee20048a000e0eb94e670cc7caa09324470c13cd0011e485001a9413",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:c2d0e8bc26b641475bbda4b622be3196067ad65ea4fccee951bfd78687e1bf3a",
+          "Controlled": "flow-node:v1:2df79f8cb541e48360746598c187936604f3994075f0430e49e70b1da22f8d45",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:c2d0e8bc26b641475bbda4b622be3196067ad65ea4fccee951bfd78687e1bf3a",
+          "Controlled": "flow-node:v1:4dc21e659f8264591a5d36b4a2958f23d6e3e25da6dc43ef8a01cfd822f25770",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:c2d0e8bc26b641475bbda4b622be3196067ad65ea4fccee951bfd78687e1bf3a",
+          "Controlled": "flow-node:v1:4f21217491395abeb13c7cc705c186010d66724783297d90b65198e85c460dde",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:c2d0e8bc26b641475bbda4b622be3196067ad65ea4fccee951bfd78687e1bf3a",
+          "Controlled": "flow-node:v1:65699ff020dfb3c69b4752776d3bfcfbf02a5389afa15350446dcb7c137aea0b",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:c2d0e8bc26b641475bbda4b622be3196067ad65ea4fccee951bfd78687e1bf3a",
+          "Controlled": "flow-node:v1:962c8000514588d765d74f1129f0fe9bdf8ed8300c1b77ec43528b33756e0797",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:e6ce8e540722a23892c3b567cc48666943754d510a69ef93c27ba9e15c269ad6",
+          "Controlled": "flow-node:v1:3fe7d72d5791923d7ed51929eb7504cfff030c3522b9b5941ddba0c88486ea17",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:e6ce8e540722a23892c3b567cc48666943754d510a69ef93c27ba9e15c269ad6",
+          "Controlled": "flow-node:v1:4246ea948b3e4aad0b5829e8979471ddbe13e1923ea94506d758018ef0b418a2",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:e6ce8e540722a23892c3b567cc48666943754d510a69ef93c27ba9e15c269ad6",
+          "Controlled": "flow-node:v1:76616aa11e0518b29ad40907eb973ca790bb124e13581c71b915e60d9d478e6e",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:e6ce8e540722a23892c3b567cc48666943754d510a69ef93c27ba9e15c269ad6",
+          "Controlled": "flow-node:v1:c2d0e8bc26b641475bbda4b622be3196067ad65ea4fccee951bfd78687e1bf3a",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:e6ce8e540722a23892c3b567cc48666943754d510a69ef93c27ba9e15c269ad6",
+          "Controlled": "flow-node:v1:c5e4049f28cfe25c8381571fcbcf1c58a53151e1719dc408bdbf57b996b69b60",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:e6ce8e540722a23892c3b567cc48666943754d510a69ef93c27ba9e15c269ad6",
+          "Controlled": "flow-node:v1:eee5afb82bf99706e00e1a709b4672d9de184f82b386256e88a8cac6ff40d3ae",
+          "OnTrue": false
+        }
+      ],
+      "Summary": {
+        "IsComplete": false,
+        "Certainty": "Conservative",
+        "StateReadCount": 0,
+        "StateWriteCount": 0,
+        "ParameterFlows": [
+          {
+            "Name": "input",
+            "FlowsToReturn": true,
+            "InfluencesStateWrite": false
+          }
+        ]
+      }
+    },
+    {
+      "Name": "RethrowCaughtByOuter",
+      "FlowFingerprint": "852d8ac870995886aede5cb53418658ef49e6e174e11a924be52d7d6e5bac854",
+      "NodeCount": 10,
+      "EdgeCount": 9,
+      "RegionCount": 5,
+      "OutcomeCount": 2,
+      "ValueNodeCount": 5,
+      "ValueEdgeCount": 3,
+      "ControlDependenceCount": 0,
+      "Nodes": [
+        {
+          "Kind": "Invocation",
+          "Operation": "behavior-operation:v1:6b021be7514a165dabbea79b5afdae1d1cb3924025c7c7e8c86e5e9ffef06d8c",
+          "Target": "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc",
+          "IsDispatchable": false,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:18509690b6009de5ea390cdf7d9100cde0c0d0791b1030b5296134b30d152696",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Throw",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": true
+        },
+        {
+          "Kind": "Throw",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": false
+        },
+        {
+          "Kind": "Exit",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Entry",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:a1e3cd4e5251242b280921b9139caf4927cec5be3c30ac23a643d18d8a1c78d1",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:cefaf2361c0bba1d2fb7555bf6c5acec3f8493cada0189a1e7f466a3b41ecc7c",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:65f27016f0843269a02a69da1c83371103730b3c56cee52733747273110212a2",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Return",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        }
+      ],
+      "Edges": [
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:9526c31daa9d52f33ae4c4134fdeb5642a187e1654f327774af4238297cc11f0",
+          "Target": "flow-node:v1:db5f40aa78ae1612efb4bbb4d9bac2a7015dc052a709c8bdf923e606a55dc404"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:8151d7c8ebfeea44c63944b8819d9c0248ec1d05f1080333f9388ff6d621249c",
+          "Target": "flow-node:v1:bd8936d126346ba93b61b65943c51610c1d02e01949538676b318d3ff8b3ee0f"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:db5f40aa78ae1612efb4bbb4d9bac2a7015dc052a709c8bdf923e606a55dc404",
+          "Target": "flow-node:v1:5e69e6c4da8e2d3ddd9dd9083fc90f648146a9ceb71da1365d0276185a69bc98"
+        },
+        {
+          "Kind": "Rethrow",
+          "Source": "flow-node:v1:34ea3d74502fd64592fec7a6f76ae363596598e917aa966702a30d0e70135d6c",
+          "Target": "flow-node:v1:5e69e6c4da8e2d3ddd9dd9083fc90f648146a9ceb71da1365d0276185a69bc98"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:03f5133f18cd4e685ecb196ab0e3489d35096919256b6d58e5fd8ccf50302cc6",
+          "Target": "flow-node:v1:31f7d7abb6178c1faea14caec46b148c7a6b2d7116d58beab1f6aeb3963c70d4"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:4f10029aca1bd7dc6e257f64f920ca9a68146b454ea6da1e58b43e182ac7c417",
+          "Target": "flow-node:v1:5e69e6c4da8e2d3ddd9dd9083fc90f648146a9ceb71da1365d0276185a69bc98"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:bd8936d126346ba93b61b65943c51610c1d02e01949538676b318d3ff8b3ee0f",
+          "Target": "flow-node:v1:9dc1d8c1a1a30d85aa17bd8eec0a451381010d2c0a64c0034816d485d8ac7e15"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:31f7d7abb6178c1faea14caec46b148c7a6b2d7116d58beab1f6aeb3963c70d4",
+          "Target": "flow-node:v1:4f10029aca1bd7dc6e257f64f920ca9a68146b454ea6da1e58b43e182ac7c417"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:9dc1d8c1a1a30d85aa17bd8eec0a451381010d2c0a64c0034816d485d8ac7e15",
+          "Target": "flow-node:v1:03f5133f18cd4e685ecb196ab0e3489d35096919256b6d58e5fd8ccf50302cc6"
+        }
+      ],
+      "Regions": [
+        {
+          "Kind": "Root",
+          "Parent": null,
+          "ExceptionType": null
+        },
+        {
+          "Kind": "Try",
+          "Parent": "flow-region:v1:5e9e0ca43e9dd88f861d93f938bdf030ce4b57860b2d505c0e287a7713800052",
+          "ExceptionType": null
+        },
+        {
+          "Kind": "Try",
+          "Parent": "flow-region:v1:6c485bda9bd81349452d186e0fb36eaea3e995c655ebd11b8153586a9965a915",
+          "ExceptionType": null
+        },
+        {
+          "Kind": "Catch",
+          "Parent": "flow-region:v1:6c485bda9bd81349452d186e0fb36eaea3e995c655ebd11b8153586a9965a915",
+          "ExceptionType": "System.InvalidOperationException"
+        },
+        {
+          "Kind": "Catch",
+          "Parent": "flow-region:v1:5e9e0ca43e9dd88f861d93f938bdf030ce4b57860b2d505c0e287a7713800052",
+          "ExceptionType": "System.InvalidOperationException"
+        }
+      ],
+      "Outcomes": [
+        {
+          "Kind": "NormalCompletion",
+          "Block": null
+        },
+        {
+          "Kind": "ExplicitReturn",
+          "Block": 3
+        }
+      ],
+      "ValueNodes": [
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "2"
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "x"
+        }
+      ],
+      "ValueEdges": [
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:8ffd747641d4ae4c5461dcc1e1290b3d6ac4d56ca950f2381e7d84a6e72f1acd",
+          "Target": "value-node:v1:ae1764d544aae1ab4c51a21ac333d8b185351a4a68db9b691ed3dd017fe8e79f"
+        },
+        {
+          "Kind": "Conversion",
+          "Source": "value-node:v1:ae1764d544aae1ab4c51a21ac333d8b185351a4a68db9b691ed3dd017fe8e79f",
+          "Target": "value-node:v1:81dcfa13e6b01753c163d21553ac8ebf3e1bed0399af9e65434eb1f3dd7df15d"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:fc5da9a526dd9ef4a0ebf8040103835f71754510d7b58e49f922b8aee788d73d",
+          "Target": "value-node:v1:8ffd747641d4ae4c5461dcc1e1290b3d6ac4d56ca950f2381e7d84a6e72f1acd"
+        }
+      ],
+      "ControlDependences": [],
+      "Summary": {
+        "IsComplete": false,
+        "Certainty": "Conservative",
+        "StateReadCount": 0,
+        "StateWriteCount": 0,
+        "ParameterFlows": [
+          {
+            "Name": "input",
+            "FlowsToReturn": false,
+            "InfluencesStateWrite": false
+          }
+        ]
+      }
+    },
+    {
+      "Name": "GenericCaughtThrow",
+      "FlowFingerprint": "6ebea80d52c877462817c934916d33a69ef85f8412b9b7a53b768f83b23790c2",
+      "NodeCount": 7,
+      "EdgeCount": 6,
+      "RegionCount": 3,
+      "OutcomeCount": 2,
+      "ValueNodeCount": 3,
+      "ValueEdgeCount": 1,
+      "ControlDependenceCount": 0,
+      "Nodes": [
+        {
+          "Kind": "Exit",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:85488ed062e6eae97daa10d4b11cfc05bc68447680b791c1e0afacb03f221931",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:20d54fbc23435355eac81951c5b5fc85d623863ecbcf1b4a6d0a2be8cf1d66b6",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Entry",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Throw",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": false
+        },
+        {
+          "Kind": "Return",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:bb9e0277286af686debab59642dd472d41f735c922e6e317cb629726875fbbb4",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        }
+      ],
+      "Edges": [
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:bf72f75609d10c1885ced3260ec943c5c441bfa97a42696237d5c48ec0d8931f",
+          "Target": "flow-node:v1:2eb70c8bb527b8b83cd201be8ec82741bf76a430e5ccd16a905b2e7baed476dd"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:e54ea5e834beea0d39977e9e39a557c23b13558b134aea8ea63043e6a46d6eca",
+          "Target": "flow-node:v1:bf72f75609d10c1885ced3260ec943c5c441bfa97a42696237d5c48ec0d8931f"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:a761ca77345571ebac45b9da01ea960f93335ce6a2246f9f0bbfa2d0c012cb09",
+          "Target": "flow-node:v1:2eb70c8bb527b8b83cd201be8ec82741bf76a430e5ccd16a905b2e7baed476dd"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:a17522c003cb04a8b733822b5ea608f73dc2c7b123d6d372041fdcfbc21487ae",
+          "Target": "flow-node:v1:3922a2d26b8cc9d45317d16514d1315003646253e0ae6b0f3dadea462ea1bd60"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:3922a2d26b8cc9d45317d16514d1315003646253e0ae6b0f3dadea462ea1bd60",
+          "Target": "flow-node:v1:3662cae7a2e47c872095cb96341311fd65986a2478fbc7aa860a124d269f3555"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:3662cae7a2e47c872095cb96341311fd65986a2478fbc7aa860a124d269f3555",
+          "Target": "flow-node:v1:a761ca77345571ebac45b9da01ea960f93335ce6a2246f9f0bbfa2d0c012cb09"
+        }
+      ],
+      "Regions": [
+        {
+          "Kind": "Root",
+          "Parent": null,
+          "ExceptionType": null
+        },
+        {
+          "Kind": "Try",
+          "Parent": "flow-region:v1:ee2cb2be0226bc8296e306edc8e2fd7d1fe41456dd1ae9fee4046c1efe057ab3",
+          "ExceptionType": null
+        },
+        {
+          "Kind": "Catch",
+          "Parent": "flow-region:v1:ee2cb2be0226bc8296e306edc8e2fd7d1fe41456dd1ae9fee4046c1efe057ab3",
+          "ExceptionType": "System.InvalidOperationException"
+        }
+      ],
+      "Outcomes": [
+        {
+          "Kind": "NormalCompletion",
+          "Block": null
+        },
+        {
+          "Kind": "ExplicitReturn",
+          "Block": 2
+        }
+      ],
+      "ValueNodes": [
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "1"
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        }
+      ],
+      "ValueEdges": [
+        {
+          "Kind": "Conversion",
+          "Source": "value-node:v1:d88954884ac91ccce64a7808a14eaec54d82a10d5710a565042e1c4ee904a3a5",
+          "Target": "value-node:v1:87c07db95795e76b23b111e5286bcb9b82d2895eb7d17b7b2a44b36022078654"
+        }
+      ],
+      "ControlDependences": [],
+      "Summary": {
+        "IsComplete": true,
+        "Certainty": "Exact",
+        "StateReadCount": 0,
+        "StateWriteCount": 0,
+        "ParameterFlows": [
+          {
+            "Name": "exception",
+            "FlowsToReturn": false,
+            "InfluencesStateWrite": false
+          }
+        ]
+      }
+    },
+    {
+      "Name": "SwitchShape",
+      "FlowFingerprint": "650f8228b9b7236c89e354d4f299bcbfb52a522c50f88d8db68fd1bc8381981b",
+      "NodeCount": 17,
+      "EdgeCount": 19,
+      "RegionCount": 1,
+      "OutcomeCount": 2,
+      "ValueNodeCount": 15,
+      "ValueEdgeCount": 8,
+      "ControlDependenceCount": 10,
+      "Nodes": [
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:fd46dbc45ba66e44d6924e0e6b77fa3de110c018d8e934ce56a93e0c704c5dac",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Decision",
+          "Operation": "behavior-operation:v1:3f1a394f055039dfc8884af76b916d7b1c46fb87c86c3634d2a6576a3ae027bd",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Entry",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:28b53074bb7a24d1accfc2e8e452268cfa0e1db14d5d05f4ebc10da17798738e",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Decision",
+          "Operation": "behavior-operation:v1:e653d76f2ce3a75708da695a5b01fe62300b03c2e6d3a03981c6b0c0497aee9e",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:6abfed80bf86c97774d48bf027e67fa9ddfdda9326ae46c717286cfbd5855d00",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:7390d61904046635e27f08ccf3324ad8f90e1a86e0b798279cb34f86bcb79eab",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:bedddb2823b110ea21e85c306cca330f702e373001fe918c6a9a5522d72d38e6",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:75dc81f5c7269afd7f9ba5b8f665ae3349485620a4dc9c7364b1f87d0380c5f9",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Exit",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Return",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:2c27e5d011026862be3e3c1d89c414c54f59cfa61831aa70ba8edba6516263bd",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Throw",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": false
+        },
+        {
+          "Kind": "Invocation",
+          "Operation": "behavior-operation:v1:bb7517e1dcf122e1ae66d9d088b7b9d9b7aa02e515908e320c512990bf1e5f96",
+          "Target": "method:v1:4e2e7d9f24cf269ff045c7b946eadac5e12d66e6de165074e7f243ed43b034d9",
+          "IsDispatchable": false,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Decision",
+          "Operation": "behavior-operation:v1:a7b5cb94a81ca58eefbe94f590beebee9c32677d02e805a77a4d397569283d45",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:1e954e5a83d4c5c65bb0eac79f52e3ec0f2063ca4a5dc719c67bf9f166d6d4df",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:d0b0085858098b8fb6556e2c61ecbe16bf4b49e59893c7e1d92a3aa193b94d5e",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        }
+      ],
+      "Edges": [
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:1b1faa4622e4f3ddc6250a81480a60b30a826ca33f2c82319f094d598b7708c4",
+          "Target": "flow-node:v1:8e98b1eafad8ee09669dca667ddf2cbc8bf900206498910cca54d5094b530648"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:0e5a3c8897ee497db42cac0128abf2811281b41220976ea748ad08a1c50c5bd6",
+          "Target": "flow-node:v1:64596799495e9390def8cf78f7e503bb667be049637b6f9703871c79f66826e4"
+        },
+        {
+          "Kind": "False",
+          "Source": "flow-node:v1:0645610d794fe7a26984393df1584b8464fc9da070dd9e2dd657424c9cfe5296",
+          "Target": "flow-node:v1:5bc39446a932ffe300b51a1b04af5c5a6c5c43e27a5614ca881ee9bf4527ffb0"
+        },
+        {
+          "Kind": "True",
+          "Source": "flow-node:v1:3262e6ba87e650593725156e94177536e686d28401a2d75d41d02ea516779e99",
+          "Target": "flow-node:v1:a92e9b5c128e82b0b4e1b1d7c69c86867c09e3d8727cfc498d2e8a67e911f590"
+        },
+        {
+          "Kind": "False",
+          "Source": "flow-node:v1:ab86a78b32225b9ee82e9e1eb82156dd89752aebcb5134178c64cf9358c4198a",
+          "Target": "flow-node:v1:04898bceac16aa8314d1ab1ce4ccaeda7390390543ceaa4a42221a88e5ce713f"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:64596799495e9390def8cf78f7e503bb667be049637b6f9703871c79f66826e4",
+          "Target": "flow-node:v1:dda1753f0c6c8a322c500363ddfb60718a63d205a93fb4bec88fc05d97b741ef"
+        },
+        {
+          "Kind": "True",
+          "Source": "flow-node:v1:ab86a78b32225b9ee82e9e1eb82156dd89752aebcb5134178c64cf9358c4198a",
+          "Target": "flow-node:v1:0645610d794fe7a26984393df1584b8464fc9da070dd9e2dd657424c9cfe5296"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:79563f842f0dabb187dbc8229e26e4358d0805ea6ea072b20045fe59333f2ba9",
+          "Target": "flow-node:v1:1b1faa4622e4f3ddc6250a81480a60b30a826ca33f2c82319f094d598b7708c4"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:5bc39446a932ffe300b51a1b04af5c5a6c5c43e27a5614ca881ee9bf4527ffb0",
+          "Target": "flow-node:v1:79563f842f0dabb187dbc8229e26e4358d0805ea6ea072b20045fe59333f2ba9"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:a92e9b5c128e82b0b4e1b1d7c69c86867c09e3d8727cfc498d2e8a67e911f590",
+          "Target": "flow-node:v1:a3d7dedd17dce896deaf0382f29eb6d8b481f8821cee05f5b0cceba27451254b"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:cf02b6adbd1457d3d4f848df5852d70a540263b4dd054197988c967e5e711658",
+          "Target": "flow-node:v1:1b1faa4622e4f3ddc6250a81480a60b30a826ca33f2c82319f094d598b7708c4"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:7d5d1b7555d1d1c2ca5440a0f8ca2bb0dd8dea2d5ef41c11238abaf47b937000",
+          "Target": "flow-node:v1:1b1faa4622e4f3ddc6250a81480a60b30a826ca33f2c82319f094d598b7708c4"
+        },
+        {
+          "Kind": "False",
+          "Source": "flow-node:v1:3262e6ba87e650593725156e94177536e686d28401a2d75d41d02ea516779e99",
+          "Target": "flow-node:v1:a08f151273bc146f8bf10d8c1a429ff9ef389e56ddda0fab334c7461b600a8e9"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:04898bceac16aa8314d1ab1ce4ccaeda7390390543ceaa4a42221a88e5ce713f",
+          "Target": "flow-node:v1:cf02b6adbd1457d3d4f848df5852d70a540263b4dd054197988c967e5e711658"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:8e98b1eafad8ee09669dca667ddf2cbc8bf900206498910cca54d5094b530648",
+          "Target": "flow-node:v1:803a573ffeaf3edd73b0d3906fa0e9ec2eb72fcde21c61b2af8f93e297ee2dd2"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:a3d7dedd17dce896deaf0382f29eb6d8b481f8821cee05f5b0cceba27451254b",
+          "Target": "flow-node:v1:803a573ffeaf3edd73b0d3906fa0e9ec2eb72fcde21c61b2af8f93e297ee2dd2"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:a08f151273bc146f8bf10d8c1a429ff9ef389e56ddda0fab334c7461b600a8e9",
+          "Target": "flow-node:v1:7d5d1b7555d1d1c2ca5440a0f8ca2bb0dd8dea2d5ef41c11238abaf47b937000"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:dda1753f0c6c8a322c500363ddfb60718a63d205a93fb4bec88fc05d97b741ef",
+          "Target": "flow-node:v1:ab86a78b32225b9ee82e9e1eb82156dd89752aebcb5134178c64cf9358c4198a"
+        },
+        {
+          "Kind": "True",
+          "Source": "flow-node:v1:0645610d794fe7a26984393df1584b8464fc9da070dd9e2dd657424c9cfe5296",
+          "Target": "flow-node:v1:3262e6ba87e650593725156e94177536e686d28401a2d75d41d02ea516779e99"
+        }
+      ],
+      "Regions": [
+        {
+          "Kind": "Root",
+          "Parent": null,
+          "ExceptionType": null
+        }
+      ],
+      "Outcomes": [
+        {
+          "Kind": "NormalCompletion",
+          "Block": null
+        },
+        {
+          "Kind": "ExplicitReturn",
+          "Block": 8
+        }
+      ],
+      "ValueNodes": [
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "1"
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "2"
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "one"
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "other"
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "two"
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        }
+      ],
+      "ValueEdges": [
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:1f904c46e0e03db74f715eefe2eb9b31338dad584fc51d7f3335e4dd83c570d4",
+          "Target": "value-node:v1:bdaf20c81a4e46249aa124b9346e7d477749d1706f06a11267e29547f5884c47"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:bdaf20c81a4e46249aa124b9346e7d477749d1706f06a11267e29547f5884c47",
+          "Target": "value-node:v1:3a84c50ed33939a1c98cfa77034e7d146bb9bcac422559b40ac26368ae1e5f5f"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:63a25ac06203fca0b6a7339c8c62b656c0ec484a978d42455213dda2cfaf7f23",
+          "Target": "value-node:v1:35dee8a3090a5645a245f93fdf1fb04e474daad8d28e3ac577db19ed36b3028b"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:35435d81068688af965102799a9cfc6abc2149896a5b77029bf4a15808d00658",
+          "Target": "value-node:v1:1fafccca8d7165d816ff735716dcde1d1deec49c160ee952b687e20b425b6cfa"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:d2f26a12ecaa2550f2ea8e71c618f7816a59a901927f91cd089d547085543f81",
+          "Target": "value-node:v1:5fc526373a5b44c99af8c52e6f3c524daa24db35cc4d4c0a0c8a16a5ba2f50d8"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:6f4c157b03f5e8c0aeca134f00727d422dee30cb518405af0ba4172fa8220156",
+          "Target": "value-node:v1:75e925db078dae0bc1a641970dbdfa3cf200a3b50505f280b2c4f5314dc86abb"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:5269feb49ca2b8c6ead543df42d464d55823008f8896f67af9196ab532da5e23",
+          "Target": "value-node:v1:63a25ac06203fca0b6a7339c8c62b656c0ec484a978d42455213dda2cfaf7f23"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:aa7835acf63b2efdb068a2211839d35ef25083b6372f0387d4c28f7d3a966250",
+          "Target": "value-node:v1:f0828f4c77a1998e2b100d7971358db6cf8dea4e84047e68dce732eb1ca0039a"
+        }
+      ],
+      "ControlDependences": [
+        {
+          "Decision": "flow-node:v1:0645610d794fe7a26984393df1584b8464fc9da070dd9e2dd657424c9cfe5296",
+          "Controlled": "flow-node:v1:3262e6ba87e650593725156e94177536e686d28401a2d75d41d02ea516779e99",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:0645610d794fe7a26984393df1584b8464fc9da070dd9e2dd657424c9cfe5296",
+          "Controlled": "flow-node:v1:5bc39446a932ffe300b51a1b04af5c5a6c5c43e27a5614ca881ee9bf4527ffb0",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:0645610d794fe7a26984393df1584b8464fc9da070dd9e2dd657424c9cfe5296",
+          "Controlled": "flow-node:v1:8e98b1eafad8ee09669dca667ddf2cbc8bf900206498910cca54d5094b530648",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:3262e6ba87e650593725156e94177536e686d28401a2d75d41d02ea516779e99",
+          "Controlled": "flow-node:v1:8e98b1eafad8ee09669dca667ddf2cbc8bf900206498910cca54d5094b530648",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:3262e6ba87e650593725156e94177536e686d28401a2d75d41d02ea516779e99",
+          "Controlled": "flow-node:v1:a08f151273bc146f8bf10d8c1a429ff9ef389e56ddda0fab334c7461b600a8e9",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:3262e6ba87e650593725156e94177536e686d28401a2d75d41d02ea516779e99",
+          "Controlled": "flow-node:v1:a3d7dedd17dce896deaf0382f29eb6d8b481f8821cee05f5b0cceba27451254b",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:3262e6ba87e650593725156e94177536e686d28401a2d75d41d02ea516779e99",
+          "Controlled": "flow-node:v1:a92e9b5c128e82b0b4e1b1d7c69c86867c09e3d8727cfc498d2e8a67e911f590",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:ab86a78b32225b9ee82e9e1eb82156dd89752aebcb5134178c64cf9358c4198a",
+          "Controlled": "flow-node:v1:04898bceac16aa8314d1ab1ce4ccaeda7390390543ceaa4a42221a88e5ce713f",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:ab86a78b32225b9ee82e9e1eb82156dd89752aebcb5134178c64cf9358c4198a",
+          "Controlled": "flow-node:v1:0645610d794fe7a26984393df1584b8464fc9da070dd9e2dd657424c9cfe5296",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:ab86a78b32225b9ee82e9e1eb82156dd89752aebcb5134178c64cf9358c4198a",
+          "Controlled": "flow-node:v1:8e98b1eafad8ee09669dca667ddf2cbc8bf900206498910cca54d5094b530648",
+          "OnTrue": false
+        }
+      ],
+      "Summary": {
+        "IsComplete": false,
+        "Certainty": "Conservative",
+        "StateReadCount": 0,
+        "StateWriteCount": 0,
+        "ParameterFlows": [
+          {
+            "Name": "input",
+            "FlowsToReturn": false,
+            "InfluencesStateWrite": false
+          }
+        ]
+      }
+    },
+    {
+      "Name": "ThrowShape",
+      "FlowFingerprint": "46245181fde437cf71bf9de3fffd0863b359831c735d65a5d37c1d24b140d548",
+      "NodeCount": 15,
+      "EdgeCount": 14,
+      "RegionCount": 5,
+      "OutcomeCount": 3,
+      "ValueNodeCount": 11,
+      "ValueEdgeCount": 7,
+      "ControlDependenceCount": 6,
+      "Nodes": [
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:f448e8626484b61dab027041c123455cf81660f20266e456da33b5fb316b12c1",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:02a7bd3d2020e66186b378446e6032fa7f820f2d97b33c4f33be648a182bcd11",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Return",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:484b0b20b94559bcc7a19a849d5f50d3ae886937cc5a69f00a529d9a93aea9e3",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Decision",
+          "Operation": "behavior-operation:v1:fedfb14365901f2ecb45571b32e2df26f7b0c98fce919177e6f8cd7d889029a7",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Exit",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Entry",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Invocation",
+          "Operation": "behavior-operation:v1:a3b3c6b50ba4a3748359e1bab8e3a38cf943285f1ea89bb1492b183d17250958",
+          "Target": "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc",
+          "IsDispatchable": false,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:782b068358aca718d0ebd176e6420c3596cdafd59e865641c56c21e214e9b7d0",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:63066449abd30f08d7e20845ceb0cd3ebffc3dbe05d5114ba734862a2489deb2",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Invocation",
+          "Operation": "behavior-operation:v1:aa8b07e378f513ec4e79973123c7ba5eca17fd950cb1dd4f55aced37c61f6f52",
+          "Target": "method:v1:4d6b62981e8f8136ebd05462ff347dab0121855ab573bc73466869089934e96f",
+          "IsDispatchable": false,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:f8edaaa710a058916196e260b4dc20a7defdc71b6bf1ae7dfda01f62db300f48",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:b03ffbd9a6d520be9bb406be0c20cc9c48723558e0f87992a469298036671714",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Throw",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": true
+        },
+        {
+          "Kind": "Throw",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": false
+        }
+      ],
+      "Edges": [
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:166f37fe933238b486e8bb36f0b2ab6aacd8236006cc4e0faaa4b57e6a2f8bd6",
+          "Target": "flow-node:v1:03849e0d9f74d24f75a920fd4c17f677a3f11a99915aa870d3d0d02e9808e2e1"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:a45745903eb849ea7db51a2140500f661546a4bfddfa9ac37be0f12b49a9af19",
+          "Target": "flow-node:v1:9176a3820ba617364650d194809530c8780be7952c32c2b0579d9e1178ee2f9e"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:7ff2347eb3451d013a4ce21313431d58295ae86bd789016632a9a40990400f15",
+          "Target": "flow-node:v1:983b58715e9cee8ae1b1fdf0f15bb3e734337bc07e63e335f4ea4bdf12cb3296"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:8d415f5fc476590da623529fa4492378aaa1512c6758a3360d66c241b4679a5f",
+          "Target": "flow-node:v1:a45745903eb849ea7db51a2140500f661546a4bfddfa9ac37be0f12b49a9af19"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:7e771edc1c2ebe355fa43a6cdfc868a3728a84fa51fceb9de658a8cf5966ebf2",
+          "Target": "flow-node:v1:549eacc71e759806ef3f21c9c48362529937f9c8c447933934efc7654a248067"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:03849e0d9f74d24f75a920fd4c17f677a3f11a99915aa870d3d0d02e9808e2e1",
+          "Target": "flow-node:v1:7ff2347eb3451d013a4ce21313431d58295ae86bd789016632a9a40990400f15"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:8618ee714c92c31af84c909eb06ffa1f3d6c4669c26516f5e40ffb8c089a7143",
+          "Target": "flow-node:v1:2df87b80942c37817a52ba55b270db95c6da09fa20d2889a47c23a16b2f677de"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:d9ed4e539a42bb348ae72af94bd9b4d2dd2cf1f68a0533a3444e653640f41f23",
+          "Target": "flow-node:v1:654321973bb0c2e28acc096a6376c63d1c3e1496b8751410925edb67135b8fba"
+        },
+        {
+          "Kind": "Rethrow",
+          "Source": "flow-node:v1:d829a26b42850ffe65db9468be3ca9e70216ce41fcea4c8c295c2f2faf5b8855",
+          "Target": "flow-node:v1:654321973bb0c2e28acc096a6376c63d1c3e1496b8751410925edb67135b8fba"
+        },
+        {
+          "Kind": "True",
+          "Source": "flow-node:v1:549eacc71e759806ef3f21c9c48362529937f9c8c447933934efc7654a248067",
+          "Target": "flow-node:v1:8618ee714c92c31af84c909eb06ffa1f3d6c4669c26516f5e40ffb8c089a7143"
+        },
+        {
+          "Kind": "False",
+          "Source": "flow-node:v1:549eacc71e759806ef3f21c9c48362529937f9c8c447933934efc7654a248067",
+          "Target": "flow-node:v1:166f37fe933238b486e8bb36f0b2ab6aacd8236006cc4e0faaa4b57e6a2f8bd6"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:9176a3820ba617364650d194809530c8780be7952c32c2b0579d9e1178ee2f9e",
+          "Target": "flow-node:v1:3c0fc5f2b6975655fd22ab6a71235e77ae232f00ccf3c949979ec4e637977bd8"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:983b58715e9cee8ae1b1fdf0f15bb3e734337bc07e63e335f4ea4bdf12cb3296",
+          "Target": "flow-node:v1:d9ed4e539a42bb348ae72af94bd9b4d2dd2cf1f68a0533a3444e653640f41f23"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:2df87b80942c37817a52ba55b270db95c6da09fa20d2889a47c23a16b2f677de",
+          "Target": "flow-node:v1:654321973bb0c2e28acc096a6376c63d1c3e1496b8751410925edb67135b8fba"
+        }
+      ],
+      "Regions": [
+        {
+          "Kind": "Root",
+          "Parent": null,
+          "ExceptionType": null
+        },
+        {
+          "Kind": "Try",
+          "Parent": "flow-region:v1:a0c4d3ea8dd8668619b196231de7a14ffcf1153c03f47ae5205d33575b8e598b",
+          "ExceptionType": null
+        },
+        {
+          "Kind": "Try",
+          "Parent": "flow-region:v1:4a2d853e2a992897d960724fcf58c684a04303a6cb69917a6420b55737f478ea",
+          "ExceptionType": null
+        },
+        {
+          "Kind": "Catch",
+          "Parent": "flow-region:v1:4a2d853e2a992897d960724fcf58c684a04303a6cb69917a6420b55737f478ea",
+          "ExceptionType": "System.InvalidOperationException"
+        },
+        {
+          "Kind": "Finally",
+          "Parent": "flow-region:v1:a0c4d3ea8dd8668619b196231de7a14ffcf1153c03f47ae5205d33575b8e598b",
+          "ExceptionType": null
+        }
+      ],
+      "Outcomes": [
+        {
+          "Kind": "NormalCompletion",
+          "Block": null
+        },
+        {
+          "Kind": "ExplicitReturn",
+          "Block": 3
+        },
+        {
+          "Kind": "EscapingThrow",
+          "Block": 4
+        }
+      ],
+      "ValueNodes": [
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "negative"
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "InvocationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "0"
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        }
+      ],
+      "ValueEdges": [
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:421fe4981da49ba83fb034335a0909bd4b666354f281be7bc5a8e6d75f911780",
+          "Target": "value-node:v1:16205fdbecef26cf42fa42ed90ec3a86811a387565048ab4e5c374fcd2df3211"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:1c91949963b8e9b8212018ab581f16fb9addada2739458d33f95151d579e36b0",
+          "Target": "value-node:v1:d4187014c647a4660736aa1bc0e3840f4e887d0b23bf1f3464c80d290ae1725e"
+        },
+        {
+          "Kind": "Conversion",
+          "Source": "value-node:v1:b8e6a19c3cb9908caf30f6311d1c6d7e837934932074c1f2b9309e2bd4ad666d",
+          "Target": "value-node:v1:24628799ab10e4e5390726fa983a7add038123b459a501cd43349fe27ef250bd"
+        },
+        {
+          "Kind": "Argument",
+          "Source": "value-node:v1:ce17e7962955d1f6625abc051c1ccb49780047b36d6a664d38a60665320ac37d",
+          "Target": "value-node:v1:383d5bcf006ac0006cfcd253ee5a591464d997e3163d0c7391edd461623506fa"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:ce17e7962955d1f6625abc051c1ccb49780047b36d6a664d38a60665320ac37d",
+          "Target": "value-node:v1:649f50b66ca09e24d754262b3a7eb09ad47f4320a90978c09efbed01f483b8d7"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:4b280508483583df461f26cbdafd9867a660a0e82c3e7048f8a1cbbacad3b66e",
+          "Target": "value-node:v1:16205fdbecef26cf42fa42ed90ec3a86811a387565048ab4e5c374fcd2df3211"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:d4187014c647a4660736aa1bc0e3840f4e887d0b23bf1f3464c80d290ae1725e",
+          "Target": "value-node:v1:b8e6a19c3cb9908caf30f6311d1c6d7e837934932074c1f2b9309e2bd4ad666d"
+        }
+      ],
+      "ControlDependences": [
+        {
+          "Decision": "flow-node:v1:549eacc71e759806ef3f21c9c48362529937f9c8c447933934efc7654a248067",
+          "Controlled": "flow-node:v1:166f37fe933238b486e8bb36f0b2ab6aacd8236006cc4e0faaa4b57e6a2f8bd6",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:549eacc71e759806ef3f21c9c48362529937f9c8c447933934efc7654a248067",
+          "Controlled": "flow-node:v1:2df87b80942c37817a52ba55b270db95c6da09fa20d2889a47c23a16b2f677de",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:549eacc71e759806ef3f21c9c48362529937f9c8c447933934efc7654a248067",
+          "Controlled": "flow-node:v1:7ff2347eb3451d013a4ce21313431d58295ae86bd789016632a9a40990400f15",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:549eacc71e759806ef3f21c9c48362529937f9c8c447933934efc7654a248067",
+          "Controlled": "flow-node:v1:8618ee714c92c31af84c909eb06ffa1f3d6c4669c26516f5e40ffb8c089a7143",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:549eacc71e759806ef3f21c9c48362529937f9c8c447933934efc7654a248067",
+          "Controlled": "flow-node:v1:983b58715e9cee8ae1b1fdf0f15bb3e734337bc07e63e335f4ea4bdf12cb3296",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:549eacc71e759806ef3f21c9c48362529937f9c8c447933934efc7654a248067",
+          "Controlled": "flow-node:v1:d9ed4e539a42bb348ae72af94bd9b4d2dd2cf1f68a0533a3444e653640f41f23",
+          "OnTrue": false
+        }
+      ],
+      "Summary": {
+        "IsComplete": false,
+        "Certainty": "Conservative",
+        "StateReadCount": 0,
+        "StateWriteCount": 0,
+        "ParameterFlows": [
+          {
+            "Name": "input",
+            "FlowsToReturn": true,
+            "InfluencesStateWrite": false
+          }
+        ]
+      }
+    },
+    {
+      "Name": "WrongCatchType",
+      "FlowFingerprint": "a10b1680460ac6a9de40fa4f8789fbb81645fef06d80d6a72e57cda6df491f34",
+      "NodeCount": 9,
+      "EdgeCount": 8,
+      "RegionCount": 3,
+      "OutcomeCount": 3,
+      "ValueNodeCount": 5,
+      "ValueEdgeCount": 3,
+      "ControlDependenceCount": 0,
+      "Nodes": [
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:5749edcdd5451b4a9a7e45ca1c6b5dc560c7e16dbc14d3d476fecf7bd28a9edc",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Entry",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Invocation",
+          "Operation": "behavior-operation:v1:83ec93b1e94e30105752cc1237b878d01ec198e3d1afd5d1533fd6ff96bd9f19",
+          "Target": "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc",
+          "IsDispatchable": false,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Return",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:5cd65b8c049248f91ff88901fd1c6873acbee344dd160764dd6afb8d10909cdf",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:0472adeaab0775efefc5c192254733c697ebb8a15f2532edd51545ba6d4cc139",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Exit",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:03253842677ff9f222a1cc90de52dc732d69252a7a5f22a90262f5fa11d13170",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Throw",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": false
+        }
+      ],
+      "Edges": [
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:3142ed994aa9c38c30b4c108eb4bc241f4c725af5011c08a4f788ac028ea6b59",
+          "Target": "flow-node:v1:c30de73969407c71ca66e8f3b3fa7f86dc49fb25fd1e6de8423c38037a42d0d4"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:11a892b9976373442e6c7a02ae2193216cc14137a3ce76c14f71d80c8ec03efc",
+          "Target": "flow-node:v1:1c0f8638ca4a79b60a51c5dc8bf05878087f20e1c00c52c02e854eb9b25cf4ab"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:7b8900de084db2d2197cc18b28e0dd2e67772fb665fa352bf6dfc5703779276d",
+          "Target": "flow-node:v1:11a892b9976373442e6c7a02ae2193216cc14137a3ce76c14f71d80c8ec03efc"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:c30de73969407c71ca66e8f3b3fa7f86dc49fb25fd1e6de8423c38037a42d0d4",
+          "Target": "flow-node:v1:859815aa4dd28dfc099ba6481bbfe5abd7a6cc193954a78b49052ee6b7fd40d0"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:1943d755cc2ba0f7d126bc8aee5999e2cf322d17ad74ec62ad7f47f6998343dd",
+          "Target": "flow-node:v1:7b8900de084db2d2197cc18b28e0dd2e67772fb665fa352bf6dfc5703779276d"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:1c0f8638ca4a79b60a51c5dc8bf05878087f20e1c00c52c02e854eb9b25cf4ab",
+          "Target": "flow-node:v1:3142ed994aa9c38c30b4c108eb4bc241f4c725af5011c08a4f788ac028ea6b59"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:921e0615b7f074bd489ecda010e2360d846c70dc3c4f9f6a5800954283e6e238",
+          "Target": "flow-node:v1:1e11543899b53cabf00d1394cc7669b7b0cf807638e3a33dc29b798778d58fbc"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:1e11543899b53cabf00d1394cc7669b7b0cf807638e3a33dc29b798778d58fbc",
+          "Target": "flow-node:v1:859815aa4dd28dfc099ba6481bbfe5abd7a6cc193954a78b49052ee6b7fd40d0"
+        }
+      ],
+      "Regions": [
+        {
+          "Kind": "Root",
+          "Parent": null,
+          "ExceptionType": null
+        },
+        {
+          "Kind": "Try",
+          "Parent": "flow-region:v1:74a38be23b376ca8d47abcbb02ecc1b7345983ad2494f537bd1baa2c89856bcd",
+          "ExceptionType": null
+        },
+        {
+          "Kind": "Catch",
+          "Parent": "flow-region:v1:74a38be23b376ca8d47abcbb02ecc1b7345983ad2494f537bd1baa2c89856bcd",
+          "ExceptionType": "System.ArgumentException"
+        }
+      ],
+      "Outcomes": [
+        {
+          "Kind": "NormalCompletion",
+          "Block": null
+        },
+        {
+          "Kind": "EscapingThrow",
+          "Block": 1
+        },
+        {
+          "Kind": "ExplicitReturn",
+          "Block": 2
+        }
+      ],
+      "ValueNodes": [
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "x"
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "1"
+        }
+      ],
+      "ValueEdges": [
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:9062004b058954471f4bcea078a74735269f7ebaf7b984bc9630d1b91eff7468",
+          "Target": "value-node:v1:9f402cf1f906d6b0eacd7a4f3cc4040124d11a32f488945afab6d1ba2affed12"
+        },
+        {
+          "Kind": "Conversion",
+          "Source": "value-node:v1:9f402cf1f906d6b0eacd7a4f3cc4040124d11a32f488945afab6d1ba2affed12",
+          "Target": "value-node:v1:b35245b9c3b4aa2f1f849f3e4556a0fc87403d150c786d1792bbbc7917254152"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:93b1ff41a86aac186fa16cb94fa95bd01e0b0ef37cdf326a501a4973a91f066b",
+          "Target": "value-node:v1:9062004b058954471f4bcea078a74735269f7ebaf7b984bc9630d1b91eff7468"
+        }
+      ],
+      "ControlDependences": [],
+      "Summary": {
+        "IsComplete": false,
+        "Certainty": "Conservative",
+        "StateReadCount": 0,
+        "StateWriteCount": 0,
+        "ParameterFlows": [
+          {
+            "Name": "input",
+            "FlowsToReturn": false,
+            "InfluencesStateWrite": false
+          }
+        ]
+      }
+    },
+    {
+      "Name": "IfElse",
+      "FlowFingerprint": "b587efc307ffc2dbddf43dee044a99ace0532f1ae04eabd8d1f80acb3ad9e454",
+      "NodeCount": 20,
+      "EdgeCount": 20,
+      "RegionCount": 1,
+      "OutcomeCount": 2,
+      "ValueNodeCount": 17,
+      "ValueEdgeCount": 12,
+      "ControlDependenceCount": 12,
+      "Nodes": [
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:5eeb4c2e4504815f1d966d80ff90577914ea2f3504aaf087615ea43c5793d441",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:c4279db26148fc057d5147e1d8090f9d0aaad5caff84c983a500bffb880951c9",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Entry",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:712a9dc562541c180cbd6ebbe73c158fc74c513bd2a86395cef9314b4eba6518",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:75753ee663c017a15f1781578d5194802a6c8b366758dd392156548bbf5b9aea",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:d308c0c5cf42ec71855a8fddbde8345a91d6a226b366cfc1b670455b9cd0d4c3",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:7e37d1e557d003ffb60217327185055ab1b5a560b38bab5736b3a415aed5d1e8",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:0b1ddb34c203e0fd29123840595765a5c05faa1fad97ec384fbefcfaeb261e6e",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:822c4cbab51344dd83a35ddc586f09ab980661dacd7a062b0b4fad6da9ce10c9",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:1881211d79d7cb3cd54897532d51aabf71130c8f1fddd9ef2e8731079c2a4d99",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:6c5effa1c97941eb55296ff173e7441b97abd4563616a77b07d7e3ae3f3e6e66",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:d5d73faff4a8e27b28b64523e8315814351244d68076734344dba7d88b03fb10",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:6b1682df5cda5326a9fc7fa9595461d63037c568c49d6c90388cd9ffee628ed4",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:bba15b54ac33858619906d717599e244c38d667899f9463ac948f3e5687bc3bf",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:8854c8798f887189602b4a829ccca9b7cabd7125e8f17246b393139f9dc41607",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Decision",
+          "Operation": "behavior-operation:v1:f24cbcd1facf740294c83aeaab645f39c0542b859b7d2120bfafdc56e65ef3f7",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Return",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:51a68db784a9623cf0f188495f35561884136e1c0f44c23b70776e30097b6013",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Exit",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:0de51ede01b1bc6fe5a4bb04dfdcca30aa771535fe76c0fcca1cd162db31a474",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        }
+      ],
+      "Edges": [
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:c0f4368d616a8dba97da10159530a6f1799fd120d9a7f55bb8fbd0201771263b",
+          "Target": "flow-node:v1:6b167e83281986abf5682729d94b3cdc7fc3f00027fc4b67f6da7aa18106fb01"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:deaf32d33b9a466491069e3e9536cc0f8d0405576888518d0370afa886dbf8c2",
+          "Target": "flow-node:v1:770efb00fe2ffbad7f73602aeef1aec50e7884642376331118b5563371f815a1"
+        },
+        {
+          "Kind": "False",
+          "Source": "flow-node:v1:c1489e45fdeac2cf3baa82f4d021488a13e60bc9ba4a70c31db38bca94420844",
+          "Target": "flow-node:v1:1bafa2c71af3ffc6873ebe0b5588f3b4b1ac808a5d3e0fab9440dc0277ad37ba"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:b6d3a070c71645a65cefb76e3606f2818780ae9455d323a8da1bbccb312d3d01",
+          "Target": "flow-node:v1:c0f4368d616a8dba97da10159530a6f1799fd120d9a7f55bb8fbd0201771263b"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:888c96c4d664d884d60219f7fcf4d4beea78a07cc1f09c21f3654a4f9c869a9d",
+          "Target": "flow-node:v1:6809a9cf862f101459f4a84f6aceefd61bc0aed673e4e635dc78797d985428e3"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:bb99c6eff6b00f58d69bf313b2dc0dbd9866a2d87096118effcd1eb51841c680",
+          "Target": "flow-node:v1:226acdcab8ec45f90a249899b07fac6e1150a727a2e627a3b8915a9345ca16fd"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:770efb00fe2ffbad7f73602aeef1aec50e7884642376331118b5563371f815a1",
+          "Target": "flow-node:v1:fc2dc56c3e0c561f44b1d6c0439c9c2f80efcc380d374e1acde2a15078187329"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:0b3db0ccee3466cf82f1072b2255f946eb740267e0e78d1950212403f21a68ea",
+          "Target": "flow-node:v1:6b167e83281986abf5682729d94b3cdc7fc3f00027fc4b67f6da7aa18106fb01"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:876a59fae111e4f3b85be167cafb2944122fbc045124778abf0a9e6919e93c87",
+          "Target": "flow-node:v1:0b3db0ccee3466cf82f1072b2255f946eb740267e0e78d1950212403f21a68ea"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:c4b3d6056e4a0614761cc6e2481dfd08418f123e777858b06abd1768af2955e0",
+          "Target": "flow-node:v1:ebb3ba3561ba7e9577842acf03c63b53ffd3a2938ac97e128d8a83698bebd757"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:1bafa2c71af3ffc6873ebe0b5588f3b4b1ac808a5d3e0fab9440dc0277ad37ba",
+          "Target": "flow-node:v1:4183281e7c57832556616afb92a87c03fba1a9d7a565ed13936a7b09afa439af"
+        },
+        {
+          "Kind": "True",
+          "Source": "flow-node:v1:c1489e45fdeac2cf3baa82f4d021488a13e60bc9ba4a70c31db38bca94420844",
+          "Target": "flow-node:v1:deaf32d33b9a466491069e3e9536cc0f8d0405576888518d0370afa886dbf8c2"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:77064ce8b207217a774f4b62950ad5b5b1aeace9da5993cc33897d8455af608d",
+          "Target": "flow-node:v1:bb99c6eff6b00f58d69bf313b2dc0dbd9866a2d87096118effcd1eb51841c680"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:226acdcab8ec45f90a249899b07fac6e1150a727a2e627a3b8915a9345ca16fd",
+          "Target": "flow-node:v1:c1489e45fdeac2cf3baa82f4d021488a13e60bc9ba4a70c31db38bca94420844"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:23fe2e9cc04f4d3d4930e6d61a8b07f89e62c36c33cb99d78817c60e70bf33b3",
+          "Target": "flow-node:v1:b6d3a070c71645a65cefb76e3606f2818780ae9455d323a8da1bbccb312d3d01"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:1ea41d91251a7e53c3ff23741b0c07e5a267c9dc9fe245c18cbbdb48f5026004",
+          "Target": "flow-node:v1:77064ce8b207217a774f4b62950ad5b5b1aeace9da5993cc33897d8455af608d"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:4183281e7c57832556616afb92a87c03fba1a9d7a565ed13936a7b09afa439af",
+          "Target": "flow-node:v1:888c96c4d664d884d60219f7fcf4d4beea78a07cc1f09c21f3654a4f9c869a9d"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:fc2dc56c3e0c561f44b1d6c0439c9c2f80efcc380d374e1acde2a15078187329",
+          "Target": "flow-node:v1:23fe2e9cc04f4d3d4930e6d61a8b07f89e62c36c33cb99d78817c60e70bf33b3"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:6b167e83281986abf5682729d94b3cdc7fc3f00027fc4b67f6da7aa18106fb01",
+          "Target": "flow-node:v1:c4b3d6056e4a0614761cc6e2481dfd08418f123e777858b06abd1768af2955e0"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:6809a9cf862f101459f4a84f6aceefd61bc0aed673e4e635dc78797d985428e3",
+          "Target": "flow-node:v1:876a59fae111e4f3b85be167cafb2944122fbc045124778abf0a9e6919e93c87"
+        }
+      ],
+      "Regions": [
+        {
+          "Kind": "Root",
+          "Parent": null,
+          "ExceptionType": null
+        }
+      ],
+      "Outcomes": [
+        {
+          "Kind": "NormalCompletion",
+          "Block": null
+        },
+        {
+          "Kind": "ExplicitReturn",
+          "Block": 4
+        }
+      ],
+      "ValueNodes": [
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "1"
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        },
+        {
+          "Kind": "LocalDefinition",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "1"
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": "value",
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": "value",
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "LocalDefinition",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "LocalDefinition",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "0"
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "1"
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": "value",
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": "value",
+          "Parameter": null,
+          "Constant": null
+        }
+      ],
+      "ValueEdges": [
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:e5c9f6b3d30a75a82bbb7f47cefd7fdc07a3da6c59c015f0d928307010d5697c",
+          "Target": "value-node:v1:61ebd90b921216094ce55203aad44fae2a7036480770010f414941e0ee88268a"
+        },
+        {
+          "Kind": "Assignment",
+          "Source": "value-node:v1:e5dc91d93cc59c64bcb1169154fcbd11ad739eac561055806b35511258f40f05",
+          "Target": "value-node:v1:d51d77a7d5a916af2bbbf18a8042d801806b7f35a0d0a6743192223ab6853b1f"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:e477d611727c05571df86598223f154abaf2d5e6107e0e04700611bed2d924b6",
+          "Target": "value-node:v1:d89381f338705a4a70cc12f3a7d19e94c34e1c4cdc8c1260d350d6c87fd83b27"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:0ff51878743c2bb44deb311ad2f740fded98e059e756dff9a75ec3a4e4d31932",
+          "Target": "value-node:v1:61ebd90b921216094ce55203aad44fae2a7036480770010f414941e0ee88268a"
+        },
+        {
+          "Kind": "Assignment",
+          "Source": "value-node:v1:d89381f338705a4a70cc12f3a7d19e94c34e1c4cdc8c1260d350d6c87fd83b27",
+          "Target": "value-node:v1:3327dbbcb55b50eb20e6be8036fa340614a027c904e5c11882ddfdc8616639db"
+        },
+        {
+          "Kind": "CaptureCollapse",
+          "Source": "value-node:v1:3327dbbcb55b50eb20e6be8036fa340614a027c904e5c11882ddfdc8616639db",
+          "Target": "value-node:v1:87bc30b0afc14b23322bd44c748527d5fa1e539023c40d6eca295aa880cbb590"
+        },
+        {
+          "Kind": "Assignment",
+          "Source": "value-node:v1:70690600365f8ee2f2c5fb8db973b9146d9b09fec3866562b52fd52c0c88e59a",
+          "Target": "value-node:v1:d5565f623124fc53c8132a04cd6251e334f29f30605f31e65438d36f40118372"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:f9f6390c79c8cbe0bff8db2af5bddba89723f721d689f00282009bd31bf55c86",
+          "Target": "value-node:v1:70690600365f8ee2f2c5fb8db973b9146d9b09fec3866562b52fd52c0c88e59a"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:5f29eeac1e2d6d0ec9cc9d544713fb53227e1c726f7c776bb372b8993d0da377",
+          "Target": "value-node:v1:d89381f338705a4a70cc12f3a7d19e94c34e1c4cdc8c1260d350d6c87fd83b27"
+        },
+        {
+          "Kind": "CaptureCollapse",
+          "Source": "value-node:v1:d5565f623124fc53c8132a04cd6251e334f29f30605f31e65438d36f40118372",
+          "Target": "value-node:v1:85865f37557e59f74796d44470de108402df5e38c0979f7d8b59ffbada0840af"
+        },
+        {
+          "Kind": "CaptureCollapse",
+          "Source": "value-node:v1:d51d77a7d5a916af2bbbf18a8042d801806b7f35a0d0a6743192223ab6853b1f",
+          "Target": "value-node:v1:ff46ce76d427f1e546554f1909c02ca09c14271bc2e0985b2dd37fd43186c193"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:02b4bb0e7007e92bbabc002fed50be02aea14dd04fcdddbf267f31f48853161e",
+          "Target": "value-node:v1:70690600365f8ee2f2c5fb8db973b9146d9b09fec3866562b52fd52c0c88e59a"
+        }
+      ],
+      "ControlDependences": [
+        {
+          "Decision": "flow-node:v1:c1489e45fdeac2cf3baa82f4d021488a13e60bc9ba4a70c31db38bca94420844",
+          "Controlled": "flow-node:v1:0b3db0ccee3466cf82f1072b2255f946eb740267e0e78d1950212403f21a68ea",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:c1489e45fdeac2cf3baa82f4d021488a13e60bc9ba4a70c31db38bca94420844",
+          "Controlled": "flow-node:v1:1bafa2c71af3ffc6873ebe0b5588f3b4b1ac808a5d3e0fab9440dc0277ad37ba",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:c1489e45fdeac2cf3baa82f4d021488a13e60bc9ba4a70c31db38bca94420844",
+          "Controlled": "flow-node:v1:23fe2e9cc04f4d3d4930e6d61a8b07f89e62c36c33cb99d78817c60e70bf33b3",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:c1489e45fdeac2cf3baa82f4d021488a13e60bc9ba4a70c31db38bca94420844",
+          "Controlled": "flow-node:v1:4183281e7c57832556616afb92a87c03fba1a9d7a565ed13936a7b09afa439af",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:c1489e45fdeac2cf3baa82f4d021488a13e60bc9ba4a70c31db38bca94420844",
+          "Controlled": "flow-node:v1:6809a9cf862f101459f4a84f6aceefd61bc0aed673e4e635dc78797d985428e3",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:c1489e45fdeac2cf3baa82f4d021488a13e60bc9ba4a70c31db38bca94420844",
+          "Controlled": "flow-node:v1:770efb00fe2ffbad7f73602aeef1aec50e7884642376331118b5563371f815a1",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:c1489e45fdeac2cf3baa82f4d021488a13e60bc9ba4a70c31db38bca94420844",
+          "Controlled": "flow-node:v1:876a59fae111e4f3b85be167cafb2944122fbc045124778abf0a9e6919e93c87",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:c1489e45fdeac2cf3baa82f4d021488a13e60bc9ba4a70c31db38bca94420844",
+          "Controlled": "flow-node:v1:888c96c4d664d884d60219f7fcf4d4beea78a07cc1f09c21f3654a4f9c869a9d",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:c1489e45fdeac2cf3baa82f4d021488a13e60bc9ba4a70c31db38bca94420844",
+          "Controlled": "flow-node:v1:b6d3a070c71645a65cefb76e3606f2818780ae9455d323a8da1bbccb312d3d01",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:c1489e45fdeac2cf3baa82f4d021488a13e60bc9ba4a70c31db38bca94420844",
+          "Controlled": "flow-node:v1:c0f4368d616a8dba97da10159530a6f1799fd120d9a7f55bb8fbd0201771263b",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:c1489e45fdeac2cf3baa82f4d021488a13e60bc9ba4a70c31db38bca94420844",
+          "Controlled": "flow-node:v1:deaf32d33b9a466491069e3e9536cc0f8d0405576888518d0370afa886dbf8c2",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:c1489e45fdeac2cf3baa82f4d021488a13e60bc9ba4a70c31db38bca94420844",
+          "Controlled": "flow-node:v1:fc2dc56c3e0c561f44b1d6c0439c9c2f80efcc380d374e1acde2a15078187329",
+          "OnTrue": true
+        }
+      ],
+      "Summary": {
+        "IsComplete": true,
+        "Certainty": "Exact",
+        "StateReadCount": 0,
+        "StateWriteCount": 0,
+        "ParameterFlows": [
+          {
+            "Name": "input",
+            "FlowsToReturn": true,
+            "InfluencesStateWrite": false
+          }
+        ]
+      }
+    },
+    {
+      "Name": "UncaughtThrow",
+      "FlowFingerprint": "b2225bd04b9b9672d3e9132eff48f029cc14abf4e5b0758a475db984b720e0e4",
+      "NodeCount": 10,
+      "EdgeCount": 10,
+      "RegionCount": 1,
+      "OutcomeCount": 3,
+      "ValueNodeCount": 8,
+      "ValueEdgeCount": 5,
+      "ControlDependenceCount": 6,
+      "Nodes": [
+        {
+          "Kind": "Entry",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:b5ee968adf10eb7a8106f4d54e6f02003a5f3f44759d1383fee35efc96fe8e34",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Return",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "UnknownOperation",
+          "Operation": "behavior-operation:v1:f4d5c7f757977883ad83b0335f4c1bd44e7806ae13f962518bf97bf123abf7af",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Throw",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": false
+        },
+        {
+          "Kind": "Decision",
+          "Operation": "behavior-operation:v1:92f61ed069c70f39765ea10470bc74a445b754f9a6a8b802a47a398839208edb",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:f1eb19a32de2d7f4522fce2620e98d9fec6bd7115582997769ec41ba99a12502",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Exit",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Invocation",
+          "Operation": "behavior-operation:v1:482c7e5614f0ea31a4cba20449e20d487927c8d6668145006572de478828a15c",
+          "Target": "method:v1:2ed1e5fe9d9abd679d4c993af81643c351803498d4f6150a6a995cb21457c4cc",
+          "IsDispatchable": false,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:e9491eb739a4827a1d1b574084ab4e4d8a475743c29edf3c7752539487bf84c6",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        }
+      ],
+      "Edges": [
+        {
+          "Kind": "False",
+          "Source": "flow-node:v1:a3125e679e27d4d8106c3f47eb624623d920356c90bb55c357ffd86b1ab04c9e",
+          "Target": "flow-node:v1:ffde67c386196d4d8d699622f8db064a6a336fdd5f3dd8b170dd995c1a371e6c"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:ba49950d6ec1a2e4a1ad110d2f1bc90e0e78774f8c6889a4f94eacf0dd84b1b3",
+          "Target": "flow-node:v1:53cb1e02b0dc84d7501fd477bbad00a244d788357597bda48c29a68096c336c9"
+        },
+        {
+          "Kind": "True",
+          "Source": "flow-node:v1:a3125e679e27d4d8106c3f47eb624623d920356c90bb55c357ffd86b1ab04c9e",
+          "Target": "flow-node:v1:ba49950d6ec1a2e4a1ad110d2f1bc90e0e78774f8c6889a4f94eacf0dd84b1b3"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:605c12053af83be0f68f58fa5aa442a37022e0307bc7257c8a0c611f8b2938d9",
+          "Target": "flow-node:v1:e28381632713fdd4efd6c54c39c8b5a3e4e05a2e3fe5e5914ae52cd31270ce6c"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:51c1bfd5f3b8685d945e5dbf570e85586539fb5147964e6713fefaa0484444fb",
+          "Target": "flow-node:v1:829b075d872cec3e823cdc4c15375cf938ca13f6a63a418bd667c0cd92f73725"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:53cb1e02b0dc84d7501fd477bbad00a244d788357597bda48c29a68096c336c9",
+          "Target": "flow-node:v1:bc567aa2bccf3c204ee8b81008a0934923a8052762cef751981623b30cfff17a"
+        },
+        {
+          "Kind": "Throw",
+          "Source": "flow-node:v1:829b075d872cec3e823cdc4c15375cf938ca13f6a63a418bd667c0cd92f73725",
+          "Target": "flow-node:v1:bc567aa2bccf3c204ee8b81008a0934923a8052762cef751981623b30cfff17a"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:e28381632713fdd4efd6c54c39c8b5a3e4e05a2e3fe5e5914ae52cd31270ce6c",
+          "Target": "flow-node:v1:51c1bfd5f3b8685d945e5dbf570e85586539fb5147964e6713fefaa0484444fb"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:ffde67c386196d4d8d699622f8db064a6a336fdd5f3dd8b170dd995c1a371e6c",
+          "Target": "flow-node:v1:605c12053af83be0f68f58fa5aa442a37022e0307bc7257c8a0c611f8b2938d9"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:127ee8564a02e9ed428d079084ca6581c68f1f0aeb5688d5bed1f661a8e8c4b0",
+          "Target": "flow-node:v1:a3125e679e27d4d8106c3f47eb624623d920356c90bb55c357ffd86b1ab04c9e"
+        }
+      ],
+      "Regions": [
+        {
+          "Kind": "Root",
+          "Parent": null,
+          "ExceptionType": null
+        }
+      ],
+      "Outcomes": [
+        {
+          "Kind": "NormalCompletion",
+          "Block": null
+        },
+        {
+          "Kind": "EscapingThrow",
+          "Block": 2
+        },
+        {
+          "Kind": "ExplicitReturn",
+          "Block": 3
+        }
+      ],
+      "ValueNodes": [
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "negative"
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "0"
+        }
+      ],
+      "ValueEdges": [
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:645030d16932546d879a7d41ee37940041e54ce9a72073202905517feef3b1ae",
+          "Target": "value-node:v1:690d3ac96066cbdc71c0724b81ad90f38b18869a95b29a5eb3202ce02cf2ae43"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:68ca6ab87fd7a5fd899b4caedbb4edea7d004eb4a0ce5eda324f1b28fc628dab",
+          "Target": "value-node:v1:936ceab205b8a42c575332671f70658eaca716a139f991d1abc9e9cd4a6889d8"
+        },
+        {
+          "Kind": "Conversion",
+          "Source": "value-node:v1:690d3ac96066cbdc71c0724b81ad90f38b18869a95b29a5eb3202ce02cf2ae43",
+          "Target": "value-node:v1:882397634c09a743e0e271dd2f15bd467f58f9efd5e883cd13c097d06623a384"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:de12b081ef0d5b1ca2b3fd704f4b4c0b917ec8305a91c2ee15af0bd516916fc5",
+          "Target": "value-node:v1:936ceab205b8a42c575332671f70658eaca716a139f991d1abc9e9cd4a6889d8"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:cfc5957b24a034a5939cecda35a2f799f463a9b8710dd6ef70a0d5a2c5afed74",
+          "Target": "value-node:v1:645030d16932546d879a7d41ee37940041e54ce9a72073202905517feef3b1ae"
+        }
+      ],
+      "ControlDependences": [
+        {
+          "Decision": "flow-node:v1:a3125e679e27d4d8106c3f47eb624623d920356c90bb55c357ffd86b1ab04c9e",
+          "Controlled": "flow-node:v1:51c1bfd5f3b8685d945e5dbf570e85586539fb5147964e6713fefaa0484444fb",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:a3125e679e27d4d8106c3f47eb624623d920356c90bb55c357ffd86b1ab04c9e",
+          "Controlled": "flow-node:v1:53cb1e02b0dc84d7501fd477bbad00a244d788357597bda48c29a68096c336c9",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:a3125e679e27d4d8106c3f47eb624623d920356c90bb55c357ffd86b1ab04c9e",
+          "Controlled": "flow-node:v1:829b075d872cec3e823cdc4c15375cf938ca13f6a63a418bd667c0cd92f73725",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:a3125e679e27d4d8106c3f47eb624623d920356c90bb55c357ffd86b1ab04c9e",
+          "Controlled": "flow-node:v1:ba49950d6ec1a2e4a1ad110d2f1bc90e0e78774f8c6889a4f94eacf0dd84b1b3",
+          "OnTrue": true
+        },
+        {
+          "Decision": "flow-node:v1:a3125e679e27d4d8106c3f47eb624623d920356c90bb55c357ffd86b1ab04c9e",
+          "Controlled": "flow-node:v1:e28381632713fdd4efd6c54c39c8b5a3e4e05a2e3fe5e5914ae52cd31270ce6c",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:a3125e679e27d4d8106c3f47eb624623d920356c90bb55c357ffd86b1ab04c9e",
+          "Controlled": "flow-node:v1:ffde67c386196d4d8d699622f8db064a6a336fdd5f3dd8b170dd995c1a371e6c",
+          "OnTrue": false
+        }
+      ],
+      "Summary": {
+        "IsComplete": false,
+        "Certainty": "Conservative",
+        "StateReadCount": 0,
+        "StateWriteCount": 0,
+        "ParameterFlows": [
+          {
+            "Name": "input",
+            "FlowsToReturn": true,
+            "InfluencesStateWrite": false
+          }
+        ]
+      }
+    },
+    {
+      "Name": "WhileShape",
+      "FlowFingerprint": "ba2c5b5ab226c5daf9365f0179ed9e810514523acd17c11f9c32f8a8c3c3fe2a",
+      "NodeCount": 19,
+      "EdgeCount": 18,
+      "RegionCount": 2,
+      "OutcomeCount": 2,
+      "ValueNodeCount": 15,
+      "ValueEdgeCount": 11,
+      "ControlDependenceCount": 7,
+      "Nodes": [
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:d7d6043b42797e2ccdf514ce16e30d5984131b7854075ec36aa28c07d3be99e5",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Exit",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:8fa029d6f9bf93df2ef7fc3f5cc3939db4016d1b90d320cb811c2d810aa72c37",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:57d805717c5aefa11b2449da3f02a156c4e8993812ccdef5a81c0d617d242177",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Decision",
+          "Operation": "behavior-operation:v1:4927e3ff4ab23bdd22ea10c6fff67d9fed7819c754b175bd94ddb5c790ad69f9",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:6f944d4c567fd352e5a2ba8424bd51bd302f8d8ae4e3760542355d937c4c5122",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Loop",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:011ed06b6c449745f4451611f751eeed0f546c3a20027bbde5674a5e887d5b89",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Return",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:819ce8ebed508ca814f6083d125ba580d135293f89aae2c8a600a00ee4ba8ffe",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:89f5b3c76dd8b11637e168e2aac5f922041db67e5115fb3ebf7427f53cab0fb1",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:aeca2ecd047b5cf69c79a35e3b67c1b13bbbda186dee4235ab2e32e07c3a66ce",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:90577fd79c751d9b1aebaa26c1182f64d3e4d3aa64b8e23d4805cd62c566d02c",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Entry",
+          "Operation": null,
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:fe10e3985bed86aa2ca57508103cc41ab516162f2045a2dba8b2726b09b8e8c1",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:f755ed76cf9526e8da0fbef21f3de22e643a7420bd512ea878536cb4757744f0",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:af569e6756e4a2e1f674c90635b8790d6b0c400a62fd355c7d3fd382f05551b0",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:259d3da212133be077d1a8425e072332b370a9f456d4fb4f89b0e4e4ebd93a95",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Operation",
+          "Operation": "behavior-operation:v1:07bfe3b3f03947ae97e38359a34f4aaec5f416fc1588c59af1fc4e54679eb659",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        }
+      ],
+      "Edges": [
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:5227ef7f9b7de915201b558691d208590f4bf3b41f591a97698cd81351495207",
+          "Target": "flow-node:v1:03c4944a2fec01418063234b762e9294c41a040dae637a8f187b849c02a42031"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:8edef239cbc414114e77bd97a267ae0d03b9ab25bf64240af6680c4331aef3f0",
+          "Target": "flow-node:v1:2950c4f36d52b51e861dde898f85b38ebbd082c09e2f5b181ef5a9cff1b97b0f"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:166c6f50531f699bc3d53faa1de016fc74d04d7b0760d2babf3d2de2e113b56d",
+          "Target": "flow-node:v1:7a43e4b028f95f7a83e902708c07812f0afe69c41020cff3fd54c9f752ab59f3"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:9a284446b706ee0ffdd219f928dc5eaa2c4384823e3ba50fa10c6b5a5e982a3c",
+          "Target": "flow-node:v1:2435a091b6ac923f61666c6311e8c857340d4015d5f2c96eb0549a6225df6e0a"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:3cd0e297496d6b7837f2cb5ffbd2f08d5217a929ed80c9ad7f514f5c1dbb4e59",
+          "Target": "flow-node:v1:06a2ab0d3b71c24d0f48d1aea0cffa25d6783a5c152acb5334309cb4fb40f4da"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:7a43e4b028f95f7a83e902708c07812f0afe69c41020cff3fd54c9f752ab59f3",
+          "Target": "flow-node:v1:65ee37ac232e6b6a63b686da8ae3092a5f794d68afafde1ba8947da2d79df7f7"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:65ee37ac232e6b6a63b686da8ae3092a5f794d68afafde1ba8947da2d79df7f7",
+          "Target": "flow-node:v1:6921fdce062c57b31a3b6467b72a8ad40bb63cb05f5d32518a273bc74962adec"
+        },
+        {
+          "Kind": "Return",
+          "Source": "flow-node:v1:b8d82937c1e69eed68331beee7db14e740ea23e43a209ff14a0215a948203a25",
+          "Target": "flow-node:v1:5227ef7f9b7de915201b558691d208590f4bf3b41f591a97698cd81351495207"
+        },
+        {
+          "Kind": "LoopBack",
+          "Source": "flow-node:v1:2950c4f36d52b51e861dde898f85b38ebbd082c09e2f5b181ef5a9cff1b97b0f",
+          "Target": "flow-node:v1:2435a091b6ac923f61666c6311e8c857340d4015d5f2c96eb0549a6225df6e0a"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:06a2ab0d3b71c24d0f48d1aea0cffa25d6783a5c152acb5334309cb4fb40f4da",
+          "Target": "flow-node:v1:9a284446b706ee0ffdd219f928dc5eaa2c4384823e3ba50fa10c6b5a5e982a3c"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:cae76ae06e88e54d0a55ec9266e7bae9b047f7fc8ed0ede73968d487fc2aa576",
+          "Target": "flow-node:v1:166c6f50531f699bc3d53faa1de016fc74d04d7b0760d2babf3d2de2e113b56d"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:6921fdce062c57b31a3b6467b72a8ad40bb63cb05f5d32518a273bc74962adec",
+          "Target": "flow-node:v1:8edef239cbc414114e77bd97a267ae0d03b9ab25bf64240af6680c4331aef3f0"
+        },
+        {
+          "Kind": "True",
+          "Source": "flow-node:v1:2435a091b6ac923f61666c6311e8c857340d4015d5f2c96eb0549a6225df6e0a",
+          "Target": "flow-node:v1:b8d82937c1e69eed68331beee7db14e740ea23e43a209ff14a0215a948203a25"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:7289db0c3e1f4607eda1062d275c94d77ac66bd57fa4cebc115f60077da7ddaa",
+          "Target": "flow-node:v1:024d08adaa20f1d1985721b0137244d6ed9828ee61fc5552b204474c612624ce"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:7f0b8907163397db1e236a766943f31e2f348577877146b0436ef609c1247bd5",
+          "Target": "flow-node:v1:a3897a0c33bc217588fe244a623a2cdde10c62784cd265a0088a8384e0f457eb"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:a3897a0c33bc217588fe244a623a2cdde10c62784cd265a0088a8384e0f457eb",
+          "Target": "flow-node:v1:7289db0c3e1f4607eda1062d275c94d77ac66bd57fa4cebc115f60077da7ddaa"
+        },
+        {
+          "Kind": "Normal",
+          "Source": "flow-node:v1:024d08adaa20f1d1985721b0137244d6ed9828ee61fc5552b204474c612624ce",
+          "Target": "flow-node:v1:3cd0e297496d6b7837f2cb5ffbd2f08d5217a929ed80c9ad7f514f5c1dbb4e59"
+        },
+        {
+          "Kind": "False",
+          "Source": "flow-node:v1:2435a091b6ac923f61666c6311e8c857340d4015d5f2c96eb0549a6225df6e0a",
+          "Target": "flow-node:v1:cae76ae06e88e54d0a55ec9266e7bae9b047f7fc8ed0ede73968d487fc2aa576"
+        }
+      ],
+      "Regions": [
+        {
+          "Kind": "Root",
+          "Parent": null,
+          "ExceptionType": null
+        },
+        {
+          "Kind": "NaturalLoop",
+          "Parent": null,
+          "ExceptionType": null
+        }
+      ],
+      "Outcomes": [
+        {
+          "Kind": "NormalCompletion",
+          "Block": null
+        },
+        {
+          "Kind": "ExplicitReturn",
+          "Block": 4
+        }
+      ],
+      "ValueNodes": [
+        {
+          "Kind": "LocalDefinition",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "LocalDefinition",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "0"
+        },
+        {
+          "Kind": "Constant",
+          "Name": null,
+          "Parameter": null,
+          "Constant": "0"
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": "total",
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": "total",
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "LocalDefinition",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": "index",
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": "index",
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": null,
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": "index",
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": "index",
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "OperationResult",
+          "Name": "total",
+          "Parameter": null,
+          "Constant": null
+        },
+        {
+          "Kind": "Parameter",
+          "Name": null,
+          "Parameter": 0,
+          "Constant": null
+        }
+      ],
+      "ValueEdges": [
+        {
+          "Kind": "Assignment",
+          "Source": "value-node:v1:e18b0b1986280507875ac4da705d3d4c5784545268c92c7b4ab342bf0e136307",
+          "Target": "value-node:v1:30b626dada5745ab328c8974dccdf78834e34cacbb0d3deb3c290084e02a6237"
+        },
+        {
+          "Kind": "Assignment",
+          "Source": "value-node:v1:41110f17dfe9916b6d3a251048d0455347a5e87f7ae95a5528982a3e612bed2a",
+          "Target": "value-node:v1:34bc1fbf6040f5d92c6ccea42848c85871ff596eda60e6b0a67054437c8681b2"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:fe491b9846fa6dc7de97a605f3121cca8c44d2e98875af204ebc88a62b91e90d",
+          "Target": "value-node:v1:ca6cff084209dc033ddef51f2144bf3830ec9fd12d58872769320e448a6dc5ba"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:a56e41b85524f6cc0d1e24aef35015778b45abbd03ccd1a8325142d955a709c6",
+          "Target": "value-node:v1:ca6cff084209dc033ddef51f2144bf3830ec9fd12d58872769320e448a6dc5ba"
+        },
+        {
+          "Kind": "CaptureCollapse",
+          "Source": "value-node:v1:34bc1fbf6040f5d92c6ccea42848c85871ff596eda60e6b0a67054437c8681b2",
+          "Target": "value-node:v1:a56e41b85524f6cc0d1e24aef35015778b45abbd03ccd1a8325142d955a709c6"
+        },
+        {
+          "Kind": "Assignment",
+          "Source": "value-node:v1:4b9c8efd317d4f0e20b03601f0a54dd70b5de9e5695d36c5aba6deaf9251ee7b",
+          "Target": "value-node:v1:838fe0e1d10ee0d46686fa1c6662f8f5b13fa8b196a81aced0716ca83eb08e65"
+        },
+        {
+          "Kind": "CaptureCollapse",
+          "Source": "value-node:v1:838fe0e1d10ee0d46686fa1c6662f8f5b13fa8b196a81aced0716ca83eb08e65",
+          "Target": "value-node:v1:78fee811b5be016482bd36a959c740a8723cac63ab9c713b2fca52c9d5f1c5a4"
+        },
+        {
+          "Kind": "Operand",
+          "Source": "value-node:v1:ddf8c08c13f41b4e8d434ff1a337fa4f63fe481dc50c1cad89c251ddd56f915a",
+          "Target": "value-node:v1:64e67ce108f1f2fa294dc536685ed63126075e07c247743f20d68318341a23a0"
+        },
+        {
+          "Kind": "CaptureCollapse",
+          "Source": "value-node:v1:34bc1fbf6040f5d92c6ccea42848c85871ff596eda60e6b0a67054437c8681b2",
+          "Target": "value-node:v1:ddf8c08c13f41b4e8d434ff1a337fa4f63fe481dc50c1cad89c251ddd56f915a"
+        },
+        {
+          "Kind": "CaptureCollapse",
+          "Source": "value-node:v1:30b626dada5745ab328c8974dccdf78834e34cacbb0d3deb3c290084e02a6237",
+          "Target": "value-node:v1:72c9a1159505b1fba9ef719ce33b7e5e17ad7c1a1ed1b26f0a83945dcc5fff96"
+        },
+        {
+          "Kind": "CaptureCollapse",
+          "Source": "value-node:v1:34bc1fbf6040f5d92c6ccea42848c85871ff596eda60e6b0a67054437c8681b2",
+          "Target": "value-node:v1:e18b0b1986280507875ac4da705d3d4c5784545268c92c7b4ab342bf0e136307"
+        }
+      ],
+      "ControlDependences": [
+        {
+          "Decision": "flow-node:v1:2435a091b6ac923f61666c6311e8c857340d4015d5f2c96eb0549a6225df6e0a",
+          "Controlled": "flow-node:v1:166c6f50531f699bc3d53faa1de016fc74d04d7b0760d2babf3d2de2e113b56d",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:2435a091b6ac923f61666c6311e8c857340d4015d5f2c96eb0549a6225df6e0a",
+          "Controlled": "flow-node:v1:2950c4f36d52b51e861dde898f85b38ebbd082c09e2f5b181ef5a9cff1b97b0f",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:2435a091b6ac923f61666c6311e8c857340d4015d5f2c96eb0549a6225df6e0a",
+          "Controlled": "flow-node:v1:65ee37ac232e6b6a63b686da8ae3092a5f794d68afafde1ba8947da2d79df7f7",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:2435a091b6ac923f61666c6311e8c857340d4015d5f2c96eb0549a6225df6e0a",
+          "Controlled": "flow-node:v1:6921fdce062c57b31a3b6467b72a8ad40bb63cb05f5d32518a273bc74962adec",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:2435a091b6ac923f61666c6311e8c857340d4015d5f2c96eb0549a6225df6e0a",
+          "Controlled": "flow-node:v1:7a43e4b028f95f7a83e902708c07812f0afe69c41020cff3fd54c9f752ab59f3",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:2435a091b6ac923f61666c6311e8c857340d4015d5f2c96eb0549a6225df6e0a",
+          "Controlled": "flow-node:v1:8edef239cbc414114e77bd97a267ae0d03b9ab25bf64240af6680c4331aef3f0",
+          "OnTrue": false
+        },
+        {
+          "Decision": "flow-node:v1:2435a091b6ac923f61666c6311e8c857340d4015d5f2c96eb0549a6225df6e0a",
+          "Controlled": "flow-node:v1:cae76ae06e88e54d0a55ec9266e7bae9b047f7fc8ed0ede73968d487fc2aa576",
+          "OnTrue": false
+        }
+      ],
+      "Summary": {
+        "IsComplete": true,
+        "Certainty": "Exact",
+        "StateReadCount": 0,
+        "StateWriteCount": 0,
+        "ParameterFlows": [
+          {
+            "Name": "limit",
+            "FlowsToReturn": false,
+            "InfluencesStateWrite": false
+          }
+        ]
+      }
+    }
+  ]
+}

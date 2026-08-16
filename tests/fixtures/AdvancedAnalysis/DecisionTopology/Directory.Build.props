@@ -1,0 +1,13 @@
+<Project>
+  <Import Project="..\..\..\..\Directory.Build.props" />
+
+  <PropertyGroup>
+    <!-- The frozen accepted contract DecisionTopology fixture mirrors the generic result-factory shape with two
+         early-return terminal arms and one continuing success path; CA1000 is scoped to the fixture
+         only. -->
+    <NoWarn>$(NoWarn);CA1000</NoWarn>
+    <BaseIntermediateOutputPath>obj-custom\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj\**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,112 @@
+{
+  "SchemaVersion": 1,
+  "ProjectCount": 1,
+  "Documents": [
+    {
+      "LogicalPath": "generated/System.Text.RegularExpressions.Generator/System.Text.RegularExpressions.Generator.RegexGenerator/RegexGenerator.g.cs",
+      "Origin": "GeneratedSource"
+    },
+    {
+      "LogicalPath": "generated/msbuild/GeneratedAndPartialSource/.NETCoreApp,Version=v10.0.AssemblyAttributes.cs",
+      "Origin": "GeneratedSource"
+    },
+    {
+      "LogicalPath": "generated/msbuild/GeneratedAndPartialSource/GeneratedAndPartialSource.AssemblyInfo.cs",
+      "Origin": "GeneratedSource"
+    },
+    {
+      "LogicalPath": "generated/msbuild/GeneratedAndPartialSource/GeneratedAndPartialSource.GlobalUsings.g.cs",
+      "Origin": "GeneratedSource"
+    },
+    {
+      "LogicalPath": "tests/fixtures/PassA/GeneratedAndPartialSource/Contracts/LinkedContract.cs",
+      "Origin": "LinkedSource"
+    },
+    {
+      "LogicalPath": "tests/fixtures/PassA/GeneratedAndPartialSource/ReservationMatcher.Metadata.cs",
+      "Origin": "Source"
+    },
+    {
+      "LogicalPath": "tests/fixtures/PassA/GeneratedAndPartialSource/ReservationMatcher.cs",
+      "Origin": "Source"
+    }
+  ],
+  "Namespaces": [
+    "GeneratedAndPartialSource",
+    "System",
+    "System.Text",
+    "System.Text.RegularExpressions",
+    "System.Text.RegularExpressions.Generated"
+  ],
+  "UserTypes": [
+    {
+      "MetadataName": "GeneratedAndPartialSource.IReservationMatcher",
+      "Kind": "Interface",
+      "Declarations": 1
+    },
+    {
+      "MetadataName": "GeneratedAndPartialSource.ReservationMatcher",
+      "Kind": "Class",
+      "Declarations": 3
+    }
+  ],
+  "UserMembers": [
+    {
+      "Name": "Matched",
+      "Kind": "Event",
+      "FullyQualifiedType": "System.EventHandler"
+    },
+    {
+      "Name": "Pattern",
+      "Kind": "Property",
+      "FullyQualifiedType": "System.String"
+    },
+    {
+      "Name": "Revision",
+      "Kind": "Property",
+      "FullyQualifiedType": "System.Int32"
+    },
+    {
+      "Name": "normalizedPattern",
+      "Kind": "Field",
+      "FullyQualifiedType": "System.String"
+    },
+    {
+      "Name": "revision",
+      "Kind": "Field",
+      "FullyQualifiedType": "System.Int32"
+    }
+  ],
+  "UserMethods": [
+    "GeneratedAndPartialSource.IReservationMatcher.IsMatch(string)",
+    "GeneratedAndPartialSource.ReservationMatcher.Create()",
+    "GeneratedAndPartialSource.ReservationMatcher.IsMatch(string)",
+    "GeneratedAndPartialSource.ReservationMatcher.MatchThroughContract(GeneratedAndPartialSource.IReservationMatcher, string)",
+    "GeneratedAndPartialSource.ReservationMatcher.Pattern.get",
+    "GeneratedAndPartialSource.ReservationMatcher.ReservationMatcher()",
+    "GeneratedAndPartialSource.ReservationMatcher.ReservationRegex()",
+    "GeneratedAndPartialSource.ReservationMatcher.Revision.get"
+  ],
+  "Attributes": [
+    "System.CodeDom.Compiler.GeneratedCodeAttribute",
+    "System.Diagnostics.CodeAnalysis.SuppressMessageAttribute",
+    "System.ObsoleteAttribute",
+    "System.Text.RegularExpressions.GeneratedRegexAttribute"
+  ],
+  "ReferenceKinds": [
+    "Assembly"
+  ],
+  "SelectedInvocationTargets": [
+    "GeneratedAndPartialSource.IReservationMatcher.IsMatch(string)",
+    "GeneratedAndPartialSource.ReservationMatcher.ReservationMatcher()",
+    "GeneratedAndPartialSource.ReservationMatcher.ReservationRegex()",
+    "System.EventHandler.Invoke(object?, System.EventArgs)",
+    "System.Text.RegularExpressions.Regex.IsMatch(string)"
+  ],
+  "MarkerKinds": [
+    "BinaryCandidate",
+    "ContractCandidate"
+  ],
+  "TypeCount": 6,
+  "GeneratedDocumentCount": 4
+}

@@ -1,0 +1,12 @@
+<Project>
+  <Import Project="..\..\..\..\Directory.Build.props" />
+
+  <PropertyGroup>
+    <!-- The generic FourFlows fixture mirrors the TicketReservation ServiceResult<T> generic
+         static-factory shape plus a status enum; CA1000 is scoped to the fixture only. -->
+    <NoWarn>$(NoWarn);CA1000</NoWarn>
+    <BaseIntermediateOutputPath>obj-custom\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj\**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

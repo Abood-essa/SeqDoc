@@ -1,0 +1,12 @@
+<Project>
+  <Import Project="..\..\..\..\..\Directory.Build.props" />
+
+  <PropertyGroup>
+    <!-- accepted contract F4 fixture: a caller-first two-project graph proving that callback collection preloads
+         every project context so solution order cannot matter. Each project keeps its own
+         checked-in obj-custom directory; locked restore stays warning-free. -->
+    <BaseIntermediateOutputPath>obj-custom\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj\**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

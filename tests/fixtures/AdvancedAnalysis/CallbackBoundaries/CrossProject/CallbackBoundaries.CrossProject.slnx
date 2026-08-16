@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="A.Caller/A.Caller.csproj" />
+  <Project Path="Z.Contracts/Z.Contracts.csproj" />
+</Solution>

@@ -1,0 +1,5 @@
+<Project>
+  <ItemGroup>
+    <Compile Remove="$(MSBuildProjectDirectory)\obj\**\*.cs" />
+  </ItemGroup>
+</Project>

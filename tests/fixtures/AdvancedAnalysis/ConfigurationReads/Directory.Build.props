@@ -1,0 +1,12 @@
+<Project>
+  <Import Project="..\..\..\..\Directory.Build.props" />
+
+  <PropertyGroup>
+    <!-- The accepted contract ConfigurationReads fixture mirrors the exact ConfigurationBinder.GetValue<bool>
+         shape, the direct local-to-if condition, and WebApplication.CreateBuilder. No analyzer
+         suppressions beyond the shared fixture policy are required. -->
+    <BaseIntermediateOutputPath>obj-custom\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj\**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

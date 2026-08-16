@@ -1,0 +1,10 @@
+<Project>
+
+  <Import Project="../../../../Directory.Build.props" />
+
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj-custom\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(MSBuildThisFileDirectory)obj-custom\</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+
+</Project>

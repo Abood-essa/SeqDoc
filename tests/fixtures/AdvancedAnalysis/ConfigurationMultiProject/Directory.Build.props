@@ -1,0 +1,12 @@
+<Project>
+  <Import Project="..\..\..\..\Directory.Build.props" />
+
+  <PropertyGroup>
+    <!-- The accepted contract ConfigurationMultiProject fixture proves per-project checked-in attribution: two
+         Web projects read the same safe boolean key while each owns an appsettings.json with the
+         opposite value. No analyzer suppressions beyond the shared fixture policy are required. -->
+    <BaseIntermediateOutputPath>obj-custom\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj\**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

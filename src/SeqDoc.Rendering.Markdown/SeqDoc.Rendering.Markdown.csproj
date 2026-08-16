@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SeqDoc.Core\SeqDoc.Core.csproj" />
+  </ItemGroup>
+
+</Project>

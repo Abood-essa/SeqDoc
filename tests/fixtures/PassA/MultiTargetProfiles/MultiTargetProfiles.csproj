@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="TargetFrameworks.props" />
+
+  <ItemGroup>
+    <Compile Remove="Profiles\**\*.cs" />
+    <Compile Remove="References\**\*.cs" />
+    <Compile Include="Profiles\PortableOnly.cs" Condition="'$(TargetFramework)' == 'net10.0'" />
+    <Compile Include="Profiles\WindowsOnly.cs" Condition="'$(TargetFramework)' == 'net10.0-windows'" />
+    <Compile Include="Profiles\BrokenWhenRequested.cs" Condition="'$(TargetFramework)' == 'net10.0' and '$(BreakSelectedProfile)' == 'true'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="YamlDotNet" Condition="'$(TargetFramework)' == 'net10.0'" />
+    <PackageReference Include="System.CommandLine" Condition="'$(TargetFramework)' == 'net10.0-windows'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="References\PortableDependency\PortableDependency.csproj" Condition="'$(TargetFramework)' == 'net10.0'" />
+    <ProjectReference Include="References\WindowsDependency\WindowsDependency.csproj" Condition="'$(TargetFramework)' == 'net10.0-windows'" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <AssemblyTitle>Portable profile</AssemblyTitle>
+    <DefineConstants>$(DefineConstants);PORTABLE_PROFILE</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-windows'">
+    <AssemblyTitle>Windows profile</AssemblyTitle>
+    <DefineConstants>$(DefineConstants);WINDOWS_PROFILE</DefineConstants>
+  </PropertyGroup>
+</Project>

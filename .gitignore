@@ -1,0 +1,20 @@
+# .NET build and test output
+**/bin/
+**/obj/
+**/obj-custom/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+*.cobertura.xml
+
+# SeqDoc runtime state
+.seqdoc/
+
+# Editor and operating-system state
+.vs/
+.vscode/
+*.user
+*.suo
+.DS_Store
+Thumbs.db

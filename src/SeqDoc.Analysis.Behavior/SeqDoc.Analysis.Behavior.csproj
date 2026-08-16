@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SeqDoc.Application\SeqDoc.Application.csproj" />
+    <ProjectReference Include="..\SeqDoc.Core\SeqDoc.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SeqDoc.Behavior.Tests" />
+  </ItemGroup>
+
+</Project>

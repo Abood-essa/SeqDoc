@@ -1,0 +1,13 @@
+<Project>
+  <Import Project="..\..\..\..\Directory.Build.props" />
+
+  <PropertyGroup>
+    <!-- The accepted contract ConditionalDependencyInjection fixture mirrors the exact top-level
+         ConfigurationBinder.GetValue<bool> local, one if/else registering unrelated IService
+         implementations, the controller/service call resolution that includes both implementations,
+         and the fail-closed exclusivity/unsupported/extracted-method negative partitions. -->
+    <BaseIntermediateOutputPath>obj-custom\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj\**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

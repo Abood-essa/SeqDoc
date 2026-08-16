@@ -1,0 +1,30 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SeqDoc.Analysis.Roslyn/SeqDoc.Analysis.Roslyn.csproj" />
+    <Project Path="src/SeqDoc.Analysis.Behavior/SeqDoc.Analysis.Behavior.csproj" />
+    <Project Path="src/SeqDoc.Analysis.Scenarios/SeqDoc.Analysis.Scenarios.csproj" />
+    <Project Path="src/SeqDoc.Application/SeqDoc.Application.csproj" />
+    <Project Path="src/SeqDoc.Cli/SeqDoc.Cli.csproj" />
+    <Project Path="src/SeqDoc.Configuration/SeqDoc.Configuration.csproj" />
+    <Project Path="src/SeqDoc.Core/SeqDoc.Core.csproj" />
+    <Project Path="src/SeqDoc.FrameworkModels/SeqDoc.FrameworkModels.csproj" />
+    <Project Path="src/SeqDoc.Persistence.Sqlite/SeqDoc.Persistence.Sqlite.csproj" />
+    <Project Path="src/SeqDoc.Rendering.Markdown/SeqDoc.Rendering.Markdown.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SeqDoc.AcceptanceTests/SeqDoc.AcceptanceTests.csproj" />
+    <Project Path="tests/SeqDoc.Analysis.Tests/SeqDoc.Analysis.Tests.csproj" />
+    <Project Path="tests/SeqDoc.Behavior.Tests/SeqDoc.Behavior.Tests.csproj" />
+    <Project Path="tests/SeqDoc.Cli.Tests/SeqDoc.Cli.Tests.csproj" />
+    <Project Path="tests/SeqDoc.Configuration.Tests/SeqDoc.Configuration.Tests.csproj" />
+    <Project Path="tests/SeqDoc.Core.Tests/SeqDoc.Core.Tests.csproj" />
+    <Project Path="tests/SeqDoc.FrameworkModels.Tests/SeqDoc.FrameworkModels.Tests.csproj" />
+    <Project Path="tests/SeqDoc.Persistence.Tests/SeqDoc.Persistence.Tests.csproj" />
+    <Project Path="tests/SeqDoc.Rendering.Tests/SeqDoc.Rendering.Tests.csproj" />
+    <Project Path="tests/SeqDoc.Scenarios.Tests/SeqDoc.Scenarios.Tests.csproj" />
+    <Project Path="tests/SeqDoc.Wording.Tests/SeqDoc.Wording.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/SeqDoc.Persistence.TestHost/SeqDoc.Persistence.TestHost.csproj" />
+  </Folder>
+</Solution>
