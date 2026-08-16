@@ -11,8 +11,10 @@ the CreditTransfer-first bounded sequence. CT-0 closed with output correctly wit
 exposed a generic `LoopNode` persistence deserialization defect during activation. That repair is the immediate
 prerequisite to generating the first CreditTransfer diagrams. CT-1 repaired and regression-tested the defect; the
 Web partition now activates successfully but produces `SD4008` because no `net9.0` Web flows are admitted. Generic
-configurable roots are therefore the shortest next path to useful diagrams, with predicate presentation following
-before the first diagram milestone.
+configurable roots remain the broad foundation, but CT-2 first adds the smaller exact ASP.NET Core 9 version-table
+admission needed to attempt useful Web diagrams immediately. Predicate presentation follows before the first diagram
+milestone is accepted. CT-2 is now closed: two exact Web entry diagrams are generated on the Desktop, but both remain
+sparse at `SC001`, so generic root/method-flow presentation is the next value boundary.
 
 ## Next execution order
 

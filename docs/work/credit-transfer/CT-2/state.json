@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "CT-2",
+  "status": "Closed",
+  "baselineRevision": "0de04ef",
+  "candidateRevision": null,
+  "review": {
+    "status": "Completed",
+    "findings": [
+      {
+        "id": "CT-2-F1",
+        "severity": "Medium",
+        "disposition": "Fixed",
+        "summary": "Parameterized the existing unsupported root and outcome tests with both 8.0.0.0 and 11.0.0.0; the focused suite passes 105/105."
+      }
+    ]
+  },
+  "verification": {
+    "focusedCommand": {
+      "result": "Passed",
+      "command": "dotnet test tests/SeqDoc.FrameworkModels.Tests/SeqDoc.FrameworkModels.Tests.csproj -c Release --filter FullyQualifiedName~AspNetCoreControllerModel",
+      "summary": "Test Writer observed the two intended version 9 red failures; after the explicit version-table repair and one nullability compile repair, 103/103 focused tests passed."
+    },
+    "finalGate": {
+      "result": "Passed",
+      "command": "dotnet test tests/SeqDoc.FrameworkModels.Tests/SeqDoc.FrameworkModels.Tests.csproj -c Release",
+      "summary": "226 passed, 0 failed, 0 skipped."
+    }
+  },
+  "notes": [
+    "Inserted from measured SD4008 evidence as the smallest generic admission step toward first CreditTransfer diagrams; configurable roots remain next.",
+    "The supported table contains only exact 9.0.0.0 and 10.0.0.0 strings and is shared by root and direct-outcome identity checks.",
+    "Test budget covers four distinct claims: version 9 root, version 9 outcome, exact-table rejection below/above the table, and existing version 10 coverage.",
+    "External acceptance activated the net9.0 Web partition and generated two exact controller diagrams: POST ussd and POST virgincredittransfer. Both currently stop at SC001 with service claims withheld; no secrets or checkout paths appear in output."
+  ]
+}

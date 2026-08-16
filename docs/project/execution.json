@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "mode": "active",
   "activePlanPath": "docs/project/credit-transfer-plan.md",
-  "activeCheckpointPath": "docs/work/credit-transfer/CT-1",
-  "activeCheckpointId": "CT-1",
-  "nextAction": "CT-1 is closed; activate generic configurable roots as the shortest path to the first CreditTransfer diagrams, then complete predicate presentation before the first diagram milestone."
+  "activeCheckpointPath": "docs/work/credit-transfer/CT-2",
+  "activeCheckpointId": "CT-2",
+  "nextAction": "CT-2 is closed with two current CreditTransfer Web diagrams; activate generic configurable roots and direct method-flow presentation to move beyond the sparse controller boundary."
 }

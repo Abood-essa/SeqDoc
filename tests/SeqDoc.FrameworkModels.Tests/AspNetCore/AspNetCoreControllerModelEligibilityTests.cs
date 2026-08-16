@@ -114,8 +114,10 @@ public sealed class AspNetCoreControllerModelEligibilityTests
         Assert.Empty(result.Diagnostics);
     }
 
-    [Fact]
-    public async Task BaseChainWithWrongAssemblyVersionProducesNoRoot()
+    [Theory]
+    [InlineData("8.0.0.0")]
+    [InlineData("11.0.0.0")]
+    public async Task BaseChainWithUnsupportedAssemblyVersionProducesNoRoot(string assemblyVersion)
     {
         var index = OrdersIndex();
         var declaring = AspNetCoreTestIndexFactory.EligibleControllerTypeShape() with
@@ -124,7 +126,7 @@ public sealed class AspNetCoreControllerModelEligibilityTests
             [
                 new FrameworkTypeIdentity(
                     AspNetCoreTestIndexFactory.ControllerBaseAssembly,
-                    "9.0.0.0",
+                    assemblyVersion,
                     AspNetCoreTestIndexFactory.ControllerBaseType),
                 new FrameworkTypeIdentity("System.Private.CoreLib", "10.0.0.0", "System.Object"),
             ],
@@ -282,6 +284,35 @@ public sealed class AspNetCoreControllerModelEligibilityTests
 
         var result = await Model.AnalyzeSymbolAsync(
             AspNetCoreTestIndexFactory.MethodSymbolDescriptor("GetById"),
+            new FrameworkAnalysisContext(AspNetCoreTestIndexFactory.Profile, index),
+            CancellationToken.None);
+
+        Assert.True(result.Recognized);
+        var entry = Assert.Single(result.Facts.OfType<HttpEntryPointFact>());
+        Assert.Equal("api/Orders/{id:guid}", entry.CanonicalRoute);
+        Assert.Equal(SeqDoc.Core.Evidence.CertaintyLevel.Exact, entry.Certainty);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public async Task VersionNineEligibleShapeEmitsExactRoot()
+    {
+        var index = OrdersIndex();
+        var declaring = AspNetCoreTestIndexFactory.EligibleControllerTypeShape() with
+        {
+            BaseTypeChain =
+            [
+                new FrameworkTypeIdentity(
+                    AspNetCoreTestIndexFactory.ControllerBaseAssembly,
+                    "9.0.0.0",
+                    AspNetCoreTestIndexFactory.ControllerBaseType),
+                new FrameworkTypeIdentity("System.Private.CoreLib", "10.0.0.0", "System.Object"),
+            ],
+        };
+        var shape = AspNetCoreTestIndexFactory.EligibleMethodShape("GetById") with { DeclaringType = declaring };
+
+        var result = await Model.AnalyzeSymbolAsync(
+            AspNetCoreTestIndexFactory.MethodSymbolDescriptor("GetById", shape),
             new FrameworkAnalysisContext(AspNetCoreTestIndexFactory.Profile, index),
             CancellationToken.None);
 

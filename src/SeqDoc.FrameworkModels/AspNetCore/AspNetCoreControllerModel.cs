@@ -39,7 +39,8 @@ public sealed class AspNetCoreControllerModel : IFrameworkBehaviorModel
         public const string HttpDeleteAttribute = "Microsoft.AspNetCore.Mvc.HttpDeleteAttribute";
         public const string ControllerBaseAssembly = "Microsoft.AspNetCore.Mvc.Core";
         public const string ControllerBaseType = "Microsoft.AspNetCore.Mvc.ControllerBase";
-        public const string ControllerBaseAssemblyVersion = "10.0.0.0";
+        public static readonly ImmutableArray<string> SupportedControllerBaseAssemblyVersions =
+            ["9.0.0.0", "10.0.0.0"];
         public const string MvcReference = "Microsoft.AspNetCore.Mvc";
         public const string MvcCoreReference = "Microsoft.AspNetCore.Mvc.Core";
         public const string AspNetCoreAppReference = "Microsoft.AspNetCore.App";
@@ -453,9 +454,10 @@ public sealed class AspNetCoreControllerModel : IFrameworkBehaviorModel
         }
 
         var identity = operation.TargetIdentity;
-        if (!string.Equals(identity.AssemblyIdentity, Identity.ControllerBaseAssembly, StringComparison.Ordinal)
-            || !string.Equals(identity.AssemblyVersion, Identity.ControllerBaseAssemblyVersion, StringComparison.Ordinal)
-            || !string.Equals(identity.ContainingMetadataType, Identity.ControllerBaseType, StringComparison.Ordinal)
+        if (!HasExactControllerBaseIdentity(
+                identity.AssemblyIdentity,
+                identity.AssemblyVersion,
+                identity.ContainingMetadataType)
             || identity.GenericArity != 0)
         {
             // A different assembly, a missing/unsupported assembly version, or a lookalike containing
@@ -587,12 +589,19 @@ public sealed class AspNetCoreControllerModel : IFrameworkBehaviorModel
             && !type.IsAbstract
             && !type.IsStatic
             && type.GenericArity == 0
-            && type.BaseTypeChain.Any(HasExactControllerBaseIdentity);
+            && type.BaseTypeChain.Any(identity => HasExactControllerBaseIdentity(
+                identity.AssemblyIdentity,
+                identity.AssemblyVersion,
+                identity.MetadataName));
 
-    private static bool HasExactControllerBaseIdentity(FrameworkTypeIdentity identity)
-        => string.Equals(identity.AssemblyIdentity, Identity.ControllerBaseAssembly, StringComparison.Ordinal)
-            && string.Equals(identity.AssemblyVersion, Identity.ControllerBaseAssemblyVersion, StringComparison.Ordinal)
-            && string.Equals(identity.MetadataName, Identity.ControllerBaseType, StringComparison.Ordinal);
+    private static bool HasExactControllerBaseIdentity(
+        string assemblyIdentity,
+        string? assemblyVersion,
+        string metadataName)
+        => string.Equals(assemblyIdentity, Identity.ControllerBaseAssembly, StringComparison.Ordinal)
+            && assemblyVersion is not null
+            && Identity.SupportedControllerBaseAssemblyVersions.Contains(assemblyVersion, StringComparer.Ordinal)
+            && string.Equals(metadataName, Identity.ControllerBaseType, StringComparison.Ordinal);
 
     private static bool IsAdmittedHttpMethodAttribute(string attributeType)
         => attributeType is Identity.HttpGetAttribute

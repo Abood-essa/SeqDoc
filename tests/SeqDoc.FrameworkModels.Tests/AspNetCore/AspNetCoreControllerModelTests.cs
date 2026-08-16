@@ -392,8 +392,26 @@ public sealed class AspNetCoreControllerModelTests
         Assert.Equal("SEQAS002", Assert.Single(result.Diagnostics).Code);
     }
 
+    [Theory]
+    [InlineData("8.0.0.0")]
+    [InlineData("11.0.0.0")]
+    public async Task UnsupportedAssemblyVersionProducesNoExactOutcome(string assemblyVersion)
+    {
+        var index = OrdersIndex();
+        var context = new FrameworkAnalysisContext(AspNetCoreTestIndexFactory.Profile, index);
+        var operation = AspNetCoreTestIndexFactory.Invocation(
+            "GetById",
+            AspNetCoreTestIndexFactory.ControllerBaseIdentityWithVersion(assemblyVersion, "Ok"));
+
+        var result = await Model.AnalyzeOperationAsync(operation, context, CancellationToken.None);
+
+        Assert.False(result.Recognized);
+        Assert.Empty(result.Facts);
+        Assert.Empty(result.Diagnostics);
+    }
+
     [Fact]
-    public async Task WrongAssemblyVersionProducesNoExactOutcome()
+    public async Task VersionNineDirectOutcomeMapsToExactStatus()
     {
         var index = OrdersIndex();
         var context = new FrameworkAnalysisContext(AspNetCoreTestIndexFactory.Profile, index);
@@ -403,8 +421,11 @@ public sealed class AspNetCoreControllerModelTests
 
         var result = await Model.AnalyzeOperationAsync(operation, context, CancellationToken.None);
 
-        Assert.False(result.Recognized);
-        Assert.Empty(result.Facts);
+        Assert.True(result.Recognized);
+        var fact = Assert.Single(result.Facts.OfType<HttpDirectOutcomeFact>());
+        Assert.Equal(200, fact.StatusCode);
+        Assert.Equal(AspNetCoreTestIndexFactory.MethodId("GetById"), fact.RootMethod);
+        Assert.Equal(CertaintyLevel.Exact, fact.Certainty);
         Assert.Empty(result.Diagnostics);
     }
 
