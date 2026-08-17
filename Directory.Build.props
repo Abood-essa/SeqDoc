@@ -11,5 +11,8 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <IsPackable>false</IsPackable>
+    <Authors>Bilaltariq41</Authors>
+    <Copyright>Copyright (c) 2026 Bilaltariq41</Copyright>
+    <PackageLicenseExpression>MPL-2.0</PackageLicenseExpression>
   </PropertyGroup>
 </Project>

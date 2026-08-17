@@ -53,3 +53,14 @@ dotnet run --project src/SeqDoc.Cli -- analyze <target>
 - [Changelog](docs/changelog.md)
 - [Contributing](docs/contributing.md)
 - [Roadmap](docs/roadmap.md)
+
+## License
+
+Copyright (c) 2026 Bilaltariq41.
+
+SeqDoc is licensed under the [Mozilla Public License 2.0](LICENSE). Modifications to MPL-covered
+files that are distributed must remain available in source form under the MPL. The license does not
+require private, undistributed modifications to be published.
+
+SeqDoc does not claim ownership of source repositories it analyzes. Rights in generated
+documentation depend on the analyzed source, the generated content, and applicable law.
