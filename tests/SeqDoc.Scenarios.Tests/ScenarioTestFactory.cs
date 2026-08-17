@@ -592,6 +592,22 @@ internal static class ScenarioTestFactory
             PredicateSemanticFacts: predicateFacts);
     }
 
+    internal static ScenarioAnalysisRequest CreateConfiguredRootRequest(
+        bool includeFrameworkRoot = false,
+        bool reverseConstruction = false)
+    {
+        var request = CreateGetRequest();
+        var roots = includeFrameworkRoot
+            ? new[] { ServiceMethod, ActionMethod }
+            : new[] { ServiceMethod };
+        if (reverseConstruction)
+        {
+            Array.Reverse(roots);
+        }
+
+        return request with { ConfiguredRoots = roots.ToImmutableArray() };
+    }
+
     internal static ScenarioAnalysisRequest CreateRootDirectCallRequest(
         bool decisionGuarded = false,
         string? exclusion = null,
@@ -691,6 +707,71 @@ internal static class ScenarioTestFactory
         {
             Behavior = behavior,
             DependencyInjectionFacts = new DependencyInjectionFactSet(1, "test", Profile, baseRequest.ProgramIndex.IndexFingerprint, [], [], [], "empty-di"),
+        };
+    }
+
+    internal static ScenarioAnalysisRequest CreateRootDirectCallTryRequest()
+    {
+        var request = CreateRootDirectCallRequest(decisionGuarded: true);
+        var flow = request.Behavior.MethodFlows.Single(candidate => candidate.Method == ActionMethod);
+        var exit = flow.Nodes.OfType<ExitFlowNode>().Single();
+        var calls = flow.Nodes.OfType<InvocationFlowNode>().OrderBy(node => node.BlockOrdinal).ToArray();
+        var extraEdges = calls.Select((call, ordinal) => new FlowEdge(
+            StableIdentity.CreateFlowEdgeId(new FlowEdgeIdentityDescriptor(
+                ActionMethod, call.Id.Value, exit.Id.Value, FlowEdgeKind.Normal.ToString(), 10 + ordinal)),
+            ActionMethod,
+            call.Id,
+            exit.Id,
+            FlowEdgeKind.Normal,
+            null,
+            [SourceEvidence("root-direct-try-edge")],
+            CertaintyLevel.Exact));
+        var decision = flow.Nodes.OfType<DecisionFlowNode>().Single();
+        var falseCall = calls.Single(call => call.Operation != RootDirectCallOperation);
+        var root = new FlowRegion(
+            StableIdentity.CreateFlowRegionId(new FlowRegionIdentityDescriptor(ActionMethod, "Root", 0)),
+            ActionMethod,
+            FlowRegionKind.Root,
+            null,
+            0,
+            flow.Nodes.Select(node => node.Id).ToImmutableArray(),
+            null,
+            [],
+            CertaintyLevel.Exact);
+        var tryRegion = new FlowRegion(
+            StableIdentity.CreateFlowRegionId(new FlowRegionIdentityDescriptor(ActionMethod, "Try", 1)),
+            ActionMethod,
+            FlowRegionKind.Try,
+            root.Id,
+            1,
+            flow.Nodes.OfType<DecisionFlowNode>().Select(node => node.Id)
+                .Concat(calls.Select(node => node.Id)).ToImmutableArray(),
+            null,
+            [SourceEvidence("root-direct-try")],
+            CertaintyLevel.Exact);
+        // Keep the CT-3 call-site facts as the canonical anchors. Only the normal arm-to-exit
+        // edges and region memberships are added here; no second invocation or call-site fact is
+        // fabricated by the Try mutation.
+        return request with
+        {
+            Behavior = request.Behavior with
+            {
+                MethodFlows = request.Behavior.MethodFlows
+                    .Select(candidate => candidate.Method == ActionMethod
+                        ? candidate with
+                        {
+                            Edges = candidate.Edges.AddRange(extraEdges),
+                            ControlDependences = candidate.ControlDependences.Add(new ControlDependence(
+                                decision.Id,
+                                falseCall.Id,
+                                false,
+                                [SourceEvidence("root-direct-try-false-membership")],
+                                CertaintyLevel.Exact)),
+                            Regions = [root, tryRegion],
+                        }
+                        : candidate)
+                    .ToImmutableArray(),
+            },
         };
     }
 
@@ -2867,8 +2948,17 @@ internal static class ScenarioTestFactory
     internal static ScenarioAnalysisRequest CreateUnsupportedTopologyRequest()
         => CreateWorkItemTopologyRequestCore(unsupportedTopology: true);
 
+    internal static ScenarioAnalysisRequest CreatePlainTryTopologyRequest()
+        => CreateWorkItemTopologyRequestCore(plainTry: true);
+
+    internal static ScenarioAnalysisRequest CreateExceptionRegionTopologyRequest(string regionKind)
+        => CreateWorkItemTopologyRequestCore(exceptionRegionKind: regionKind);
+
+    internal static ScenarioAnalysisRequest CreateFinallyTargetTopologyRequest()
+        => CreateWorkItemTopologyRequestCore(finallyTarget: true);
+
     /// <summary>
-    /// The work-item request with an exact natural loop (architecture decision decision 11 / accepted contract requirement 12):
+    /// The work-item request with an exact natural loop (accepted CT-4 design item 1):
     /// one DecisionFlowNode is the exact <see cref="LoopNode.Header"/> of an existing LoopNode, the
     /// lowered header and body sit inside a Try region, and the body's LoopBack edge targets that same
     /// header. The body Add mutation carries a direct true-arm dependence. The topology builder must
@@ -3078,6 +3168,9 @@ internal static class ScenarioTestFactory
         bool unsupportedTopology = false,
         bool scopedConflict = false,
         bool multipleConflict = false,
+        bool plainTry = false,
+        string? exceptionRegionKind = null,
+        bool finallyTarget = false,
         EntryPointId? entryPointId = null,
         MethodFlowSnapshot? customActionFlow = null,
         MethodFlowSnapshot? customServiceFlow = null)
@@ -3115,7 +3208,9 @@ internal static class ScenarioTestFactory
             dualPolarityConflict,
             unsupportedTopology,
             scopedConflict,
-            multipleConflict);
+            multipleConflict,
+            plainTry ? "Try" : exceptionRegionKind,
+            finallyTarget);
         var actionFlow = customActionFlow ?? CreateActionFlow(WorkItemActionMethod);
         var behavior = new BehaviorSnapshot(
             1,
@@ -3284,7 +3379,9 @@ internal static class ScenarioTestFactory
         bool dualPolarityConflict,
         bool unsupportedTopology,
         bool scopedConflict = false,
-        bool multipleConflict = false)
+        bool multipleConflict = false,
+        string? nestedRegionKind = null,
+        bool finallyTarget = false)
     {
         var entry = new EntryFlowNode(
             WorkItemFlowNode("Entry", 0, "entry"),
@@ -3506,17 +3603,22 @@ internal static class ScenarioTestFactory
                 [],
                 CertaintyLevel.Exact),
         };
-        if (unsupportedTopology)
+        if (unsupportedTopology || nestedRegionKind is not null || finallyTarget)
         {
+            var regionKind = nestedRegionKind ?? (finallyTarget ? "Finally" : "Catch");
             regions.Add(new FlowRegion(
-                StableIdentity.CreateFlowRegionId(new FlowRegionIdentityDescriptor(WorkItemServiceMethod, "Catch", 1)),
+                StableIdentity.CreateFlowRegionId(new FlowRegionIdentityDescriptor(WorkItemServiceMethod, regionKind, 1)),
                 WorkItemServiceMethod,
-                FlowRegionKind.Catch,
+                Enum.Parse<FlowRegionKind>(regionKind),
                 regions[0].Id,
                 1,
-                [locked.Id, conflictFactory.Id],
-                "System.Exception",
-                [],
+                nestedRegionKind == "Try"
+                    ? nodes.Select(node => node.Id).ToImmutableArray()
+                    : finallyTarget
+                        ? [conflictFactory.Id]
+                    : [locked.Id, conflictFactory.Id],
+                regionKind is "Catch" or "Filter" ? "System.Exception" : null,
+                [SourceEvidence("workitem-try")],
                 CertaintyLevel.Exact));
         }
 

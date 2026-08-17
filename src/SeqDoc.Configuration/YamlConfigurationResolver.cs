@@ -62,8 +62,10 @@ public sealed class YamlConfigurationResolver : IConfigurationResolver
         var maxParallelism = new ResolvedConfigurationValue<int>(Environment.ProcessorCount, ConfigurationProvenance.Default);
         var binaryAnalysis = new ResolvedConfigurationValue<string?>("metadata-only", ConfigurationProvenance.Default);
         var sourceLink = new ResolvedConfigurationValue<string?>("offline", ConfigurationProvenance.Default);
+        var roots = new ResolvedConfigurationValue<ImmutableSortedSet<string>>(ImmutableSortedSet.Create<string>(StringComparer.Ordinal), ConfigurationProvenance.Default);
         var msbuildProperties = EmptyResolvedMap();
         var knownValues = EmptyResolvedMap();
+        bool rootsSpecified = false;
 
         if (document is not null)
         {
@@ -85,6 +87,9 @@ public sealed class YamlConfigurationResolver : IConfigurationResolver
             sourceLink = document.Analysis.SpecifiedFields.Contains("sourceLink")
                 ? new ResolvedConfigurationValue<string?>(document.Analysis.SourceLink, ConfigurationProvenance.ConfigurationFile)
                 : sourceLink;
+            rootsSpecified = document.RootsSpecified;
+            roots = new ResolvedConfigurationValue<ImmutableSortedSet<string>>(document.Roots,
+                document.RootsSpecified ? ConfigurationProvenance.ConfigurationFile : ConfigurationProvenance.Default);
         }
 
         if (request.Profile is not null)
@@ -132,8 +137,10 @@ public sealed class YamlConfigurationResolver : IConfigurationResolver
                 maxParallelism,
                 binaryAnalysis,
                 sourceLink,
+                roots,
                 msbuildProperties,
-                knownValues))
+                 knownValues,
+                 rootsSpecified))
             : ApplicationResult.Failure<ResolvedPassAConfiguration>(ApplicationOutcome.InvalidInput, [invalid]);
     }
 

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "CT-4",
+  "status": "Closed",
+  "baselineRevision": "c9f286c",
+  "candidateRevision": null,
+  "review": {
+    "status": "Completed",
+    "findings": [
+      {
+        "id": "CT-4-F1",
+        "severity": "High",
+        "disposition": "Fixed",
+        "summary": "Candidate fails closed on exception-handler/filter/finally decision edges and reached Catch/Filter/Finally targets; focused coverage proves only the affected finally-target arm becomes Unknown."
+      },
+      {
+        "id": "CT-4-F2",
+        "severity": "Medium",
+        "disposition": "Fixed",
+        "summary": "Focused integration coverage carries a Try-contained guarded root MethodCall through ScenarioGraphBuilder and DocumentationPlanner and proves polarity, one-time fragment placement, no DP002, and retained SC001."
+      },
+      {
+        "id": "CT-4-F3",
+        "severity": "Low",
+        "disposition": "Fixed",
+        "summary": "Changed comments now cite the accepted CT-4 design rather than a nonexistent numbered architecture decision."
+      },
+      {
+        "id": "CT-4-F4",
+        "severity": "Low",
+        "disposition": "Fixed",
+        "summary": "Durable nextAction now reflects review finding resolution rather than resuming initial build work."
+      }
+    ]
+  },
+  "verification": {
+    "focusedCommand": {
+      "result": "Passed",
+      "command": "dotnet test SeqDoc.slnx -c Release --filter FullyQualifiedName~TryRegion|FullyQualifiedName~RootDirectCall|FullyQualifiedName~ScenarioTopology|FullyQualifiedName~FragmentPlanner",
+      "summary": "After owner-authorized repair, 46 Scenario and 40 Wording focused tests passed. Coverage includes plain-Try classification, arm-local finally-target rejection, and Method Flow through Diagram Plan guarded-call placement."
+    },
+    "finalGate": {
+      "result": "Passed",
+      "command": "dotnet test tests/SeqDoc.Scenarios.Tests/SeqDoc.Scenarios.Tests.csproj -c Release && dotnet test tests/SeqDoc.Wording.Tests/SeqDoc.Wording.Tests.csproj -c Release",
+      "summary": "111 Scenario and 92 Wording tests passed with zero failures or skips. The Release CLI build then succeeded with zero warnings and errors."
+    }
+  },
+  "notes": [
+    "CT-4 is the smallest generic boundary exposed by CT-3 regeneration: ordinary conditions inside a Try region are currently rejected before the existing predicate and fragment contracts can place guarded calls.",
+    "The checkpoint does not claim catch/finally behavior and does not broaden traversal beyond the admitted root method.",
+    "Three distinct regression claims cover plain-Try classification, fail-closed catch/filter/finally partitions, and one-time guarded-message fragment placement without DP002.",
+    "Orchestrator inspection found the implementation limited to ScenarioGraphBuilder plus declared tests; git diff --check passed.",
+    "The independent review recorded four findings: one High, one Medium, and two Low. Candidate repairs for all four are present in the worktree.",
+    "Two review-repair reruns failed. Per checkpoint protocol, CT-4 was Blocked with the worktree preserved and no final gate or external regeneration run.",
+    "The owner explicitly authorized continuing CT-4 on 2026-08-16, including additional verification and subsequent bounded checkpoints until a substantive blocker requires a stop.",
+    "Owner-authorized repair verification passed 46 Scenario and 40 Wording focused tests; the declared final gate and Release CLI build also passed.",
+    "External regeneration could not be executed because the local Bash policy denies dotnet run. Existing Desktop output was not treated as fresh acceptance evidence; regeneration remains a milestone follow-up rather than a product-test failure."
+  ]
+}

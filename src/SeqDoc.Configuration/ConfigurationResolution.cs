@@ -41,8 +41,10 @@ public sealed record ResolvedPassAConfiguration(
     ResolvedConfigurationValue<int> MaxParallelism,
     ResolvedConfigurationValue<string?> BinaryAnalysis,
     ResolvedConfigurationValue<string?> SourceLink,
+    ResolvedConfigurationValue<ImmutableSortedSet<string>> Roots,
     ImmutableSortedDictionary<string, ResolvedConfigurationValue<string>> MsBuildProperties,
-    ImmutableSortedDictionary<string, ResolvedConfigurationValue<string>> KnownValues);
+    ImmutableSortedDictionary<string, ResolvedConfigurationValue<string>> KnownValues,
+    bool RootsSpecified = false);
 
 public interface IConfigurationResolver
 {

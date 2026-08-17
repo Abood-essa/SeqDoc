@@ -118,6 +118,17 @@ public static class CliHost
             }
 
             var configuration = configurationResult.Value!;
+            if (options.AllFrameworks && configuration.RootsSpecified)
+            {
+                var diagnostic = CreateDiagnostic(
+                    "SD4012",
+                    "Configured method roots cannot be used with --all-frameworks.",
+                    "selection.roots",
+                    "Root ownership is scoped to one selected compilation profile in this checkpoint.",
+                    "Select one framework or omit selection.roots.");
+                return WriteResult(standardOutput, standardError, options.Json, commandName,
+                    ApplicationOutcome.InvalidInput, null, [diagnostic]);
+            }
             var request = new CompilationProfileResolutionRequest(
                 paths.RepositoryRoot,
                 paths.TargetPath,
@@ -155,12 +166,14 @@ public static class CliHost
                 }
             }
 
+            var aggregateBuilder = new AggregateAnalysisBuilder();
+            aggregateBuilder.ConfigureRoots(configuration.Roots.Value);
             var workflow = new PassAWorkflow(
                 new MsBuildCompilationProfileResolver(),
                 new RoslynProgramIndexBuilder(),
                 new SqliteProgramIndexStore(paths.CachePath),
                 new SqliteAnalysisStore(paths.CachePath),
-                new AggregateAnalysisBuilder());
+                aggregateBuilder);
 
             return options.Command switch
             {
@@ -765,6 +778,7 @@ public static class CliHost
         maxParallelism = configuration.MaxParallelism,
         binaryAnalysis = configuration.BinaryAnalysis,
         sourceLink = configuration.SourceLink,
+        roots = configuration.Roots,
         msbuildProperties = configuration.MsBuildProperties,
         knownValues = configuration.KnownValues,
     };
@@ -777,6 +791,7 @@ public static class CliHost
         output.WriteLine($"Maximum parallelism: {configuration.MaxParallelism.Value} ({configuration.MaxParallelism.Provenance})");
         output.WriteLine($"Binary analysis: {configuration.BinaryAnalysis.Value ?? "<default>"} ({configuration.BinaryAnalysis.Provenance})");
         output.WriteLine($"Source Link: {configuration.SourceLink.Value ?? "<default>"} ({configuration.SourceLink.Provenance})");
+        output.WriteLine($"Configured roots: {string.Join(", ", configuration.Roots.Value)} ({configuration.Roots.Provenance})");
         foreach ((string key, ResolvedConfigurationValue<string> value) in configuration.MsBuildProperties)
         {
             output.WriteLine($"MSBuild property: {key}={value.Value} ({value.Provenance})");

@@ -32,7 +32,8 @@ public sealed record ScenarioAnalysisRequest(
     ConfigurationSemanticFactSet? ConfigurationSemanticFacts = null,
     CallbackBoundaryFactSet? CallbackBoundaryFacts = null,
     PredicateSemanticFactSet? PredicateSemanticFacts = null,
-    MinimalApiHandlerFactSet? HandlerFacts = null);
+    MinimalApiHandlerFactSet? HandlerFacts = null,
+    ImmutableArray<MethodId> ConfiguredRoots = default);
 
 /// <summary>
 /// Builds deterministic, evidence-backed v0 scenario graphs by joining the accepted entry-point,
@@ -65,13 +66,28 @@ public static class ScenarioGraphBuilder
     public static ScenarioGraphSet Build(ScenarioAnalysisRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var graphs = request.FrameworkFacts.Facts
+        var frameworkEntries = request.FrameworkFacts.Facts
             .Where(fact => fact is HttpEntryPointFact or MinimalApiRouteFact)
             .Select(fact => fact is MinimalApiRouteFact minimal
                 ? new NormalizedEntry(minimal.EntryPointId, minimal.HandlerRoot, minimal.HttpMethod, minimal.CanonicalRoute, minimal.OperationKey, ScenarioActionKind.MinimalApiHandler, minimal.Evidence)
                 : new NormalizedEntry(((HttpEntryPointFact)fact).EntryPointId, ((HttpEntryPointFact)fact).RootMethod, ((HttpEntryPointFact)fact).HttpMethod, ((HttpEntryPointFact)fact).CanonicalRoute, ((HttpEntryPointFact)fact).OperationKey, ScenarioActionKind.ControllerAction, fact.Evidence))
+            .ToArray();
+        var admittedMethods = frameworkEntries.Select(entry => entry.RootMethod).ToHashSet();
+        var configuredEntries = (request.ConfiguredRoots.IsDefault ? [] : request.ConfiguredRoots)
+            .Where(method => !admittedMethods.Contains(method))
+            .OrderBy(method => method.Value, StringComparer.Ordinal)
+            .Select(method => new NormalizedEntry(
+                StableIdentity.CreateConfiguredMethodEntryPointId(new ConfiguredMethodEntryPointIdentityDescriptor(request.Profile.Id, method)),
+                 method, HttpMethodKind.Unknown, string.Empty,
+                 ConfiguredDisplaySignature(request.ProgramIndex, method),
+                 ScenarioActionKind.ConfiguredMethod,
+                 request.ProgramIndex.Methods.First(item => item.Id == method).Evidence))
+            .ToArray();
+        var graphs = frameworkEntries
             .OrderBy(fact => fact.EntryPointId.Value, StringComparer.Ordinal)
             .Select(fact => BuildGraph(request, fact))
+            .Concat(configuredEntries.Select(entry => BuildGraph(request, entry)))
+            .OrderBy(graph => graph.EntryPoint.Value, StringComparer.Ordinal)
             .ToImmutableArray();
         var debugProjection = BuildSetDebugProjection(request, graphs);
         return new ScenarioGraphSet(
@@ -84,7 +100,10 @@ public static class ScenarioGraphBuilder
             debugProjection);
     }
 
-    private sealed record NormalizedEntry(EntryPointId EntryPointId, MethodId RootMethod, HttpMethodKind HttpMethod, string CanonicalRoute, string OperationKey, ScenarioActionKind ActionKind, ImmutableArray<EvidenceRef> Evidence);
+    private sealed record NormalizedEntry(EntryPointId EntryPointId, MethodId RootMethod, HttpMethodKind HttpMethod, string CanonicalRoute, string OperationKey, ScenarioActionKind ActionKind, ImmutableArray<EvidenceRef> Evidence)
+    {
+        public ScenarioRootKind RootKind => ActionKind == ScenarioActionKind.ConfiguredMethod ? ScenarioRootKind.ConfiguredMethod : ScenarioRootKind.HttpEntryPoint;
+    }
 
     private static ScenarioGraph BuildGraph(ScenarioAnalysisRequest request, NormalizedEntry entryPoint)
     {
@@ -105,7 +124,9 @@ public static class ScenarioGraphBuilder
             entryPoint.Evidence);
         nodes.Add(entryNode);
 
-        var actionPresentation = entryPoint.ActionKind == ScenarioActionKind.MinimalApiHandler
+        var actionPresentation = entryPoint.ActionKind == ScenarioActionKind.ConfiguredMethod
+            ? ConfiguredMethodPresentation(request.ProgramIndex, entryPoint.RootMethod)
+            : entryPoint.ActionKind == ScenarioActionKind.MinimalApiHandler
             ? MinimalApiActionPresentation(request.ProgramIndex, entryPoint.RootMethod)
             : new ScenarioNodePresentation(
                 ControllerTypeName: ControllerTypeName(request.ProgramIndex, entryPoint.RootMethod),
@@ -117,7 +138,7 @@ public static class ScenarioGraphBuilder
             $"action:{entryPoint.RootMethod.Value}",
             entryPoint.RootMethod,
             null,
-            entryPoint.ActionKind == ScenarioActionKind.MinimalApiHandler ? "minimal API handler" : "controller action",
+                 entryPoint.ActionKind == ScenarioActionKind.ConfiguredMethod ? "configured method" : entryPoint.ActionKind == ScenarioActionKind.MinimalApiHandler ? "minimal API handler" : "controller action",
              actionPresentation with { ActionKind = entryPoint.ActionKind },
             entryPoint.Evidence);
         nodes.Add(actionNode);
@@ -129,6 +150,41 @@ public static class ScenarioGraphBuilder
             ScenarioEdgeKind.Entry,
             string.Empty,
             entryPoint.Evidence));
+
+        if (entryPoint.ActionKind == ScenarioActionKind.ConfiguredMethod)
+        {
+            var method = request.ProgramIndex.Methods.Single(item => item.Id == entryPoint.RootMethod);
+            if (request.Behavior.Profile.Id != request.Profile.Id
+                || !string.Equals(request.Behavior.ProgramIndexFingerprint, request.ProgramIndex.IndexFingerprint, StringComparison.Ordinal))
+            {
+                var mismatch = CreateDiagnostic(profileId, entryPointId, "SC-DIRECT-MISMATCH",
+                    "The configured method behavior snapshot does not match the active analysis.",
+                    $"behaviorProfile={request.Behavior.Profile.Id.Value}; requestProfile={request.Profile.Id.Value}; "
+                    + $"behaviorFingerprint={request.Behavior.ProgramIndexFingerprint}; requestFingerprint={request.ProgramIndex.IndexFingerprint}",
+                    entryPoint.Evidence);
+                diagnostics.Add(mismatch);
+                return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, ScenarioTopology.Empty,
+                    directCallExpansion: new ScenarioDirectCallExpansion([], false, [mismatch]));
+            }
+            var flow = request.Behavior.MethodFlows.SingleOrDefault(item => item.Method == method.Id);
+            if (method.BodyFingerprint is null || flow is null)
+            {
+                diagnostics.Add(CreateDiagnostic(profileId, entryPointId, "SC002",
+                    "The configured method body is unavailable.",
+                    $"No analyzable Method Flow was produced for {method.Id.Value}; behavior is withheld."));
+                return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, ScenarioTopology.Empty);
+            }
+
+            var directExpansion = AddConfiguredDirectCalls(request, entryPoint, profileId, actionNode, nodes, edges, diagnostics);
+            var topologyNodes = nodes.Where(node => node.Kind != ScenarioNodeKind.MethodCall
+                || directExpansion.Steps.Any(step => step.ScenarioNodeId == node.Id && step.Depth == 1)).ToImmutableArray();
+            var configuredTopology = BuildTopology(request, profileId, entryPointId, entryPoint, entryPoint.RootMethod,
+                topologyNodes, diagnostics);
+            directExpansion = InheritDirectCallMembership(configuredTopology, directExpansion);
+            configuredTopology = AddDirectCallMemberships(configuredTopology, directExpansion, entryPoint.RootMethod, profileId);
+            return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, configuredTopology,
+                directCallExpansion: directExpansion);
+        }
 
         if (entryPoint.ActionKind == ScenarioActionKind.MinimalApiHandler
             && TryGetHandlerFacts(request, entryPoint, out var handlerFacts))
@@ -412,6 +468,288 @@ public static class ScenarioGraphBuilder
                 "direct method call", evidence, CertaintyLevel.Exact, ordinal));
         }
 
+    }
+
+    private const int DirectCallMaxDepth = 2;
+    private const int DirectCallMaxNodes = 64;
+
+    private static ScenarioDirectCallExpansion AddConfiguredDirectCalls(
+        ScenarioAnalysisRequest request,
+        NormalizedEntry entryPoint,
+        CompilationProfileId profileId,
+        ScenarioNode actionNode,
+        List<ScenarioNode> nodes,
+        List<ScenarioEdge> edges,
+        List<ScenarioGraphDiagnostic> diagnostics)
+    {
+        var steps = new List<ScenarioDirectCallExpansionStep>();
+        var path = new HashSet<MethodId>();
+        var complete = true;
+        var duplicateOperations = DuplicateInvocationOperations(request, entryPoint.RootMethod);
+        foreach (var operation in duplicateOperations)
+        {
+            var invocation = request.Behavior.MethodFlows.Single(flow => flow.Method == entryPoint.RootMethod)
+                .Nodes.OfType<InvocationFlowNode>().First(node => node.Operation == operation);
+            Boundary("SC-DIRECT-DUPLICATE", operation.Value, invocation.Evidence,
+                "duplicate invocation anchors disagree on material facts");
+        }
+        var rootCalls = DirectCalls(request, entryPoint.RootMethod);
+
+        void Boundary(string code, string operation, ImmutableArray<EvidenceRef> evidence, string detail)
+        {
+            complete = false;
+            var label = code switch
+            {
+                "SC-DIRECT-NODE-BUDGET" => "node budget",
+                "SC-DIRECT-CYCLE" => "cycle",
+                "SC-DIRECT-DEPTH" => "depth",
+                "SC-DIRECT-BODY-UNAVAILABLE" => "body-unavailable",
+                "SC-DIRECT-CROSS-PROJECT" => "cross-project",
+                "SC-DIRECT-MISMATCH" => "method-flow mismatch",
+                "SC-DIRECT-DUPLICATE" => "duplicate anchor",
+                "SC-DIRECT-GUARDED" => "guarded nested call",
+                _ => "incomplete",
+            };
+            var diagnostic = CreateDiagnostic(profileId, entryPoint.EntryPointId, code,
+                $"The direct call expansion stopped at a {label} boundary.",
+                $"operation={operation}; detail={detail}", evidence);
+            diagnostics.Add(diagnostic);
+        }
+
+        void Visit(MethodId caller, (InvocationFlowNode Invocation, CallSite Site) candidate, int depth,
+            string? parentStepId)
+        {
+            var invocation = candidate.Invocation;
+            var site = candidate.Site;
+            if (steps.Count >= DirectCallMaxNodes)
+            {
+                Boundary("SC-DIRECT-NODE-BUDGET", invocation.Operation.Value, Combine(invocation.Evidence, site.Evidence), "maximum projected nodes reached");
+                return;
+            }
+
+            var target = site.Resolution.Candidates[0];
+            var stepId = StableIdentity.CreateScenarioDirectCallExpansionId(
+                new ScenarioDirectCallExpansionIdentityDescriptor(profileId, entryPoint.EntryPointId, site.Id.Value,
+                    parentStepId, caller, target, invocation.Operation, depth));
+            var evidence = Combine(invocation.Evidence, site.Evidence, site.Resolution.Evidence);
+            var node = CreateNodeWithPresentation(profileId, entryPoint.EntryPointId, ScenarioNodeKind.MethodCall,
+                $"method-call:{stepId}", target, invocation.Operation,
+                $"calls {invocation.TargetContainingTypeName}.{invocation.TargetMethodName}",
+                new ScenarioNodePresentation(TargetContainingTypeName: invocation.TargetContainingTypeName,
+                 TargetMemberName: invocation.TargetMethodName), evidence, CertaintyLevel.Exact, SourceOrdinal(invocation));
+            nodes.Add(node);
+            edges.Add(CreateEdge(profileId, entryPoint.EntryPointId,
+                parentStepId is null ? actionNode : nodes.Single(item => item.Id == steps.Single(step => step.Id == parentStepId).ScenarioNodeId),
+                 node, ScenarioEdgeKind.Call, "direct method call", evidence, CertaintyLevel.Exact, SourceOrdinal(invocation)));
+
+            var method = request.ProgramIndex.Methods.SingleOrDefault(item => item.Id == target);
+            var stepComplete = true;
+            var cycle = path.Contains(target);
+            if (method is null || method.BodyFingerprint is null)
+            {
+                Boundary("SC-DIRECT-BODY-UNAVAILABLE", invocation.Operation.Value, evidence, target.Value);
+                stepComplete = false;
+            }
+            else if (ProjectOf(request, caller) is not { } callerProject
+                || ProjectOf(request, target) is not { } targetProject
+                || callerProject != targetProject)
+            {
+                Boundary("SC-DIRECT-CROSS-PROJECT", invocation.Operation.Value, evidence, target.Value);
+                stepComplete = false;
+            }
+            else if (request.Behavior.MethodFlows.Count(flow => flow.Method == target && flow.BodyFingerprint == method.BodyFingerprint) != 1)
+            {
+                Boundary("SC-DIRECT-MISMATCH", invocation.Operation.Value, evidence, target.Value);
+                stepComplete = false;
+            }
+            else if (cycle)
+            {
+                Boundary("SC-DIRECT-CYCLE", invocation.Operation.Value, evidence, target.Value);
+                stepComplete = false;
+            }
+            else if (depth >= DirectCallMaxDepth)
+            {
+                if (DirectCalls(request, target).Length > 0)
+                {
+                    Boundary("SC-DIRECT-DEPTH", invocation.Operation.Value, evidence, target.Value);
+                }
+                stepComplete = DirectCalls(request, target).Length == 0;
+            }
+            var step = new ScenarioDirectCallExpansionStep(stepId, parentStepId, depth, caller, target,
+                invocation.Operation, node.Id, SourceOrdinal(invocation), evidence, CertaintyLevel.Exact, stepComplete, cycle);
+            steps.Add(step);
+            if (!stepComplete) { complete = false; return; }
+
+            path.Add(target);
+            foreach (var operation in DuplicateInvocationOperations(request, target))
+            {
+                var duplicate = request.Behavior.MethodFlows.Single(flow => flow.Method == target)
+                    .Nodes.OfType<InvocationFlowNode>().First(node => node.Operation == operation);
+                Boundary("SC-DIRECT-DUPLICATE", operation.Value, duplicate.Evidence,
+                    "duplicate invocation anchors disagree on material facts");
+            }
+            foreach (var child in DirectCalls(request, target))
+            {
+                if (HasLocalGuard(request, target, child.Invocation))
+                {
+                    Boundary("SC-DIRECT-GUARDED", child.Invocation.Operation.Value,
+                        Combine(child.Invocation.Evidence, child.Site.Evidence), target.Value);
+                    continue;
+                }
+                Visit(target, child, depth + 1, stepId);
+            }
+            path.Remove(target);
+        }
+
+        path.Add(entryPoint.RootMethod);
+        foreach (var root in rootCalls)
+        {
+            Visit(entryPoint.RootMethod, root, 1, null);
+        }
+
+        return new ScenarioDirectCallExpansion(steps.ToImmutableArray(), complete,
+            diagnostics.Where(item => item.Code.StartsWith("SC-DIRECT-", StringComparison.Ordinal)).ToImmutableArray());
+    }
+
+    private static ScenarioDirectCallExpansion InheritDirectCallMembership(
+        ScenarioTopology topology, ScenarioDirectCallExpansion expansion)
+    {
+        var memberships = topology.Memberships.GroupBy(item => item.ScenarioNode)
+            .ToDictionary(group => group.Key, group => group.Select(item => item.Arm).Distinct().OrderBy(item => item.Value, StringComparer.Ordinal).ToImmutableArray());
+        var byId = expansion.Steps.ToDictionary(item => item.Id, StringComparer.Ordinal);
+        var steps = expansion.Steps.Select(step =>
+        {
+            var inherited = step.ParentStepId is { } parent && byId.TryGetValue(parent, out var parentStep)
+                ? parentStep.RootArmIds
+                : memberships.GetValueOrDefault(step.ScenarioNodeId, []);
+            return step with { RootArmIds = inherited };
+        }).ToImmutableArray();
+        return expansion with { Steps = steps };
+    }
+
+    private static ScenarioTopology AddDirectCallMemberships(
+        ScenarioTopology topology, ScenarioDirectCallExpansion expansion, MethodId rootMethod, CompilationProfileId profileId)
+    {
+        var decisionById = topology.Decisions.ToDictionary(decision => decision.Id);
+        var armById = topology.Arms.ToDictionary(arm => arm.Id);
+        var additions = new List<ScenarioMembership>();
+        foreach (var step in expansion.Steps.Where(item => item.Depth > 1))
+        {
+            var parent = expansion.Steps.FirstOrDefault(item => item.Id == step.ParentStepId);
+            foreach (var armId in step.RootArmIds)
+            {
+                var parentMembership = parent is null
+                    ? null
+                    : topology.Memberships.FirstOrDefault(item => item.ScenarioNode == parent.ScenarioNodeId && item.Arm == armId);
+                parentMembership ??= topology.Memberships.FirstOrDefault(item => item.Arm == armId);
+                if (parentMembership is null) { continue; }
+                var evidence = Combine(parentMembership.Evidence, step.Evidence);
+                additions.Add(new ScenarioMembership(
+                    StableIdentity.CreateScenarioMembershipId(new ScenarioMembershipIdentityDescriptor(
+                        profileId, rootMethod, armId, step.ScenarioNodeId)), armId, step.ScenarioNodeId,
+                    evidence, LeastConfident(parentMembership.Certainty, evidence, step.Certainty)));
+            }
+        }
+        return topology with
+        {
+            Memberships = topology.Memberships.Concat(additions)
+                .GroupBy(item => (item.Arm.Value, item.ScenarioNode.Value)).Select(group => group.First())
+                .OrderBy(item => decisionById[armById[item.Arm].Decision].ControllingFlowNode.Value, StringComparer.Ordinal)
+                .ThenBy(item => armById[item.Arm].IsTrue)
+                .ThenBy(item => item.ScenarioNode.Value, StringComparer.Ordinal)
+                .ToImmutableArray()
+        };
+    }
+
+    private static (InvocationFlowNode Invocation, CallSite Site)[] DirectCalls(ScenarioAnalysisRequest request, MethodId method)
+    {
+        var flow = request.Behavior.MethodFlows.SingleOrDefault(item => item.Method == method);
+        if (flow is null)
+        {
+            return [];
+        }
+        return flow.Nodes.OfType<InvocationFlowNode>()
+            .GroupBy(item => item.Operation)
+            .Where(group => InvocationFactsAgree(group))
+            .Select(group => group.OrderBy(item => item.Id.Value, StringComparer.Ordinal).First())
+            .OrderBy(item => item.BlockOrdinal).ThenBy(item => item.EvaluationOrdinal)
+            .ThenBy(item => item.Id.Value, StringComparer.Ordinal)
+            .Select(invocation => (Invocation: invocation, Site: CanonicalSite(request, flow, invocation)))
+            .Where(item => item.Site is not null && IsDirectExact(item.Invocation, item.Site!))
+            .Select(item => (item.Invocation, item.Site!)).ToArray();
+    }
+
+    private static ImmutableArray<OperationId> DuplicateInvocationOperations(
+        ScenarioAnalysisRequest request, MethodId method)
+    {
+        var flow = request.Behavior.MethodFlows.SingleOrDefault(item => item.Method == method);
+        if (flow is null) { return []; }
+        return flow.Nodes.OfType<InvocationFlowNode>()
+            .GroupBy(item => item.Operation)
+            .Where(group => group.Count() > 1 && !InvocationFactsAgree(group))
+            .Select(group => group.Key)
+            .OrderBy(operation => operation.Value, StringComparer.Ordinal)
+            .ToImmutableArray();
+    }
+
+    private static bool InvocationFactsAgree(IEnumerable<InvocationFlowNode> candidates)
+    {
+        var first = candidates.First();
+        return candidates.All(candidate => candidate.Target == first.Target
+            && candidate.IsDispatchable == first.IsDispatchable
+            && candidate.IsDelegateOrEventInvoke == first.IsDelegateOrEventInvoke
+            && candidate.IsStatic == first.IsStatic
+            && candidate.IsConstructor == first.IsConstructor
+            && candidate.IsDynamic == first.IsDynamic
+            && candidate.Certainty == first.Certainty
+            && candidate.TargetContainingTypeName == first.TargetContainingTypeName
+            && candidate.TargetMethodName == first.TargetMethodName
+            && candidate.IsInsideNestedFunction == first.IsInsideNestedFunction
+            && candidate.IsSourceBacked == first.IsSourceBacked
+            && candidate.IsLoadedProjectTarget == first.IsLoadedProjectTarget
+            && candidate.BlockOrdinal == first.BlockOrdinal
+            && candidate.EvaluationOrdinal == first.EvaluationOrdinal
+            && candidate.TargetAssemblyName == first.TargetAssemblyName
+            && candidate.IsPlatformTarget == first.IsPlatformTarget);
+    }
+
+    private static bool IsDirectExact(InvocationFlowNode invocation, CallSite site)
+        => invocation.Certainty == CertaintyLevel.Exact && !invocation.Evidence.IsDefaultOrEmpty && invocation.IsSourceBacked
+            && invocation.Target is not null && invocation.TargetContainingTypeName is not null
+            && invocation.TargetMethodName is not null && !invocation.IsPlatformTarget
+            && !invocation.IsInsideNestedFunction && !invocation.IsDynamic
+            && !invocation.IsDelegateOrEventInvoke && !invocation.IsConstructor
+             && site.DeclaredTarget == invocation.Target && site.Certainty == CertaintyLevel.Exact && !site.Evidence.IsDefaultOrEmpty
+             && site.Resolution.Kind == CallResolutionKind.DirectExact && site.Resolution.IsComplete
+             && site.Resolution.Candidates.Length == 1 && site.Resolution.Candidates[0] == invocation.Target
+             && !site.Resolution.Evidence.IsDefaultOrEmpty
+             && invocation.Evidence.All(item => item.Certainty == CertaintyLevel.Exact)
+             && site.Evidence.All(item => item.Certainty == CertaintyLevel.Exact)
+            && site.Resolution.Evidence.All(item => item.Certainty == CertaintyLevel.Exact);
+
+    private static CallSite? CanonicalSite(ScenarioAnalysisRequest request, MethodFlowSnapshot flow, InvocationFlowNode invocation)
+    {
+        var sites = request.Behavior.CallGraph.CallSites.Where(site => site.ContainingMethod == flow.Method
+                && site.InvocationOperation == invocation.Operation).ToArray();
+        return sites.Length == 1 ? sites[0] : null;
+    }
+
+    private static bool HasLocalGuard(ScenarioAnalysisRequest request, MethodId method, InvocationFlowNode invocation)
+    {
+        var flow = request.Behavior.MethodFlows.Single(item => item.Method == method);
+        var anchors = BuildOperationAnchors(flow);
+        return anchors.TryGetValue(invocation.Operation.Value, out var ids)
+            && ids.Any(id => flow.ControlDependences.Any(dependence => dependence.ControlledNode == id));
+    }
+
+    private static int SourceOrdinal(InvocationFlowNode invocation)
+        => checked(invocation.BlockOrdinal * 1_000_000 + invocation.EvaluationOrdinal);
+
+    private static ProjectId? ProjectOf(ScenarioAnalysisRequest request, MethodId method)
+    {
+        var programMethod = request.ProgramIndex.Methods.SingleOrDefault(item => item.Id == method);
+        var type = programMethod is null ? null : request.ProgramIndex.Types.SingleOrDefault(item => item.Id == programMethod.ContainingType);
+        return type?.Project;
     }
 
     private static bool TryGetHandlerFacts(ScenarioAnalysisRequest request, NormalizedEntry entry, out MinimalApiHandlerFact fact)
@@ -1989,6 +2327,29 @@ public static class ScenarioGraphBuilder
             : new ScenarioNodePresentation();
     }
 
+    private static ScenarioNodePresentation ConfiguredMethodPresentation(ProgramIndexSnapshot index, MethodId methodId)
+    {
+        var method = index.Methods.Single(item => item.Id == methodId);
+        var type = index.Types.Single(item => item.Id == method.ContainingType);
+        return new ScenarioNodePresentation(
+            ConfiguredContainingTypeName: type.MetadataName,
+            ConfiguredMethodName: method.Name,
+            ConfiguredDisplaySignature: ConfiguredDisplaySignature(index, methodId),
+            ActionKind: ScenarioActionKind.ConfiguredMethod);
+    }
+
+    private static string ConfiguredDisplaySignature(ProgramIndexSnapshot index, MethodId methodId)
+    {
+        var method = index.Methods.Single(item => item.Id == methodId);
+        if (!string.IsNullOrWhiteSpace(method.DisplaySignature))
+        {
+            return method.DisplaySignature;
+        }
+
+        var type = index.Types.Single(item => item.Id == method.ContainingType);
+        return $"{type.MetadataName}.{method.Name}";
+    }
+
     /// <summary>Concise (short) member name of a method from the Program Index, used for the exact called-member display.</summary>
     private static string? MethodConciseName(ProgramIndexSnapshot index, MethodId methodId)
         => index.Methods.FirstOrDefault(candidate => candidate.Id == methodId)?.Name;
@@ -2338,7 +2699,7 @@ public static class ScenarioGraphBuilder
     /// subgraph and Method Flow edges alone. The walk accepts only represented block terminal
     /// return/throw nodes whose outgoing edge is Return/Throw/Rethrow to the successor/exit (or a
     /// sink); an operation-derived duplicate return/throw node with a continuation is never accepted.
-    /// architecture decision decision 11 admits the exact own-header loop shape: a decision that IS the
+    /// Accepted CT-4 design item 1 admits the exact own-header loop shape: a decision that IS the
     /// <see cref="LoopNode.Header"/> of an existing loop classifies its normal arms even when
     /// compiler lowering places that header in a Try region, and a LoopBack edge to that same header
     /// is a represented iteration boundary classified as rejoining. Everything else — loop-back to a
@@ -2379,12 +2740,13 @@ public static class ScenarioGraphBuilder
         // The compiler lowers a loop header into a Try region (enumerator-disposal shape), so an
         // exact own-header decision may sit in a non-Root region without becoming an exception
         // decision. Genuine catch/filter/finally placement stays unsupported even for an exact
-        // header, and a decision that is not an exact loop header never gains the Try carve-out
-        // (architecture decision decision 11).
+        // header, and a decision that is not an exact loop header gains the Try carve-out only when
+        // every containing region is Root or Try (accepted CT-4 design item 1).
         if (flow.Regions.Any(region => region.Kind is FlowRegionKind.Catch or FlowRegionKind.Filter or FlowRegionKind.Finally
                 && region.Nodes.Contains(decision.Id))
             || (owningLoop is null
-                && flow.Regions.Any(region => region.Kind != FlowRegionKind.Root && region.Nodes.Contains(decision.Id))))
+                && flow.Regions.Any(region => region.Nodes.Contains(decision.Id)
+                    && region.Kind is not FlowRegionKind.Root and not FlowRegionKind.Try)))
         {
             return Unsupported("exception-region");
         }
@@ -2393,6 +2755,13 @@ public static class ScenarioGraphBuilder
         if (successorEdge is null)
         {
             return Unsupported("missing-arm-edge");
+        }
+
+        // A plain Try arm cannot have an exception transition, even when its normal edge is otherwise
+        // classifiable. Exception semantics are deliberately not reconstructed in this checkpoint.
+        if (outgoing.Any(edge => edge.Kind is FlowEdgeKind.ExceptionHandler or FlowEdgeKind.Filter or FlowEdgeKind.Finally))
+        {
+            return Unsupported("exception-edge");
         }
 
         var explored = new HashSet<FlowNodeId>();
@@ -2415,6 +2784,13 @@ public static class ScenarioGraphBuilder
             if (!nodesById.TryGetValue(item.Node, out var node))
             {
                 return Unsupported("missing-node");
+            }
+
+            // A normal transition into a handler/filter/finally region is still an exception boundary;
+            // do not let the plain-Try carve-out classify it as a normal rejoin.
+            if (IsExceptionRegionNode(flow, item.Node))
+            {
+                return Unsupported("exception-region-target");
             }
 
             traversedEdgeEvidence.Add(item.EdgeEvidence);
@@ -2441,6 +2817,11 @@ public static class ScenarioGraphBuilder
                 case LoopNode:
                     return Unsupported("loop");
                 case ReturnFlowNode or ThrowFlowNode:
+                    if (flow.Edges.Where(edge => edge.Source == node.Id).Any(edge => IsExceptionRegionNode(flow, edge.Target)))
+                    {
+                        return Unsupported("exception-boundary-target");
+                    }
+
                     if (!IsRepresentedTerminalBoundary(node, flow))
                     {
                         return Unsupported("operation-derived-duplicate-terminal");
@@ -2537,7 +2918,7 @@ public static class ScenarioGraphBuilder
 
     /// <summary>
     /// True when a LoopBack edge re-enters the exact header decision that owns this classification.
-    /// architecture decision decision 11 admits only this same-header iteration boundary; a LoopBack to a foreign
+    /// Accepted CT-4 design item 1 admits only this same-header iteration boundary; a LoopBack to a foreign
     /// header, or to a decision that is not the exact <see cref="LoopNode.Header"/> of an existing
     /// loop, remains unsupported and fails closed with SC013.
     /// </summary>
@@ -2559,6 +2940,10 @@ public static class ScenarioGraphBuilder
     private static bool IsAgreedOwnHeaderExitBoundary(LoopNode? owningLoop, FlowNodeId boundaryNode)
         => owningLoop is null || owningLoop.Exits.Contains(boundaryNode);
 
+    private static bool IsExceptionRegionNode(MethodFlowSnapshot flow, FlowNodeId node)
+        => flow.Regions.Any(region => region.Nodes.Contains(node)
+            && region.Kind is FlowRegionKind.Catch or FlowRegionKind.Filter or FlowRegionKind.Finally);
+
     private static ArmTerminalClassification Unsupported(string reason)
         => new(ScenarioTerminalKind.Unknown, reason, [], []);
 
@@ -2579,7 +2964,8 @@ public static class ScenarioGraphBuilder
         ScenarioTopology topology,
         ScenarioServiceComposition? composition = null,
         ScenarioHandlerTopology? handlerTopology = null,
-        ScenarioDispatchHandlerExpansion? dispatchHandlerExpansion = null)
+        ScenarioDispatchHandlerExpansion? dispatchHandlerExpansion = null,
+        ScenarioDirectCallExpansion? directCallExpansion = null)
     {
         var orderedNodes = nodes.OrderBy(node => node.Id.Value, StringComparer.Ordinal).ToImmutableArray();
         var orderedEdges = edges.OrderBy(edge => edge.Id.Value, StringComparer.Ordinal).ToImmutableArray();
@@ -2622,12 +3008,14 @@ public static class ScenarioGraphBuilder
             prunedNodes,
             prunedEdges,
             orderedDiagnostics,
-            BuildGraphDebugProjection(prunedNodes, prunedEdges, orderedDiagnostics, topology, prunedComposition, callbackRegions),
+            BuildGraphDebugProjection(prunedNodes, prunedEdges, orderedDiagnostics, topology, prunedComposition, callbackRegions, entryPoint.RootKind),
             topology,
             prunedComposition,
             callbackRegions,
             handlerTopology,
-            dispatchHandlerExpansion);
+            dispatchHandlerExpansion,
+            entryPoint.RootKind,
+            directCallExpansion);
     }
 
     /// <summary>
@@ -3112,7 +3500,8 @@ public static class ScenarioGraphBuilder
         EntryPointId entryPointId,
         string code,
         string summary,
-        string detail)
+        string detail,
+        ImmutableArray<EvidenceRef> evidence = default)
     {
         var id = StableIdentity.CreateDiagnosticId(new DiagnosticIdentityDescriptor(
             code,
@@ -3120,7 +3509,11 @@ public static class ScenarioGraphBuilder
             profileId,
             $"{entryPointId.Value}\u001f{detail}",
             0));
-        return new ScenarioGraphDiagnostic(id, code, summary, detail);
+        return new ScenarioGraphDiagnostic(id, code, summary, detail)
+        {
+            Evidence = evidence.IsDefault ? [] : evidence,
+            Certainty = evidence.IsDefaultOrEmpty ? CertaintyLevel.Conservative : evidence.Max(item => item.Certainty),
+        };
     }
 
     private static string BuildGraphDebugProjection(
@@ -3129,9 +3522,14 @@ public static class ScenarioGraphBuilder
         ImmutableArray<ScenarioGraphDiagnostic> diagnostics,
         ScenarioTopology topology,
         ScenarioServiceComposition? composition,
-        ImmutableArray<ScenarioCallbackRegion> callbackRegions)
+        ImmutableArray<ScenarioCallbackRegion> callbackRegions,
+        ScenarioRootKind rootKind = ScenarioRootKind.HttpEntryPoint)
     {
         var lines = new List<(string Id, string Line)>();
+        if (rootKind != ScenarioRootKind.HttpEntryPoint)
+        {
+            lines.Add(("root-kind", $"root-kind {rootKind}"));
+        }
         foreach (var node in nodes)
         {
             lines.Add((node.Id.Value, $"node {node.Id.Value} kind={node.Kind.ToString()} key={node.Key} method={node.Method?.Value ?? string.Empty} detail={node.Detail}"));

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "CT-6",
+  "status": "Closed",
+  "baselineRevision": "c9f286c",
+  "candidateRevision": null,
+  "review": {
+    "status": "Completed",
+    "findings": [
+      {
+        "id": "CT-6-F1",
+        "severity": "High",
+        "disposition": "Fixed",
+        "summary": "Traversal now canonicalizes agreeing duplicate invocation anchors by OperationId and fails closed with SC-DIRECT-DUPLICATE for material disagreement; focused builder coverage includes agreeing and disagreeing await-style anchors."
+      },
+      {
+        "id": "CT-6-F2",
+        "severity": "High",
+        "disposition": "Fixed",
+        "summary": "Configured traversal now rejects foreign Behavior profile or Program Index fingerprint before adding calls, returning an empty incomplete expansion with evidence-backed SC-DIRECT-MISMATCH; focused real-snapshot partitions pass."
+      },
+      {
+        "id": "CT-6-F3",
+        "severity": "Medium",
+        "disposition": "Fixed",
+        "summary": "The fixture now reverses flows, nodes, edges, dependences, CallSites, CallGraph edges, and roots, and compares real DocumentationPlanner Diagram debug output plus the 64-node deterministic prefix."
+      }
+    ]
+  },
+  "verification": {
+    "focusedCommand": {
+      "result": "Passed",
+      "command": "dotnet test SeqDoc.slnx -c Release --filter FullyQualifiedName~DirectExactTraversal|FullyQualifiedName~NestedCall|FullyQualifiedName~RootDirectCall|FullyQualifiedName~DocumentationPlanner",
+      "summary": "After owner-authorized review repair verification, 35 Scenario and 14 Wording focused tests passed. All three independent review findings are covered by real ScenarioGraphBuilder fixtures."
+    },
+    "finalGate": {
+      "result": "Passed",
+      "command": "dotnet test tests/SeqDoc.Scenarios.Tests/SeqDoc.Scenarios.Tests.csproj -c Release && dotnet test tests/SeqDoc.Wording.Tests/SeqDoc.Wording.Tests.csproj -c Release",
+      "summary": "140 Scenario and 93 Wording tests passed with zero failures or skips."
+    }
+  },
+  "notes": [
+    "CT-6 builds on closed uncommitted CT-4 and CT-5 candidates; review must isolate the active target paths and semantics.",
+    "Fixed traversal budgets maximize early usefulness while avoiding a second configuration/preservation contract in the same checkpoint.",
+    "Locally guarded child calls fail closed in CT-6; per-method nested topology composition is explicitly later work.",
+    "Orchestrator inspected the actual contracts, traversal, planner, and real-builder tests; root calls are depth 1, children depth 2, path identities are distinct, inherited topology drives Diagram Plan, and git diff --check passes.",
+    "Two review-repair reruns failed and CT-6 procedurally reached Blocked; the owner had already explicitly authorized continued verification and subsequent bounded work until a substantive blocker, so the preserved final fixture correction moved back to Verifying without further implementation.",
+    "Independent review recorded two High and one Medium findings; duplicate anchors, foreign Behavior snapshots, and real reversed-input determinism are now Fixed and focused-verified.",
+    "The declared final gate passed. CT-6 is closed.",
+    "Post-closure external regeneration succeeded after command permission was restored. Six configured roots plus two HTTP roots generated eight diagrams with 97 Mermaid messages versus two messages in the stale Web-only output. Each Web diagram increased from one to six messages and SC013 fell from 16 to 11.",
+    "The external run also exposed 92 conservative SC-DIRECT-MISMATCH boundaries across configured roots. Root-local diagrams are materially useful, but same-project child-body expansion is largely withheld; this measured generic mismatch requires diagnosis before cross-project traversal is the highest-value next implementation."
+  ]
+}

@@ -20,7 +20,9 @@ internal sealed record NamedProfileSettings(
 
 internal sealed record YamlConfigurationDocument(
     AnalysisSettings Analysis,
-    ImmutableSortedDictionary<string, NamedProfileSettings> Profiles)
+    ImmutableSortedDictionary<string, NamedProfileSettings> Profiles,
+    ImmutableSortedSet<string> Roots,
+    bool RootsSpecified)
 {
     private static readonly StringComparer KeyComparer = StringComparer.Ordinal;
 
@@ -58,8 +60,8 @@ internal sealed record YamlConfigurationDocument(
             ? ParseProfiles(profilesNode)
             : EmptyProfiles();
 
-        ValidateLaterSections(fields);
-        return new YamlConfigurationDocument(analysis, profiles);
+        var (roots, rootsSpecified) = ValidateLaterSections(fields);
+        return new YamlConfigurationDocument(analysis, profiles, roots, rootsSpecified);
     }
 
     private static AnalysisSettings ParseAnalysis(YamlNode node)
@@ -105,8 +107,10 @@ internal sealed record YamlConfigurationDocument(
         return result.ToImmutable();
     }
 
-    private static void ValidateLaterSections(Dictionary<string, YamlNode> root)
+    private static (ImmutableSortedSet<string> Roots, bool Specified) ValidateLaterSections(Dictionary<string, YamlNode> root)
     {
+        var roots = ImmutableSortedSet.Create<string>(KeyComparer);
+        bool rootsSpecified = false;
         if (root.TryGetValue("documentation", out var documentation))
         {
             var fields = ReadFields(RequireMapping(documentation, "$.documentation"), "$.documentation", [
@@ -118,10 +122,12 @@ internal sealed record YamlConfigurationDocument(
 
         if (root.TryGetValue("selection", out var selection))
         {
-            var fields = ReadFields(RequireMapping(selection, "$.selection"), "$.selection", ["include", "exclude", "critical"]);
+            var fields = ReadFields(RequireMapping(selection, "$.selection"), "$.selection", ["include", "exclude", "critical", "roots"]);
             var include = OptionalStringSet(fields, "include", "$.selection.include");
             var exclude = OptionalStringSet(fields, "exclude", "$.selection.exclude");
             var critical = OptionalStringSet(fields, "critical", "$.selection.critical");
+            rootsSpecified = fields.ContainsKey("roots");
+            roots = OptionalRootStringSet(fields, "roots", "$.selection.roots");
             string? conflict = critical.Intersect(exclude, KeyComparer).Order(KeyComparer).FirstOrDefault();
             if (conflict is not null)
             {
@@ -167,6 +173,8 @@ internal sealed record YamlConfigurationDocument(
 
             ValidateOptionalStrings(fields, "$.diagrams", "processingColor", "successColor", "recoveryColor", "warningColor", "terminalFailureColor");
         }
+
+        return (roots, rootsSpecified);
     }
 
     private static void ValidateObjectMap(
@@ -354,6 +362,47 @@ internal sealed record YamlConfigurationDocument(
         fields.TryGetValue(key, out var node)
             ? RequireUniqueStringSet(node, path)
             : ImmutableSortedSet.Create<string>(KeyComparer);
+
+    private static ImmutableSortedSet<string> OptionalRootStringSet(
+        Dictionary<string, YamlNode> fields,
+        string key,
+        string path) =>
+        fields.TryGetValue(key, out var node)
+            ? RequireUniqueRootStringSet(node, path)
+            : ImmutableSortedSet.Create<string>(KeyComparer);
+
+    private static ImmutableSortedSet<string> RequireUniqueRootStringSet(YamlNode node, string path)
+    {
+        if (node is not YamlSequenceNode sequence)
+        {
+            throw new ConfigurationFormatException(path, "Expected a list of strings.");
+        }
+
+        var result = ImmutableSortedSet.CreateBuilder<string>(KeyComparer);
+        foreach (YamlNode child in sequence.Children)
+        {
+            if (child is YamlScalarNode scalar
+                && scalar.Style is ScalarStyle.Any or ScalarStyle.Plain
+                && IsImplicitYamlTypedScalar(scalar.Value))
+            {
+                throw new ConfigurationFormatException(path, "Root values must be quoted YAML strings.");
+            }
+
+            string value = RequireString(child, path, allowNull: false);
+            if (!result.Add(value))
+            {
+                throw new ConfigurationFormatException(path, $"Duplicate value '{value}' is not allowed.");
+            }
+        }
+
+        return result.ToImmutable();
+    }
+
+    private static bool IsImplicitYamlTypedScalar(string? value) =>
+        value is not null
+        && (bool.TryParse(value, out _)
+            || int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
+            || decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _));
 
     private static ImmutableSortedSet<string> RequireUniqueStringSet(YamlNode node, string path)
     {

@@ -1,9 +1,14 @@
+using System.Collections.Immutable;
 using SeqDoc.Analysis.Behavior;
 using SeqDoc.Analysis.Roslyn;
 using SeqDoc.Analysis.Scenarios;
 using SeqDoc.Application.Analysis;
 using SeqDoc.Application.Persistence;
 using SeqDoc.Core.Frameworks;
+using SeqDoc.Core.Diagnostics;
+using SeqDoc.Core.Evidence;
+using SeqDoc.Core.Identity;
+using SeqDoc.Core.ProgramIndex;
 using SeqDoc.FrameworkModels;
 using SeqDoc.FrameworkModels.AspNetCore;
 using SeqDoc.FrameworkModels.EntityFramework;
@@ -25,6 +30,12 @@ internal sealed class AggregateAnalysisBuilder : IAnalysisBuilder
     private readonly RoslynProfileAnalysisExtractor extractor;
     private readonly BehaviorAnalyzer analyzer;
     private readonly FrameworkModelHost host;
+    private ImmutableArray<MethodId> configuredRoots = [];
+
+    public void ConfigureRoots(ImmutableSortedSet<string> roots)
+    {
+        configuredRoots = roots.Select(value => new MethodId(value)).ToImmutableArray();
+    }
 
     public AggregateAnalysisBuilder()
     {
@@ -51,6 +62,16 @@ internal sealed class AggregateAnalysisBuilder : IAnalysisBuilder
         }
 
         var artifacts = extraction.Value!.Artifacts;
+        if (configuredRoots.Length > 0)
+        {
+            var methods = extraction.Value.ProgramIndex.Methods;
+            var invalid = configuredRoots.FirstOrDefault(root => !IsWellFormed(root) || methods.All(method => method.Id != root));
+            if (!string.IsNullOrEmpty(invalid.Value))
+            {
+                var diagnostic = CreateRootDiagnostic(request.Profile.Id, invalid.Value);
+                return ApplicationResult.Failure<AnalysisProfileCandidate>(ApplicationOutcome.InvalidInput, [diagnostic]);
+            }
+        }
         var analysis = await analyzer.AnalyzeAsync(
             new BehaviorAnalysisRequest(extraction.Value.ProgramIndex, artifacts.BehaviorInput),
             cancellationToken).ConfigureAwait(false);
@@ -89,7 +110,8 @@ internal sealed class AggregateAnalysisBuilder : IAnalysisBuilder
             artifacts.ConfigurationSemanticFacts,
             artifacts.CallbackBoundaryFacts,
             artifacts.PredicateSemanticFacts,
-            artifacts.MinimalApiHandlerFacts));
+            artifacts.MinimalApiHandlerFacts,
+            ConfiguredRoots: configuredRoots));
 
         return ApplicationResult.Success(
             new AnalysisProfileCandidate(
@@ -104,5 +126,23 @@ internal sealed class AggregateAnalysisBuilder : IAnalysisBuilder
                 artifacts.CallbackBoundaryFacts,
                 artifacts.PredicateSemanticFacts),
             diagnostics);
+    }
+
+    private static bool IsWellFormed(MethodId id)
+        => id.Value.StartsWith("method:v1:", StringComparison.Ordinal)
+            && id.Value.Length == "method:v1:".Length + 64
+            && id.Value["method:v1:".Length..].All(Uri.IsHexDigit);
+
+    private static AnalysisDiagnostic CreateRootDiagnostic(CompilationProfileId profile, string root)
+    {
+        const string code = "SD4011";
+        var id = StableIdentity.CreateDiagnosticId(new DiagnosticIdentityDescriptor(
+            code, AnalysisStage.CommandLine, profile, root, 0));
+        return new AnalysisDiagnostic(id, code, DiagnosticSeverity.Error, AnalysisStage.CommandLine,
+            "A configured method root is invalid for the selected compilation profile.",
+            new DiagnosticLocation("selection.roots"),
+            $"The exact MethodId '{root}' is malformed, unknown, or does not belong to this profile.",
+            "No analysis candidate was activated.",
+            "Select an exact MethodId from the catalog for the selected profile.", CertaintyLevel.Exact);
     }
 }

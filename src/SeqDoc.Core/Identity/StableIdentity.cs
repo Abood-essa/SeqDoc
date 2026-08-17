@@ -112,6 +112,27 @@ public static class StableIdentity
             CanonicalIdentityJson.WriteHttpEntryPoint(descriptor)));
     }
 
+    public static EntryPointId CreateConfiguredMethodEntryPointId(ConfiguredMethodEntryPointIdentityDescriptor descriptor)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.Profile.Value, nameof(descriptor));
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.RootMethod.Value, nameof(descriptor));
+        return new EntryPointId(Hash("entry-point:v1:", CanonicalIdentityJson.WriteConfiguredMethodEntryPoint(descriptor)));
+    }
+
+    public static string CreateScenarioDirectCallExpansionId(ScenarioDirectCallExpansionIdentityDescriptor descriptor)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.Profile.Value);
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.EntryPoint.Value);
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.CallSiteId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.CallerMethod.Value);
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.TargetMethod.Value);
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.Operation.Value);
+        ArgumentOutOfRangeException.ThrowIfNegative(descriptor.Depth);
+        return Hash("scenario-direct-call:v1:", CanonicalIdentityJson.WriteScenarioDirectCallExpansion(descriptor));
+    }
+
     public static EvidenceId CreateEvidenceId(EvidenceIdentityDescriptor descriptor)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
@@ -633,6 +654,33 @@ internal static class CanonicalIdentityJson
             writer.WriteString("rootMethodId", descriptor.RootMethod.Value);
             writer.WriteString("httpMethod", HttpMethodCanonicalToken.Get(descriptor.HttpMethod));
             writer.WriteString("canonicalRoute", descriptor.CanonicalRoute);
+        });
+    }
+
+    public static string WriteConfiguredMethodEntryPoint(ConfiguredMethodEntryPointIdentityDescriptor descriptor)
+    {
+        return Write(writer =>
+        {
+            writer.WriteNumber("schemaVersion", 1);
+            writer.WriteString("profileId", descriptor.Profile.Value);
+            writer.WriteString("rootMethodId", descriptor.RootMethod.Value);
+            writer.WriteString("kind", "ConfiguredMethod");
+        });
+    }
+
+    public static string WriteScenarioDirectCallExpansion(ScenarioDirectCallExpansionIdentityDescriptor descriptor)
+    {
+        return Write(writer =>
+        {
+            writer.WriteNumber("schemaVersion", 1);
+            writer.WriteString("profileId", descriptor.Profile.Value);
+            writer.WriteString("entryPointId", descriptor.EntryPoint.Value);
+            writer.WriteString("callSiteId", descriptor.CallSiteId);
+            WriteNullableString(writer, "parentStepId", descriptor.ParentStepId);
+            writer.WriteString("callerMethodId", descriptor.CallerMethod.Value);
+            writer.WriteString("targetMethodId", descriptor.TargetMethod.Value);
+            writer.WriteString("operationId", descriptor.Operation.Value);
+            writer.WriteNumber("depth", descriptor.Depth);
         });
     }
 

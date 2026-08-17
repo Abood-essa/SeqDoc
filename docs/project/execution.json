@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "mode": "active",
   "activePlanPath": "docs/project/credit-transfer-plan.md",
-  "activeCheckpointPath": "docs/work/credit-transfer/CT-3",
-  "activeCheckpointId": "CT-3",
-  "nextAction": "CT-3 is closed; activate compiler-evidenced predicate and supported terminal/rejoin presentation so exact guarded root calls can appear in the first useful CreditTransfer diagrams."
+  "activeCheckpointPath": "docs/work/credit-transfer/CT-6",
+  "activeCheckpointId": "CT-6",
+  "nextAction": "Commit and push the reviewed CT-4/CT-5/CT-6 stack with regeneration evidence. Then apply the measured presentation-hygiene sequence: diagram-first Markdown and concise/deduplicated participants; generic logging/no-signal filtering and exact repeated-call arguments; placeholder control-label elimination; SC-DIRECT-MISMATCH repair; then compatible cross-project traversal."
 }

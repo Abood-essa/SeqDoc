@@ -114,8 +114,10 @@ public static class DocumentationPlanner
         var wording = new WordingDocument(
             graph.EntryPoint,
             graph.Profile,
-            graph.OperationKey,
-            $"{HttpMethodCanonicalToken.Get(graph.HttpMethod)} {graph.CanonicalRoute}",
+            OperationKey(graph),
+            graph.RootKind == ScenarioRootKind.ConfiguredMethod
+                ? OperationKey(graph)
+                : $"{HttpMethodCanonicalToken.Get(graph.HttpMethod)} {graph.CanonicalRoute}",
             phrases,
             BuildWordingDebugProjection(phrases));
 
@@ -146,7 +148,9 @@ public static class DocumentationPlanner
                         phrases,
                         WordingPhraseKind.Statement,
                         EntryPhraseKey,
-                        $"HTTP {HttpMethodCanonicalToken.Get(graph.HttpMethod)} entry point at route \"{graph.CanonicalRoute}\".",
+                         graph.RootKind == ScenarioRootKind.ConfiguredMethod
+                             ? "Configured method entry point."
+                             : $"HTTP {HttpMethodCanonicalToken.Get(graph.HttpMethod)} entry point at route \"{graph.CanonicalRoute}\".",
                         node.Evidence,
                         node.Certainty);
                     break;
@@ -157,7 +161,9 @@ public static class DocumentationPlanner
                         phrases,
                         WordingPhraseKind.Statement,
                         ActionPhraseKey,
-                        node.Presentation?.ActionKind == ScenarioActionKind.MinimalApiHandler
+                         graph.RootKind == ScenarioRootKind.ConfiguredMethod
+                             ? $"The selected method {node.Presentation?.ConfiguredDisplaySignature ?? graph.OperationKey} executes."
+                            : node.Presentation?.ActionKind == ScenarioActionKind.MinimalApiHandler
                             ? "The Minimal API handler executes."
                             : "The controller action executes.",
                         node.Evidence,
@@ -181,7 +187,7 @@ public static class DocumentationPlanner
                         phrases,
                         WordingPhraseKind.Statement,
                         MethodCallPhraseKey,
-                        BuildMethodCallText(node),
+                         BuildMethodCallText(graph, node),
                         node.Evidence,
                         node.Certainty);
                     break;
@@ -394,6 +400,8 @@ public static class DocumentationPlanner
         var dataNode = graph.Nodes.FirstOrDefault(node =>
             node.Kind is ScenarioNodeKind.EntityQuery or ScenarioNodeKind.EntityMutation);
         var methodCallParticipantKeys = BuildMethodCallParticipantKeys(graph);
+        bool configuredRoot = graph.RootKind == ScenarioRootKind.ConfiguredMethod;
+        string callerKey = configuredRoot ? "caller" : "client";
 
         // Participant labels come from typed presentation facts only. The client is a fixed role;
         // the controller, DI-resolved implementation, and DbContext use concise names resolved with
@@ -402,12 +410,16 @@ public static class DocumentationPlanner
         // labels; display naming never parses detail strings.
         var participantSources = new (string Key, ScenarioNode? Source, string? FullTypeName, string FallbackLabel, DiagramParticipantKind Kind)[]
         {
-            ("client", entryNode, null, "API client", DiagramParticipantKind.Client),
+            (callerKey, entryNode, null, configuredRoot ? "Caller" : "API client", configuredRoot ? DiagramParticipantKind.Unknown : DiagramParticipantKind.Client),
              ("action", actionNode, actionNode?.Presentation?.ControllerTypeName,
-                actionNode?.Presentation?.ActionKind == ScenarioActionKind.MinimalApiHandler
-                    ? "Minimal API handler"
-                    : "Controller action",
-                DiagramParticipantKind.Controller),
+                 configuredRoot
+                     ? actionNode?.Presentation?.ConfiguredDisplaySignature ?? "Selected method"
+                     : actionNode?.Presentation?.ActionKind == ScenarioActionKind.MinimalApiHandler
+                     ? "Minimal API handler"
+                     : "Controller action",
+                  configuredRoot
+                     ? DiagramParticipantKind.Unknown
+                     : DiagramParticipantKind.Controller),
             ("dispatch", graph.Nodes.FirstOrDefault(node => node.Kind == ScenarioNodeKind.Dispatch), null,
                 "Dispatcher", DiagramParticipantKind.Service),
             ("handler", graph.Nodes.FirstOrDefault(node => node.Kind == ScenarioNodeKind.Handler),
@@ -443,6 +455,10 @@ public static class DocumentationPlanner
             // two typed fields above, while generic lambdas still arrive without either field.
             participantLabels["action"] = legacyAction;
         }
+        else if (configuredRoot && actionNode?.Presentation is { ConfiguredDisplaySignature: { Length: > 0 } signature })
+        {
+            participantLabels["action"] = signature;
+        }
         // A typed composition owns the service participant's role: the contract type (for example
         // ICustomerService) humanized to its namespace-free role ("Customer service"), never the
         // first encountered implementation name. The label is resolved before participants are
@@ -471,7 +487,8 @@ public static class DocumentationPlanner
         // reference and arm partition stay deterministic.
         var orderedMessageRefs = new List<(ScenarioNodeId Node, DiagramPlanElementId Ref)>();
         foreach (var edge in graph.Edges
-                     .OrderBy(edge => EdgeOrderKey(edge).Segment)
+                     .OrderBy(edge => DirectCallOrder(graph, edge))
+                     .ThenBy(edge => EdgeOrderKey(edge).Segment)
                      .ThenBy(edge => EdgeOrderKey(edge).Ordinal)
                      .ThenBy(edge => EdgeOrderKey(edge).Rank)
                      .ThenBy(edge => edge.Id.Value, StringComparer.Ordinal))
@@ -482,14 +499,19 @@ public static class DocumentationPlanner
                     messages.Add(CreateMessage(
                         graph,
                         edge,
-                        "client",
-                        "action",
-                        graph.OperationKey,
+                         callerKey,
+                         "action",
+                        OperationKey(graph),
                         DiagramMessageKind.Request));
                     orderedMessageRefs.Add((edge.Target, CreateMessageRef(edge)));
                     break;
                 case ScenarioEdgeKind.Call:
                     var callTarget = graph.Nodes.FirstOrDefault(node => node.Id == edge.Target);
+                    var callSource = graph.Nodes.FirstOrDefault(node => node.Id == edge.Source);
+                    var sourceKey = callSource?.Kind == ScenarioNodeKind.MethodCall
+                        && !string.IsNullOrWhiteSpace(callSource.Presentation?.TargetContainingTypeName)
+                        ? methodCallParticipantKeys[callSource.Presentation.TargetContainingTypeName!]
+                        : "action";
                     var targetKey = callTarget?.Kind == ScenarioNodeKind.MethodCall
                         && !string.IsNullOrWhiteSpace(callTarget.Presentation?.TargetContainingTypeName)
                         ? methodCallParticipantKeys[callTarget.Presentation.TargetContainingTypeName!]
@@ -497,7 +519,7 @@ public static class DocumentationPlanner
                     messages.Add(CreateMessage(
                         graph,
                         edge,
-                        "action",
+                         sourceKey,
                         targetKey,
                         callTarget?.Kind == ScenarioNodeKind.MethodCall
                             ? callTarget.Presentation?.TargetMemberName ?? edge.Detail
@@ -596,7 +618,7 @@ public static class DocumentationPlanner
                         graph,
                         edge,
                         "action",
-                        "client",
+                         callerKey,
                         OutcomeLabel(graph, edge),
                         DiagramMessageKind.Response));
                     orderedMessageRefs.Add((edge.Target, CreateMessageRef(edge)));
@@ -607,8 +629,8 @@ public static class DocumentationPlanner
                     messages.Add(CreateMessage(
                         graph,
                         edge,
-                        "action",
-                        "client",
+                         "action",
+                         callerKey,
                         OutcomeLabel(graph, edge),
                         DiagramMessageKind.Response));
                     orderedMessageRefs.Add((edge.Target, CreateMessageRef(edge)));
@@ -641,7 +663,7 @@ public static class DocumentationPlanner
                     new DiagnosticId($"diagnostic:v1:DP-DISPATCH-ORPHAN:{graph.EntryPoint.Value}"),
                     "DP-DISPATCH-ORPHAN",
                     "The selected dispatch expansion contains an unjoined nested step and was withheld.",
-                    graph.OperationKey)];
+                     OperationKey(graph))];
             }
             else
             {
@@ -796,6 +818,11 @@ public static class DocumentationPlanner
                 messages.RemoveAll(message => withheldRefs.Contains(message.Id));
             }
         }
+        else if (graph.DirectCallExpansion.Steps.Length > 0)
+        {
+            sequence = new DiagramSequence(orderedMessageRefs
+                .Select(item => DiagramSequenceElement.MessageRef(item.Ref)).ToImmutableArray());
+        }
 
         // Branches are ordered failure-first; renderers serialize the branch array verbatim. They
         // exist only for legacy graphs with neither topology nor composition; a structured plan owns
@@ -841,7 +868,7 @@ public static class DocumentationPlanner
         return new DiagramPlan(
             graph.EntryPoint,
             graph.Profile,
-            graph.OperationKey,
+            OperationKey(graph),
             orderedParticipants,
             orderedMessages,
             orderedBranches,
@@ -2665,17 +2692,48 @@ public static class DocumentationPlanner
         return "The action calls a service resolved through dependency injection.";
     }
 
-    private static string BuildMethodCallText(ScenarioNode node)
+    private static string BuildMethodCallText(ScenarioGraph graph, ScenarioNode node)
     {
         var presentation = node.Presentation;
         if (presentation is not null
             && !string.IsNullOrWhiteSpace(presentation.TargetContainingTypeName)
             && !string.IsNullOrWhiteSpace(presentation.TargetMemberName))
         {
-            return $"The action calls {ShortTypeName(presentation.TargetContainingTypeName)}.{presentation.TargetMemberName}.";
+            var source = graph.Edges
+                .Where(edge => edge.Kind == ScenarioEdgeKind.Call && edge.Target == node.Id)
+                .Select(edge => graph.Nodes.FirstOrDefault(candidate => candidate.Id == edge.Source))
+                .FirstOrDefault(candidate => candidate is not null);
+            var caller = source?.Kind == ScenarioNodeKind.MethodCall
+                && source.Presentation is { TargetContainingTypeName: { Length: > 0 } parentType, TargetMemberName: { Length: > 0 } parentMember }
+                ? $"The called method {ShortTypeName(parentType)}.{parentMember}"
+                : graph.RootKind == ScenarioRootKind.ConfiguredMethod
+                    ? $"The selected method {OperationKey(graph)}"
+                    : "The action";
+            return $"{caller} calls {ShortTypeName(presentation.TargetContainingTypeName)}.{presentation.TargetMemberName}.";
         }
 
-        return "The action makes an exact method call.";
+        return graph.RootKind == ScenarioRootKind.ConfiguredMethod
+            ? $"The selected method {OperationKey(graph)} makes an exact method call."
+            : "The action makes an exact method call.";
+    }
+
+    private static string OperationKey(ScenarioGraph graph)
+        => string.IsNullOrWhiteSpace(graph.OperationKey) ? graph.RootMethod.Value : graph.OperationKey;
+
+    private static int DirectCallOrder(ScenarioGraph graph, ScenarioEdge edge)
+    {
+        if (edge.Kind == ScenarioEdgeKind.Entry)
+        {
+            return -1;
+        }
+        if (edge.Kind != ScenarioEdgeKind.Call)
+        {
+            return int.MaxValue;
+        }
+        var index = graph.DirectCallExpansion.Steps
+            .Select((step, ordinal) => (step, ordinal))
+            .FirstOrDefault(item => item.step.ScenarioNodeId == edge.Target);
+        return index.step is null ? int.MaxValue : index.ordinal;
     }
 
     /// <summary>

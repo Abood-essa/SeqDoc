@@ -12,6 +12,46 @@ namespace SeqDoc.Wording.Tests;
 public sealed class DocumentationPlannerTests
 {
     [Fact]
+    public void ConfiguredMethodUsesNeutralMethodWordingAndParticipants()
+    {
+        var evidence = ImmutableArray.Create(ScenarioGraphTestFactory.SourceEvidence("configured-method"));
+        var method = new MethodId("method:v1:Payments.TransferEngine.SubmitAsync");
+        var entry = new ScenarioNode(
+            new("scenario-node:v1:configured-method:entry"), ScenarioNodeKind.EntryPoint,
+            "entry-point:v1:configured-method", method, null, "entry", evidence, CertaintyLevel.Exact);
+        var action = new ScenarioNode(
+            new("scenario-node:v1:configured-method:action"), ScenarioNodeKind.Action, "configured-method", method, null,
+             "internal controller/service detail must not control wording", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(
+                ActionKind: ScenarioActionKind.ConfiguredMethod,
+                ConfiguredContainingTypeName: "Payments.TransferEngine",
+                ConfiguredMethodName: "SubmitAsync",
+                ConfiguredDisplaySignature: "Payments.TransferEngine.SubmitAsync()"));
+        var graph = new ScenarioGraph(
+            new("entry-point:v1:configured-method"), ScenarioGraphTestFactory.Profile.Id, method,
+             HttpMethodKind.Unknown, "", "Payments.TransferEngine.SubmitAsync()", [entry, action],
+             [new ScenarioEdge(new("scenario-edge:v1:configured-method:entry"), entry.Id, action.Id,
+                 ScenarioEdgeKind.Entry, "", evidence, CertaintyLevel.Exact)], [], "configured-method", ScenarioTopology.Empty,
+             rootKind: ScenarioRootKind.ConfiguredMethod);
+
+        var plan = DocumentationPlanner.Plan(graph);
+        var text = Assert.Single(plan.Wording.Phrases, phrase => phrase.Key == "action").Text;
+
+        Assert.Contains("Payments.TransferEngine.SubmitAsync()", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("HTTP", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("controller", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("service", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(plan.Diagram.Participants, participant => participant.Label == "Payments.TransferEngine.SubmitAsync()");
+        Assert.Contains(plan.Diagram.Participants, participant => participant.Label == "Caller");
+        var request = Assert.Single(plan.Diagram.Messages);
+        Assert.Equal(("caller", "action"), (request.Source, request.Target));
+        Assert.Equal("Payments.TransferEngine.SubmitAsync()", request.Label);
+        Assert.DoesNotContain(plan.Wording.Phrases, phrase => phrase.Text.Contains("API", StringComparison.OrdinalIgnoreCase)
+            || phrase.Text.Contains("controller", StringComparison.OrdinalIgnoreCase)
+            || phrase.Text.Contains("service", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void GenericMethodCallUsesDeterministicParticipantAndMemberMessageWithoutServiceWording()
     {
         var plan = DocumentationPlanner.Plan(ScenarioGraphTestFactory.CreateGenericMethodCallGraph());

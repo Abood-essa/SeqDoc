@@ -223,6 +223,166 @@ public sealed class CliProcessTests
     }
 
     [Fact]
+    public async Task ConfiguredExactMethodRootIsAcceptedWithoutNameMatching()
+    {
+        string root = FindRepositoryRoot();
+        string target = FourFlowsFixture(root);
+        using var cache = new TemporaryCache();
+        string methodId = await FirstMethodIdAsync(target, cache);
+        string config = cache.WriteConfiguration($"""
+            schemaVersion: 1
+            selection:
+              roots:
+                - {methodId}
+            """);
+        string output = System.IO.Path.Combine(cache.DirectoryPath, "docs");
+
+        var result = await RunAsync("analyze", target, "--repository-root", root, "--cache", cache.Path,
+            "--config", config, "--output", output, "--json");
+
+        Assert.Equal(0, result.ExitCode);
+        const string displaySignature = "BehaviorDocumentation.FourFlows.Services.MutationProbeService.UnsupportedAndUnrelatedProbe()";
+        var configuredDocuments = Directory.GetFiles(output, "*.md", SearchOption.TopDirectoryOnly)
+            .Where(file =>
+            {
+                string content = File.ReadAllText(file);
+                return content.Contains(displaySignature, StringComparison.Ordinal)
+                    && content.Contains($"The selected method {displaySignature} executes.", StringComparison.Ordinal);
+            })
+            .ToArray();
+        var configuredDocument = Assert.Single(configuredDocuments);
+        var documentation = File.ReadAllText(configuredDocument);
+        Assert.DoesNotContain("controller action", documentation, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("API client", documentation, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("HTTP GET", documentation, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ConfiguredRootsWithAllFrameworksAreRejectedExplicitly()
+    {
+        string root = FindRepositoryRoot();
+        string target = FourFlowsFixture(root);
+        using var cache = new TemporaryCache();
+        string methodId = await FirstMethodIdAsync(target, cache);
+        string config = cache.WriteConfiguration($"schemaVersion: 1\nselection:\n  roots: [{methodId}]\n");
+
+        var result = await RunAsync("analyze", target, "--repository-root", root, "--cache", cache.Path,
+            "--config", config, "--all-frameworks", "--json");
+
+        Assert.Equal(2, result.ExitCode);
+        using var document = JsonDocument.Parse(result.Output);
+        Assert.Equal("InvalidInput", document.RootElement.GetProperty("outcome").GetString());
+        Assert.Contains(document.RootElement.GetProperty("diagnostics").EnumerateArray(),
+             diagnostic => diagnostic.GetProperty("code").GetString() == "SD4012");
+    }
+
+    [Fact]
+    public async Task ConfiguredEmptyRootsWithAllFrameworksAreRejectedButAbsentRootsRemainAllowed()
+    {
+        string root = FindRepositoryRoot();
+        string target = GetMeaningFixture(root);
+        using var cache = new TemporaryCache();
+        string config = cache.WriteConfiguration("schemaVersion: 1\nselection:\n  roots: []\n");
+
+        var rejected = await RunAsync("catalog", target, "--repository-root", root, "--cache", cache.Path,
+            "--config", config, "--all-frameworks", "--json");
+        Assert.Equal(2, rejected.ExitCode);
+        using var rejectedDocument = JsonDocument.Parse(rejected.Output);
+        Assert.Contains(rejectedDocument.RootElement.GetProperty("diagnostics").EnumerateArray(),
+            diagnostic => diagnostic.GetProperty("code").GetString() == "SD4012");
+
+        var seeded = await RunAsync("analyze", target, "--repository-root", root, "--cache", cache.Path, "--json");
+        Assert.Equal(0, seeded.ExitCode);
+        var allowed = await RunAsync("catalog", target, "--repository-root", root, "--cache", cache.Path,
+            "--all-frameworks", "--json");
+        Assert.Equal(0, allowed.ExitCode);
+    }
+
+    [Fact]
+    public async Task ConfiguredRootSelectionIsExactAndAtomicWhenOneConfiguredIdIsInvalid()
+    {
+        string root = FindRepositoryRoot();
+        string target = FourFlowsFixture(root);
+        using var cache = new TemporaryCache();
+        string methodId = await FirstMethodIdAsync(target, cache);
+        string config = cache.WriteConfiguration($"""
+            schemaVersion: 1
+            selection:
+              roots:
+                - {methodId}
+                - {methodId[..^1]}
+            """);
+        string output = System.IO.Path.Combine(cache.DirectoryPath, "docs");
+
+        var result = await RunAsync("analyze", target, "--repository-root", root, "--cache", cache.Path,
+            "--config", config, "--output", output, "--json");
+
+        Assert.Equal(2, result.ExitCode);
+        using var document = JsonDocument.Parse(result.Output);
+        Assert.Equal("InvalidInput", document.RootElement.GetProperty("outcome").GetString());
+        Assert.False(Directory.Exists(output));
+    }
+
+    [Fact]
+    public async Task InvalidConfiguredRootPreservesPreviouslyGeneratedOutput()
+    {
+        string root = FindRepositoryRoot();
+        string target = FourFlowsFixture(root);
+        using var cache = new TemporaryCache();
+        string output = System.IO.Path.Combine(cache.DirectoryPath, "docs");
+        var first = await RunAsync("analyze", target, "--repository-root", root, "--cache", cache.Path,
+            "--output", output, "--json");
+        Assert.Equal(0, first.ExitCode);
+        var before = Directory.GetFiles(output, "*", SearchOption.TopDirectoryOnly)
+            .Where(file => !file.EndsWith(".stale", StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToDictionary(file => file, File.ReadAllBytes, StringComparer.Ordinal);
+
+        string config = cache.WriteConfiguration("schemaVersion: 1\nselection:\n  roots: [method:v1:stale-or-foreign]\n");
+        var invalid = await RunAsync("analyze", target, "--repository-root", root, "--cache", cache.Path,
+            "--config", config, "--output", output, "--json");
+
+        Assert.Equal(2, invalid.ExitCode);
+        using var document = JsonDocument.Parse(invalid.Output);
+        Assert.Equal("InvalidInput", document.RootElement.GetProperty("outcome").GetString());
+        foreach (var pair in before)
+        {
+            Assert.True(pair.Value.SequenceEqual(File.ReadAllBytes(pair.Key)), $"Changed {Path.GetFileName(pair.Key)}");
+        }
+    }
+
+    [Fact]
+    public async Task ConfiguredRootFromPortableProfileIsRejectedForWindowsProfileAndPreservesOutput()
+    {
+        string root = FindRepositoryRoot();
+        using var cache = new TemporaryCache();
+        string output = System.IO.Path.Combine(cache.DirectoryPath, "docs");
+        var seeded = await RunAsync("analyze", FourFlowsFixture(root), "--repository-root", root,
+            "--cache", cache.Path, "--output", output, "--json");
+        Assert.Equal(0, seeded.ExitCode);
+        var before = Directory.GetFiles(output, "*", SearchOption.TopDirectoryOnly)
+            .Where(file => !file.EndsWith(".stale", StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToDictionary(file => file, File.ReadAllBytes, StringComparer.Ordinal);
+
+        string target = Fixture(root, "MultiTargetProfiles");
+        string portableMethodId = await PortableOnlyMethodIdAsync(target, cache);
+        string config = cache.WriteConfiguration($"schemaVersion: 1\nselection:\n  roots: [\"{portableMethodId}\"]\n");
+        var invalid = await RunAsync("analyze", target, "--repository-root", root, "--cache", cache.Path,
+            "--framework", "net10.0-windows", "--config", config, "--output", output, "--json");
+
+        Assert.Equal(2, invalid.ExitCode);
+        using var document = JsonDocument.Parse(invalid.Output);
+        Assert.Equal("InvalidInput", document.RootElement.GetProperty("outcome").GetString());
+        Assert.Contains(document.RootElement.GetProperty("diagnostics").EnumerateArray(),
+            diagnostic => diagnostic.GetProperty("code").GetString() == "SD4011");
+        foreach (var pair in before)
+        {
+            Assert.True(pair.Value.SequenceEqual(File.ReadAllBytes(pair.Key)), $"Changed {Path.GetFileName(pair.Key)}");
+        }
+    }
+
+    [Fact]
     public async Task FailedGenerationMarksStaleAndPreservesPriorDocs()
     {
         string root = FindRepositoryRoot();
@@ -483,6 +643,37 @@ public sealed class CliProcessTests
         Task<string> error = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
         return new ProcessResult(process.ExitCode, await output, await error);
+    }
+
+    private static async Task<string> FirstMethodIdAsync(string target, TemporaryCache cache)
+    {
+        string root = FindRepositoryRoot();
+        var analyze = await RunAsync("analyze", target, "--repository-root", root, "--cache", cache.Path, "--json");
+        Assert.Equal(0, analyze.ExitCode);
+        var catalog = await RunAsync("catalog", target, "--repository-root", root, "--cache", cache.Path,
+            "--kind", "method", "--json");
+        Assert.Equal(0, catalog.ExitCode);
+        using var document = JsonDocument.Parse(catalog.Output);
+        var items = document.RootElement.GetProperty("data").GetProperty("items").EnumerateArray().ToArray();
+        return items.Single(item => item.GetProperty("detail").GetString() ==
+            "BehaviorDocumentation.FourFlows.Services.MutationProbeService.UnsupportedAndUnrelatedProbe()")
+            .GetProperty("id").GetString()!;
+    }
+
+    private static async Task<string> PortableOnlyMethodIdAsync(string target, TemporaryCache cache)
+    {
+        var analyze = await RunAsync("analyze", target, "--repository-root", FindRepositoryRoot(), "--cache", cache.Path,
+            "--framework", "net10.0", "--json");
+        Assert.Equal(0, analyze.ExitCode);
+        var catalog = await RunAsync("catalog", target, "--repository-root", FindRepositoryRoot(), "--cache", cache.Path,
+            "--framework", "net10.0", "--kind", "method", "--query", "PortableOnly", "--json");
+        Assert.Equal(0, catalog.ExitCode);
+        using var document = JsonDocument.Parse(catalog.Output);
+        var item = Assert.Single(document.RootElement.GetProperty("data").GetProperty("items").EnumerateArray());
+        string id = item.GetProperty("id").GetString()!;
+        Assert.StartsWith("method:v1:", id, StringComparison.Ordinal);
+        Assert.Contains("PortableOnly", item.GetProperty("detail").GetString(), StringComparison.Ordinal);
+        return id;
     }
 
     private static string FindRepositoryRoot()

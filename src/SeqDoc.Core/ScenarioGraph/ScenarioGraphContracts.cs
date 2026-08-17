@@ -57,6 +57,14 @@ public enum ScenarioActionKind
     Unknown,
     ControllerAction,
     MinimalApiHandler,
+    ConfiguredMethod,
+}
+
+/// <summary>Typed discriminator for the source of a scenario root.</summary>
+public enum ScenarioRootKind
+{
+    HttpEntryPoint,
+    ConfiguredMethod,
 }
 
 /// <summary>
@@ -169,7 +177,10 @@ public sealed record ScenarioNodePresentation(
     string? HandlerTypeName = null,
     bool? HandlerBodyAvailable = null,
     string? TargetContainingTypeName = null,
-    string? TargetMemberName = null);
+    string? TargetMemberName = null,
+    string? ConfiguredContainingTypeName = null,
+    string? ConfiguredMethodName = null,
+    string? ConfiguredDisplaySignature = null);
 
 /// <summary>
 /// One evidence-backed scenario-graph edge connecting two nodes. Every edge carries non-empty
@@ -249,7 +260,11 @@ public sealed record ScenarioGraphDiagnostic(
     DiagnosticId Id,
     string Code,
     string Summary,
-    string Detail);
+    string Detail)
+{
+    public ImmutableArray<EvidenceRef> Evidence { get; init; } = [];
+    public CertaintyLevel Certainty { get; init; } = CertaintyLevel.Conservative;
+}
 
 /// <summary>
 /// Closed vocabulary of terminal/rejoin classification for one scenario decision arm. An arm whose
@@ -835,6 +850,94 @@ public sealed record ScenarioDispatchHandlerExpansion(
     CertaintyLevel Certainty,
     string DebugProjection);
 
+public sealed record ScenarioDirectCallExpansionStep
+{
+    public ScenarioDirectCallExpansionStep(
+        string id, string? parentStepId, int depth, MethodId callerMethod, MethodId targetMethod,
+        OperationId operation, ScenarioNodeId scenarioNodeId, int sourceOrdinal,
+        ImmutableArray<EvidenceRef> evidence, CertaintyLevel certainty, bool isComplete,
+        bool isCycleBoundary = false, ImmutableArray<ScenarioArmId> rootArmIds = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        ArgumentException.ThrowIfNullOrWhiteSpace(callerMethod.Value);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetMethod.Value);
+        ArgumentException.ThrowIfNullOrWhiteSpace(operation.Value);
+        ArgumentException.ThrowIfNullOrWhiteSpace(scenarioNodeId.Value);
+        ArgumentOutOfRangeException.ThrowIfLessThan(depth, 1);
+        ArgumentOutOfRangeException.ThrowIfNegative(sourceOrdinal);
+        if (parentStepId is null ? depth != 1 : depth <= 1)
+        {
+            throw new ArgumentException("A direct-call parent must precede its child by exactly one depth.", nameof(parentStepId));
+        }
+        if (evidence.IsDefaultOrEmpty) { throw new ArgumentException("A direct-call step requires evidence.", nameof(evidence)); }
+        if (certainty == CertaintyLevel.Unknown || certainty < evidence.Min(item => item.Certainty))
+        {
+            throw new ArgumentException("A direct-call step certainty must not exceed its evidence.", nameof(certainty));
+        }
+        if (!rootArmIds.IsDefaultOrEmpty)
+        {
+            if (rootArmIds.Any(item => string.IsNullOrWhiteSpace(item.Value))
+                || rootArmIds.Select(item => item.Value).Distinct(StringComparer.Ordinal).Count() != rootArmIds.Length)
+            {
+                throw new ArgumentException("Root arm identities must be distinct and canonical.", nameof(rootArmIds));
+            }
+            rootArmIds = rootArmIds.OrderBy(item => item.Value, StringComparer.Ordinal).ToImmutableArray();
+        }
+        Id = id; ParentStepId = parentStepId; Depth = depth; CallerMethod = callerMethod; TargetMethod = targetMethod;
+        Operation = operation; ScenarioNodeId = scenarioNodeId; SourceOrdinal = sourceOrdinal; Evidence = evidence;
+        Certainty = certainty; IsComplete = isComplete; IsCycleBoundary = isCycleBoundary; RootArmIds = rootArmIds.IsDefault ? [] : rootArmIds;
+    }
+    public string Id { get; }
+    public string? ParentStepId { get; }
+    public int Depth { get; }
+    public MethodId CallerMethod { get; }
+    public MethodId TargetMethod { get; }
+    public OperationId Operation { get; }
+    public ScenarioNodeId ScenarioNodeId { get; }
+    public int SourceOrdinal { get; }
+    public ImmutableArray<EvidenceRef> Evidence { get; }
+    public CertaintyLevel Certainty { get; }
+    public bool IsComplete { get; init; }
+    public bool IsCycleBoundary { get; }
+    public ImmutableArray<ScenarioArmId> RootArmIds { get; init; }
+}
+
+public sealed record ScenarioDirectCallExpansion
+{
+    public ScenarioDirectCallExpansion(ImmutableArray<ScenarioDirectCallExpansionStep> steps, bool isComplete, ImmutableArray<ScenarioGraphDiagnostic> diagnostics)
+    {
+        if (steps.IsDefault) { throw new ArgumentException("Expansion steps must be initialized.", nameof(steps)); }
+        if (diagnostics.IsDefault) { throw new ArgumentException("Expansion diagnostics must be initialized.", nameof(diagnostics)); }
+        if (steps.Select(item => item.Id).Distinct(StringComparer.Ordinal).Count() != steps.Length
+            || steps.Select(item => item.ScenarioNodeId.Value).Distinct(StringComparer.Ordinal).Count() != steps.Length)
+        {
+            throw new ArgumentException("Expansion step and node identities must be distinct.", nameof(steps));
+        }
+        var byId = steps.ToDictionary(item => item.Id, StringComparer.Ordinal);
+        var indexById = steps.Select((step, index) => (step.Id, index))
+            .ToDictionary(item => item.Id, item => item.index, StringComparer.Ordinal);
+        foreach (var step in steps)
+        {
+            if (step.IsCycleBoundary && step.IsComplete)
+            { throw new ArgumentException("A cycle-boundary step must be incomplete.", nameof(steps)); }
+            if (step.ParentStepId is { } parent)
+            {
+                if (!byId.TryGetValue(parent, out var parentStep) || parentStep.Depth != step.Depth - 1)
+                { throw new ArgumentException("Expansion parents must precede children by one depth.", nameof(steps)); }
+                if (indexById[parent] >= indexById[step.Id])
+                { throw new ArgumentException("Expansion parents must precede children by array index.", nameof(steps)); }
+            }
+        }
+        if (isComplete && (steps.Any(item => !item.IsComplete) || diagnostics.Length != 0))
+        { throw new ArgumentException("A complete expansion cannot contain incomplete steps or diagnostics.", nameof(isComplete)); }
+        Steps = steps; IsComplete = isComplete; Diagnostics = diagnostics;
+    }
+    public ImmutableArray<ScenarioDirectCallExpansionStep> Steps { get; init; }
+    public bool IsComplete { get; }
+    public ImmutableArray<ScenarioGraphDiagnostic> Diagnostics { get; }
+    public static ScenarioDirectCallExpansion Empty { get; } = new([], true, []);
+}
+
 /// <summary>
 /// One typed callback region of a scenario graph. The region translates one exact
 /// <see cref="CallbackBoundaryFact"/> into renderer-neutral membership: the generated member nodes
@@ -1003,8 +1106,15 @@ public sealed record ScenarioGraph
         ScenarioServiceComposition? composition = null,
         ImmutableArray<ScenarioCallbackRegion> callbackRegions = default,
         ScenarioHandlerTopology? handlerTopology = null,
-        ScenarioDispatchHandlerExpansion? dispatchHandlerExpansion = null)
+        ScenarioDispatchHandlerExpansion? dispatchHandlerExpansion = null,
+        ScenarioRootKind rootKind = ScenarioRootKind.HttpEntryPoint,
+        ScenarioDirectCallExpansion? directCallExpansion = null)
     {
+        if (!Enum.IsDefined(rootKind))
+        {
+            throw new ArgumentOutOfRangeException(nameof(rootKind), "Undefined scenario root kind.");
+        }
+
         EntryPoint = entryPoint;
         Profile = profile;
         RootMethod = rootMethod;
@@ -1020,6 +1130,8 @@ public sealed record ScenarioGraph
         CallbackRegions = callbackRegions.IsDefault ? [] : callbackRegions;
         HandlerTopology = handlerTopology;
         DispatchHandlerExpansion = dispatchHandlerExpansion;
+        RootKind = rootKind;
+        DirectCallExpansion = directCallExpansion ?? ScenarioDirectCallExpansion.Empty;
     }
 
     /// <summary>Source-compatible construction that supplies a non-null empty topology and a null composition.</summary>
@@ -1078,6 +1190,10 @@ public sealed record ScenarioGraph
     public ScenarioHandlerTopology? HandlerTopology { get; }
 
     public ScenarioDispatchHandlerExpansion? DispatchHandlerExpansion { get; }
+
+    public ScenarioRootKind RootKind { get; }
+
+    public ScenarioDirectCallExpansion DirectCallExpansion { get; }
 }
 
 /// <summary>

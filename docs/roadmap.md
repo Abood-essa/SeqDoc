@@ -5,10 +5,15 @@ output, explicit certainty, and deterministic results.
 
 CreditTransfer is the primary whole-solution acceptance target for this direction. It determines delivery priority,
 while unrelated supplied and open-source applications protect generality and false-positive boundaries. See
-`docs/project/credit-transfer-plan.md` for the bounded delivery sequence.
+`docs/project/credit-transfer-plan.md` for the bounded delivery sequence and `docs/project/diagram-strategy.md` for
+the target linked-diagram philosophy and capability horizons.
 
 ## Planned order
 
+- **Presentation hygiene from measured output.** Put diagrams first; remove invented configured-root callers;
+  deterministically shorten/deduplicate participants; hide recognized or exactly configured logging noise; eliminate
+  generic `Condition`/`Continue`/`Path terminates` presentation; and distinguish repeated calls with exact argument
+  evidence before broader traversal amplifies low-signal output.
 - **Generic predicate and branch presentation.** Complete the compiler-evidenced predicate projection before
   broadening traversal so supported branches display a deterministic normalized expression instead of generic
   `Condition` wording. Join source predicates to Method Flow decisions only through exact typed identity, render
@@ -29,6 +34,9 @@ while unrelated supplied and open-source applications protect generality and fal
   subset required by exact composition evidence.
 - **Whole-solution CreditTransfer acceptance.** Audit every admitted executable entry and report complete/useful,
   partial, diagnostic-only, and uncovered behavior without weakening evidence rules.
+- **Automatic linked decomposition.** Generate context, overview, adapter, facade, orchestration, state/recovery, and
+  explicit-boundary views from generic topology, call-depth, participant, repeated-subflow, and state-transition
+  evidence rather than one universal call-graph dump.
 - **Broad corpus.** Measure and expand coverage across representative supplied and open-source applications and
   framework shapes. Prefer reusable compiler and framework capabilities that improve many projects; external
   applications are acceptance evidence and never product vocabulary.
@@ -44,7 +52,8 @@ After the ordered foundation above proves broad traversal and composition, conti
 infrastructure, deeper modern HTTP and dispatch semantics, worker/message and supplied-training flows, broader eShop
 coverage, and progressively larger applications such as modular, commerce, and service-contract systems. Persist
 later graph stages only after their contracts survive varied corpus use, then add incremental invalidation,
-explanation/search surfaces, corpus automation, performance/platform evidence, and release hardening.
+cross-root/state-machine views, explanation/search surfaces, corpus automation, performance/platform evidence, and
+release hardening.
 
 These are capability horizons rather than promises of application-specific adapters. Each horizon is activated from
 measured unsupported boundaries and must preserve profile isolation, deterministic identity, evidence/certainty,

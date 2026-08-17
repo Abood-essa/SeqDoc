@@ -7,10 +7,11 @@ namespace SeqDoc.Core.Frameworks;
 /// <summary>Admitted HTTP methods for attribute-routed ASP.NET Core controller actions.</summary>
 public enum HttpMethodKind
 {
-    Get,
-    Post,
-    Put,
-    Delete,
+    Unknown = -1,
+    Get = 0,
+    Post = 1,
+    Put = 2,
+    Delete = 3,
 }
 
 /// <summary>Binding source the ASP.NET Core controller model can prove for one action parameter.</summary>

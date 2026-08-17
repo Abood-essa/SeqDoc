@@ -78,6 +78,20 @@ public sealed record HttpEntryPointIdentityDescriptor(
     HttpMethodKind HttpMethod,
     string CanonicalRoute);
 
+public sealed record ConfiguredMethodEntryPointIdentityDescriptor(
+    CompilationProfileId Profile,
+    MethodId RootMethod);
+
+public sealed record ScenarioDirectCallExpansionIdentityDescriptor(
+    CompilationProfileId Profile,
+    EntryPointId EntryPoint,
+    string CallSiteId,
+    string? ParentStepId,
+    MethodId CallerMethod,
+    MethodId TargetMethod,
+    OperationId Operation,
+    int Depth);
+
 public sealed record EvidenceIdentityDescriptor(
     EvidenceKind Kind,
     string Artifact,

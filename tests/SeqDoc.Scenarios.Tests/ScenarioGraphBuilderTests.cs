@@ -12,6 +12,80 @@ namespace SeqDoc.Scenarios.Tests;
 
 public sealed class ScenarioGraphBuilderTests
 {
+    [Fact]
+    public void ConfiguredMethodHasASeparateTypedRootDiscriminator()
+    {
+        Assert.NotEqual(ScenarioActionKind.ControllerAction, ScenarioActionKind.ConfiguredMethod);
+        Assert.NotEqual(ScenarioActionKind.MinimalApiHandler, ScenarioActionKind.ConfiguredMethod);
+    }
+
+    [Fact]
+    public void ConfiguredMethodWithoutBodyProducesOnlyStructuralNodesAndExplicitDiagnostic()
+    {
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(
+            ScenarioTestFactory.CreateConfiguredRootRequest()).Graphs,
+            candidate => candidate.RootKind == ScenarioRootKind.ConfiguredMethod);
+
+        Assert.Equal(ScenarioRootKind.ConfiguredMethod, graph.RootKind);
+        Assert.Equal([ScenarioNodeKind.EntryPoint, ScenarioNodeKind.Action],
+            graph.Nodes.Select(node => node.Kind));
+        Assert.DoesNotContain(graph.Nodes, node => node.Kind == ScenarioNodeKind.MethodCall);
+        Assert.Contains(graph.Diagnostics, diagnostic => diagnostic.Code == "SC002");
+        Assert.DoesNotContain(graph.Diagnostics, diagnostic => diagnostic.Code == "SC001");
+    }
+
+    [Fact]
+    public void ConfiguredBodyAvailableRootReusesGuardedDirectCallsThroughDiagramPlan()
+    {
+        var request = ScenarioTestFactory.CreateRootDirectCallTryRequest() with
+        {
+            FrameworkFacts = new FrameworkAnalysisResult(true, [], [], [], [], [], []),
+            ProgramIndex = ScenarioTestFactory.CreateRootDirectCallRequest().ProgramIndex with
+            {
+                Methods = ScenarioTestFactory.CreateRootDirectCallRequest().ProgramIndex.Methods
+                    .Select(method => method.Id == ScenarioTestFactory.ActionMethod
+                        ? method with { BodyFingerprint = "root-direct" }
+                        : method)
+                    .ToImmutableArray(),
+            },
+            ConfiguredRoots = [ScenarioTestFactory.ActionMethod],
+        };
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(request).Graphs);
+        var plan = DocumentationPlanner.Plan(graph);
+
+        Assert.Equal(ScenarioRootKind.ConfiguredMethod, graph.RootKind);
+        Assert.Equal(["ValidateAsync", "SendAsync"], graph.Nodes.Where(node => node.Kind == ScenarioNodeKind.MethodCall)
+            .OrderBy(node => node.SequenceOrdinal)
+            .Select(node => node.Presentation!.TargetMemberName));
+        var decision = Assert.Single(graph.Topology.Decisions);
+        var trueArm = Assert.Single(graph.Topology.Arms, arm => arm.Decision == decision.Id && arm.IsTrue);
+        var guarded = Assert.Single(graph.Nodes, node => node.Presentation?.TargetMemberName == "SendAsync");
+        Assert.Contains(graph.Topology.Memberships, membership => membership.Arm == trueArm.Id && membership.ScenarioNode == guarded.Id);
+        var fragment = Assert.Single(plan.Diagram.Sequence.Fragments);
+        var guardedRef = Assert.Single(fragment.Arms.Where(arm => arm.Key.EndsWith(":arm:true", StringComparison.Ordinal))
+            .SelectMany(arm => arm.MessageRefs));
+        Assert.Equal(1, plan.Diagram.Sequence.Fragments.SelectMany(item => item.Arms).SelectMany(arm => arm.MessageRefs)
+            .Count(reference => reference == guardedRef));
+        Assert.DoesNotContain(guardedRef, plan.Diagram.Sequence.MessageRefs);
+        Assert.DoesNotContain(plan.Diagram.Diagnostics, diagnostic => diagnostic.Code == "DP002");
+        Assert.DoesNotContain(graph.Diagnostics, diagnostic => diagnostic.Code == "SC001");
+        Assert.DoesNotContain(graph.Nodes, node => node.Method == ScenarioTestFactory.NestedDirectCallTarget);
+    }
+
+    [Fact]
+    public void ConfiguredRootOrderIsDeterministicAndFrameworkRootsAreNotDuplicated()
+    {
+        var forward = ScenarioGraphBuilder.Build(
+            ScenarioTestFactory.CreateConfiguredRootRequest(includeFrameworkRoot: true));
+        var reversed = ScenarioGraphBuilder.Build(
+            ScenarioTestFactory.CreateConfiguredRootRequest(includeFrameworkRoot: true, reverseConstruction: true));
+
+        Assert.Equal(forward.DebugProjection, reversed.DebugProjection);
+        Assert.Equal(forward.Graphs.Select(graph => graph.EntryPoint), reversed.Graphs.Select(graph => graph.EntryPoint));
+        Assert.Single(forward.Graphs, graph => graph.RootKind == ScenarioRootKind.HttpEntryPoint);
+        Assert.Single(forward.Graphs, graph => graph.RootKind == ScenarioRootKind.ConfiguredMethod);
+    }
+
     /// <summary>CT-3 claim: exact root-local calls are projected without turning the unresolved service composition into a false service claim.</summary>
     [Fact]
     public void RootDirectCallsAreTypedRootOnlyNodesAndRetainSC001()
@@ -135,6 +209,8 @@ public sealed class ScenarioGraphBuilderTests
 
         Assert.Equal(ScenarioTestFactory.GetEntryPoint, graph.EntryPoint);
         Assert.Equal(ScenarioTestFactory.ActionMethod, graph.RootMethod);
+        Assert.Equal(ScenarioRootKind.HttpEntryPoint, graph.RootKind);
+        Assert.Equal("GET api/Gadgets/{id}", graph.OperationKey);
         Assert.Empty(graph.Diagnostics);
 
         Assert.Contains(graph.Nodes, node => node.Kind == ScenarioNodeKind.EntryPoint);

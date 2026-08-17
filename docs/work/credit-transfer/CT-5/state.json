@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "CT-5",
+  "status": "Closed",
+  "baselineRevision": "c9f286c",
+  "candidateRevision": null,
+  "review": {
+    "status": "Completed",
+    "findings": [
+      {
+        "id": "CT-5-F1",
+        "severity": "Medium",
+        "disposition": "Fixed",
+        "summary": "CLI now rejects --all-frameworks whenever roots were explicitly specified, including an empty list; focused CLI coverage also proves absent roots remain allowed."
+      },
+      {
+        "id": "CT-5-F2",
+        "severity": "Medium",
+        "disposition": "Fixed",
+        "summary": "ScenarioGraph now validates ScenarioRootKind at construction and focused contract coverage rejects undefined values."
+      },
+      {
+        "id": "CT-5-F3",
+        "severity": "Medium",
+        "disposition": "Fixed",
+        "summary": "A body-available configured-root integration test now proves exact call order, guarded membership, one-time Diagram Plan placement, no DP002/SC001, and no callee traversal."
+      },
+      {
+        "id": "CT-5-F4",
+        "severity": "Low",
+        "disposition": "Fixed",
+        "summary": "Roots-specific YAML parsing rejects unquoted numeric/boolean typed scalars while accepting quoted text, with direct path-specific coverage."
+      },
+      {
+        "id": "CT-5-F5",
+        "severity": "Medium",
+        "disposition": "Fixed",
+        "summary": "CLI coverage catalogs a valid net10.0-only MethodId, rejects it under net10.0-windows with SD4011, and proves prior generated output remains byte-identical."
+      }
+    ]
+  },
+  "verification": {
+    "focusedCommand": {
+      "result": "Passed",
+      "command": "dotnet test SeqDoc.slnx -c Release --filter FullyQualifiedName~Configured|FullyQualifiedName~SelectionRoots|FullyQualifiedName~YamlConfigurationResolver|FullyQualifiedName~DocumentationPlanner",
+      "summary": "After review resolution, corrected focused verification passed 35 Configuration, 5 Scenario, 14 Wording, and 6 CLI tests (60 total). Coverage includes all five review findings."
+    },
+    "finalGate": {
+      "result": "Passed",
+      "command": "dotnet test tests/SeqDoc.Configuration.Tests/SeqDoc.Configuration.Tests.csproj -c Release && dotnet test tests/SeqDoc.Scenarios.Tests/SeqDoc.Scenarios.Tests.csproj -c Release && dotnet test tests/SeqDoc.Wording.Tests/SeqDoc.Wording.Tests.csproj -c Release && dotnet test tests/SeqDoc.Cli.Tests/SeqDoc.Cli.Tests.csproj -c Release",
+      "summary": "Configuration 35, Scenario 116, Wording 93, and CLI 19 tests passed with zero failures or skips. The chained command reached the environment's 240-second timeout during CLI execution, so the already-successful first three projects were not repeated; the remaining CLI project then passed in 4 minutes 37 seconds with a larger timeout."
+    }
+  },
+  "notes": [
+    "CT-5 builds on the closed, uncommitted CT-4 candidate; baselineRevision remains the last repository revision and review must distinguish the CT-4 closed diff.",
+    "Exact MethodId selection is intentionally less convenient than name matching because it is deterministic, overload-safe, and profile-scoped; the existing method catalog is the discovery surface.",
+    "External CLI acceptance remains constrained by local command policy, so repository tests must prove the pipeline without treating stale Desktop output as evidence.",
+    "HttpMethodKind.Unknown is an inert legacy-field value for typed ConfiguredMethod roots and preserves existing numeric HTTP values; planners branch on ScenarioRootKind before reading HTTP fields.",
+    "Orchestrator inspected the actual production/test diff, added the required Core Frameworks target path, and confirmed git diff --check passes before ReviewRequired.",
+    "Independent review recorded five findings (four Medium, one Low); every finding has a focused verified Fixed disposition.",
+    "The declared four-project final gate passed. CT-5 is closed without external dotnet-run regeneration; valid configured-root documentation generation is covered by the CLI process lane."
+  ]
+}

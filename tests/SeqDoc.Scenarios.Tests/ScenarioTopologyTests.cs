@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using SeqDoc.Analysis.Scenarios;
+using SeqDoc.Application.Documentation;
 using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Frameworks;
 using SeqDoc.Core.Identity;
@@ -187,6 +188,85 @@ public sealed class ScenarioTopologyTests
         Assert.DoesNotContain(graph.Topology.Terminals, terminal =>
             graph.Topology.Arms.Any(arm => arm.Id == terminal.Arm && arm.Decision == locked.Id)
             && terminal.Kind != ScenarioTerminalKind.Unknown);
+    }
+
+    [Fact]
+    public void PlainTryContainingOrdinaryDecisionsClassifiesNormalTerminals()
+    {
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(
+            ScenarioTestFactory.CreatePlainTryTopologyRequest()).Graphs);
+
+        Assert.DoesNotContain(graph.Diagnostics, diagnostic => diagnostic.Code == "SC013");
+        foreach (var decision in graph.Topology.Decisions)
+        {
+            var trueArm = Assert.Single(graph.Topology.Arms, arm => arm.Decision == decision.Id && arm.IsTrue);
+            var falseArm = Assert.Single(graph.Topology.Arms, arm => arm.Decision == decision.Id && !arm.IsTrue);
+            Assert.Equal(ScenarioTerminalKind.Terminates,
+                Assert.Single(graph.Topology.Terminals, terminal => terminal.Arm == trueArm.Id).Kind);
+            Assert.Equal(decision.Condition == ScenarioTestFactory.WorkItemAbsentCondition
+                    ? ScenarioTerminalKind.Rejoins
+                    : ScenarioTerminalKind.Terminates,
+                Assert.Single(graph.Topology.Terminals, terminal => terminal.Arm == falseArm.Id).Kind);
+        }
+    }
+
+    [Fact]
+    public void TryContainedRootCallFlowsFromMethodFlowThroughGraphIntoOnePlannedArm()
+    {
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(
+            ScenarioTestFactory.CreateRootDirectCallTryRequest()).Graphs);
+        var plan = DocumentationPlanner.Plan(graph).Diagram;
+
+        var decision = Assert.Single(graph.Topology.Decisions);
+        var trueArm = Assert.Single(graph.Topology.Arms, arm => arm.Decision == decision.Id && arm.IsTrue);
+        var call = Assert.Single(graph.Nodes, node => node.Kind == ScenarioNodeKind.MethodCall
+            && node.Operation == ScenarioTestFactory.RootDirectCallOperation);
+        Assert.Contains(graph.Topology.Memberships, membership => membership.Arm == trueArm.Id && membership.ScenarioNode == call.Id);
+        Assert.Contains(graph.Diagnostics, diagnostic => diagnostic.Code == "SC001");
+
+        var fragment = Assert.Single(plan.Sequence.Fragments);
+        var plannedTrueArm = Assert.Single(fragment.Arms, arm => arm.Key.EndsWith(":arm:true", StringComparison.Ordinal));
+        var plannedCallRef = Assert.Single(plannedTrueArm.MessageRefs);
+        Assert.DoesNotContain(plannedCallRef, plan.Sequence.MessageRefs);
+        Assert.DoesNotContain(plan.Diagnostics, diagnostic => diagnostic.Code == "DP002");
+        Assert.Equal(1, plan.Sequence.Fragments.SelectMany(fragment => fragment.Arms)
+            .SelectMany(arm => arm.MessageRefs)
+            .Count(reference => reference == plannedCallRef));
+    }
+
+    /// <summary>Catch, filter, and finally are one fail-closed exception-region partition.</summary>
+    [Theory]
+    [InlineData("Catch")]
+    [InlineData("Filter")]
+    [InlineData("Finally")]
+    public void OrdinaryDecisionInExceptionRegionRemainsUnknownWithSC013(string regionKind)
+    {
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(
+            ScenarioTestFactory.CreateExceptionRegionTopologyRequest(regionKind)).Graphs);
+
+        Assert.Contains(graph.Diagnostics, diagnostic => diagnostic.Code == "SC013");
+        var locked = Assert.Single(graph.Topology.Decisions,
+            decision => decision.Condition == ScenarioTestFactory.WorkItemLockedCondition);
+        var trueArm = Assert.Single(graph.Topology.Arms, arm => arm.Decision == locked.Id && arm.IsTrue);
+        Assert.Equal(ScenarioTerminalKind.Unknown,
+            Assert.Single(graph.Topology.Terminals, terminal => terminal.Arm == trueArm.Id).Kind);
+    }
+
+    [Fact]
+    public void PlainTryNormalTransitionIntoFinallyTargetFailsClosedWithSC013()
+    {
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(
+            ScenarioTestFactory.CreateFinallyTargetTopologyRequest()).Graphs);
+
+        Assert.Contains(graph.Diagnostics, diagnostic => diagnostic.Code == "SC013");
+        var locked = Assert.Single(graph.Topology.Decisions,
+            decision => decision.Condition == ScenarioTestFactory.WorkItemLockedCondition);
+        var trueArm = Assert.Single(graph.Topology.Arms, arm => arm.Decision == locked.Id && arm.IsTrue);
+        var falseArm = Assert.Single(graph.Topology.Arms, arm => arm.Decision == locked.Id && !arm.IsTrue);
+        Assert.Equal(ScenarioTerminalKind.Unknown,
+            Assert.Single(graph.Topology.Terminals, terminal => terminal.Arm == trueArm.Id).Kind);
+        Assert.Equal(ScenarioTerminalKind.Terminates,
+            Assert.Single(graph.Topology.Terminals, terminal => terminal.Arm == falseArm.Id).Kind);
     }
 
     /// <summary>
@@ -529,6 +609,24 @@ public sealed class ScenarioTopologyTests
         Assert.True(graph.Topology.Arms.IsEmpty);
         Assert.True(graph.Topology.Memberships.IsEmpty);
         Assert.True(graph.Topology.Terminals.IsEmpty);
+    }
+
+    [Fact]
+    public void ConfiguredScenarioGraphRejectsUndefinedRootKindAtConstruction()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ScenarioGraph(
+            ScenarioTestFactory.WorkItemEntryPoint,
+            ScenarioTestFactory.Profile.Id,
+            ScenarioTestFactory.WorkItemActionMethod,
+            HttpMethodKind.Get,
+            "api/WorkItems/{id}",
+            "GET api/WorkItems/{id}",
+            ImmutableArray<ScenarioNode>.Empty,
+            ImmutableArray<ScenarioEdge>.Empty,
+            ImmutableArray<ScenarioGraphDiagnostic>.Empty,
+            "debug",
+            ScenarioTopology.Empty,
+            rootKind: (ScenarioRootKind)999));
     }
 
     private static ScenarioGraph BuildWorkItemGraph()

@@ -258,6 +258,56 @@ public sealed class YamlConfigurationResolverTests
         Assert.Empty(result.Value.MsBuildProperties);
     }
 
+    [Fact]
+    public async Task SelectionRootsAreCanonicalSortedAndRetainConfigurationFileProvenance()
+    {
+        const string yaml = """
+            schemaVersion: 1
+            selection:
+              roots:
+                - method:v1:Zeta.Run()
+                - method:v1:Alpha.Run()
+              include: [flow:a]
+              exclude: [flow:b]
+              critical: [flow:a]
+            """;
+
+        var result = await ResolveYamlAsync(yaml);
+
+        var value = Assert.IsType<ResolvedPassAConfiguration>(result.Value);
+        Assert.Equal(
+            ["method:v1:Alpha.Run()", "method:v1:Zeta.Run()"],
+            value.Roots.Value);
+        Assert.Equal(ConfigurationProvenance.ConfigurationFile, value.Roots.Provenance);
+        Assert.True(value.RootsSpecified);
+    }
+
+    [Theory]
+    [InlineData("method:v1:Alpha.Run()\n    - method:v1:Alpha.Run()", "$.selection.roots")]
+    [InlineData("roots: method:v1:Alpha.Run()", "$.selection.roots")]
+    [InlineData("- method:v1:Alpha.Run()\n    - 42", "$.selection.roots")]
+    public async Task SelectionRootsRejectDuplicateAndNonStringValuesAtTheRootsPath(string roots, string path)
+    {
+        string yaml = $"schemaVersion: 1\nselection:\n  roots:\n    - {roots}\n";
+
+        var result = await ResolveYamlAsync(yaml);
+
+        AssertConfigurationFailure(result, "SD3003", path);
+    }
+
+    [Theory]
+    [InlineData("42")]
+    [InlineData("true")]
+    public async Task SelectionRootsRejectUnquotedYamlTypedScalarsButAcceptQuotedText(string scalar)
+    {
+        var rejected = await ResolveYamlAsync($"schemaVersion: 1\nselection:\n  roots: [{scalar}]\n");
+        AssertConfigurationFailure(rejected, "SD3003", "$.selection.roots");
+
+        var accepted = await ResolveYamlAsync($"schemaVersion: 1\nselection:\n  roots: [\"{scalar}\"]\n");
+        Assert.Equal(ApplicationOutcome.Succeeded, accepted.Outcome);
+        Assert.Equal([scalar], accepted.Value!.Roots.Value);
+    }
+
     [Theory]
     [InlineData("schemaVersion: 1\nselection:\n  include: [flow:a, flow:a]", "Duplicate value")]
     [InlineData("schemaVersion: 1\nselection:\n  exclude: [flow:a]\n  critical: [flow:a]", "both critical and excluded")]
