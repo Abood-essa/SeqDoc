@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "CT-7",
+  "status": "Closed",
+  "baselineRevision": "e55b499",
+  "candidateRevision": null,
+  "review": {
+    "status": "Completed",
+    "findings": [
+      {
+        "id": "CT-7-F1",
+        "severity": "Medium",
+        "disposition": "Fixed",
+        "summary": "The fallback-case test now pins the complete canonical Markdown document, including title, disclaimer, byte-identical Mermaid payload, exact section order, phrase uniqueness, and newlines."
+      }
+    ]
+  },
+  "verification": {
+    "focusedCommand": {
+      "result": "Passed",
+      "command": "dotnet test tests/SeqDoc.Rendering.Tests/SeqDoc.Rendering.Tests.csproj -c Release --filter FullyQualifiedName~MarkdownRenderer",
+      "summary": "After review resolution, two focused Markdown renderer tests passed; the fallback case uses complete-document equality and the no-fallback case preserves the Mermaid payload."
+    },
+    "finalGate": {
+      "result": "Passed",
+      "command": "dotnet test tests/SeqDoc.Rendering.Tests/SeqDoc.Rendering.Tests.csproj -c Release",
+      "summary": "All 44 Rendering tests passed with zero failures or skips."
+    }
+  },
+  "notes": [
+    "Owner explicitly requested diagram-first output and permitted immediate implementation when the change was simple.",
+    "All semantic presentation feedback remains durably recorded for later bounded checkpoints.",
+    "Orchestrator inspection confirmed the product diff is only a section move and the declared focused tests; git diff --check passes.",
+    "Independent review recorded one Medium test-contract finding; it was Fixed with complete-document equality, focused verification passed, and the Rendering final gate passed."
+  ]
+}

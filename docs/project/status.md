@@ -50,6 +50,9 @@ flows; generic `Condition`, `Continue`, and `Path terminates` labels convey no m
 participant; and repeated `GetItem` calls lack argument meaning. Diagram-first Markdown and deterministic participant
 hygiene are the smallest next user-visible repairs. Generic signal filtering, exact argument presentation, and removal
 of placeholder control labels follow before child-body mismatch repair and broader traversal amplify the noise.
+CT-7 moved the sequence diagram ahead of behavior and technical fallback in generated Markdown without changing
+Mermaid or wording content. Independent review strengthened complete-document ordering coverage, and all 44 Rendering
+tests passed; CT-7 is closed.
 
 ## Next execution order
 

@@ -24,6 +24,10 @@ public static class MarkdownRenderer
             .Append("Every statement retains supporting evidence and explicit certainty.")
             .Append('\n')
             .Append('\n');
+        builder.Append("## Sequence diagram").Append('\n').Append('\n');
+        builder.Append("```mermaid").Append('\n');
+        builder.Append(MermaidRenderer.Render(diagram)).Append('\n');
+        builder.Append("```").Append('\n');
         builder.Append("## Behavior").Append('\n').Append('\n');
         foreach (var phrase in wording.Phrases)
         {
@@ -47,10 +51,6 @@ public static class MarkdownRenderer
             }
         }
 
-        builder.Append('\n').Append("## Sequence diagram").Append('\n').Append('\n');
-        builder.Append("```mermaid").Append('\n');
-        builder.Append(MermaidRenderer.Render(diagram)).Append('\n');
-        builder.Append("```").Append('\n');
         return builder.ToString();
     }
 
