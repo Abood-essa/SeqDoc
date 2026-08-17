@@ -53,6 +53,11 @@ of placeholder control labels follow before child-body mismatch repair and broad
 CT-7 moved the sequence diagram ahead of behavior and technical fallback in generated Markdown without changing
 Mermaid or wording content. Independent review strengthened complete-document ordering coverage, and all 44 Rendering
 tests passed; CT-7 is closed.
+The owner has paused SeqDoc product work for several days because of model usage limits. The complete resume order is
+durable in `docs/project/presentation-and-traversal-plan.md`: cheap participant hygiene, low-signal/logging cleanup,
+placeholder control-label removal, `SC-DIRECT-MISMATCH` diagnosis/repair, depth-2 regeneration, exact call arguments,
+then compatible cross-project traversal. Perfect naming and semantic line wrapping are explicitly deferred unless the
+cheap label repairs remain unreadable.
 
 ## Next execution order
 

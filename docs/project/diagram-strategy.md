@@ -1,5 +1,8 @@
 # Diagram Strategy
 
+The measured implementation order for current presentation and traversal gaps is maintained in
+`docs/project/presentation-and-traversal-plan.md`.
+
 ## Authority and inspiration
 
 The current buildable CreditTransfer solution is the primary acceptance truth. The historical diagram set numbered

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "mode": "active",
+  "mode": "idle",
   "activePlanPath": "docs/project/credit-transfer-plan.md",
   "activeCheckpointPath": "docs/work/credit-transfer/CT-7",
   "activeCheckpointId": "CT-7",
-  "nextAction": "CT-7 is closed. Next activate concise/deduplicated participant presentation: remove invented configured-root Caller, reuse the root for self-calls, shorten labels deterministically, and assess safe semantic line wrapping."
+  "nextAction": "Owner-requested pause after CT-7. Do not activate product work until explicitly resumed; then follow docs/project/presentation-and-traversal-plan.md beginning with tightly bounded cheap participant hygiene."
 }

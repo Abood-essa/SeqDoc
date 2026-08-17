@@ -6,7 +6,8 @@ output, explicit certainty, and deterministic results.
 CreditTransfer is the primary whole-solution acceptance target for this direction. It determines delivery priority,
 while unrelated supplied and open-source applications protect generality and false-positive boundaries. See
 `docs/project/credit-transfer-plan.md` for the bounded delivery sequence and `docs/project/diagram-strategy.md` for
-the target linked-diagram philosophy and capability horizons.
+the target linked-diagram philosophy. See `docs/project/presentation-and-traversal-plan.md` for the measured immediate,
+medium-, long-, and very-long-term order accepted after the first generated suite review.
 
 ## Planned order
 
