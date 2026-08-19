@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "mode": "idle",
   "activePlanPath": "docs/project/credit-transfer-plan.md",
-  "activeCheckpointPath": "docs/work/credit-transfer/CT-7",
-  "activeCheckpointId": "CT-7",
-  "nextAction": "Owner-requested pause after CT-7. Do not activate product work until explicitly resumed; then follow docs/project/presentation-and-traversal-plan.md beginning with tightly bounded cheap participant hygiene."
+  "activeCheckpointPath": "docs/work/credit-transfer/CT-11",
+  "activeCheckpointId": "CT-11",
+  "nextAction": "CT-8 through CT-11 are closed and externally rendered. The clean squashed publication tree is ready for owner-authorized commit and push; publish no external candidate history or local scratch material."
 }

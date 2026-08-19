@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "CT-11",
+  "status": "Closed",
+  "baselineRevision": "a7e20d1",
+  "candidateRevision": null,
+  "review": {
+    "status": "Completed",
+    "findings": [
+      { "id": "CT-11-F1", "severity": "High", "disposition": "Fixed", "summary": "A sole surviving alt arm now renders as a grammar-valid opt without an empty primary arm." },
+      { "id": "CT-11-F2", "severity": "High", "disposition": "Fixed", "summary": "Alias escaping handles controls, quotes, semicolons, and backticks; all eight generated diagrams pass real Mermaid CLI parsing/rendering." }
+    ]
+  },
+  "verification": {
+    "focusedCommand": { "result": "Passed", "summary": "Six focused layout/hostile-alias regressions passed after review resolution." },
+    "finalGate": { "result": "Passed", "summary": "All 54 Rendering tests passed. Mermaid CLI rendered all eight regenerated CreditTransfer .mmd files to SVG, and the main engine flow was also rendered to PNG for visual inspection without header overlap or visible alias quotes." }
+  },
+  "notes": [
+    "The defect was found by visual rendering before publication; no affected code has entered main.",
+    "Independent review found a sole-else empty-arm case and hostile-alias parser risk; both were fixed before closure."
+  ]
+}

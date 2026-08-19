@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "CT-10",
+  "status": "Closed",
+  "baselineRevision": "a7e20d1",
+  "candidateRevision": null,
+  "review": {
+    "status": "Completed",
+    "findings": [
+      { "id": "CT-10-F1", "severity": "Medium", "disposition": "Fixed", "summary": "Stable canonical evidence symbols are retained separately in participant debug projection." },
+      { "id": "CT-10-F2", "severity": "Medium", "disposition": "Fixed", "summary": "Final action label collisions fall back to canonical controller type plus member." },
+      { "id": "CT-10-F3", "severity": "Low", "disposition": "Fixed", "summary": "Incomplete typed controller facts retain neutral fallback labels without invention." }
+    ]
+  },
+  "verification": {
+    "focusedCommand": { "result": "Passed", "summary": "11 focused participant/configured-root Wording tests passed after review resolution." },
+    "finalGate": { "result": "Passed", "summary": "150 Scenario and 110 Wording tests passed after adding the exact HTTP action-member producer fact. Fresh CreditTransfer regeneration shows concise HTTP labels and no namespace-heavy action label." }
+  },
+  "notes": [
+    "This is a measured external-acceptance repair, not a broader naming project.",
+    "Independent review found canonical-debug, label-collision, and incomplete-fact gaps; all were fixed before the initial gate.",
+    "Post-gate external regeneration exposed a missing producer fact: controller action Scenario presentation carried the type but not exact method name, so the planner correctly used its type-only fallback.",
+    "The producer fact was repaired and externally verified: Web roots now render as CreditTransferController.ProcessUSSD and CreditTransferController.VirginCreditTransfer."
+  ]
+}

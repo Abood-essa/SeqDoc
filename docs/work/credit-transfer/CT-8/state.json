@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "CT-8",
+  "status": "Closed",
+  "baselineRevision": "a7e20d1",
+  "candidateRevision": null,
+  "review": {
+    "status": "Completed",
+    "findings": [
+      { "id": "CT-8-F1", "severity": "High", "disposition": "Fixed", "summary": "Exact structural root/action type exclusions are rejected after graph identity is known and CLI invalid input preserves prior output." },
+      { "id": "CT-8-F2", "severity": "Medium", "disposition": "Fixed", "summary": "Unsupported-boundary visibility is filter-aware and excluded regions leave only the audit fallback." },
+      { "id": "CT-8-F3", "severity": "Medium", "disposition": "Fixed", "summary": "Built-in and configured hidden interactions are counted once and audit wording uses filtered evidence." },
+      { "id": "CT-8-F4", "severity": "Medium", "disposition": "Fixed", "summary": "Canonical pattern validation rejects whitespace, empty segments, consecutive dots, and non-final wildcards while preserving CLR metadata characters." },
+      { "id": "CT-8-F5", "severity": "Medium", "disposition": "Fixed", "summary": "Mermaid validation rejects obsolete generic control labels and legacy fixtures use meaningful labels." },
+      { "id": "CT-8-F6", "severity": "Low", "disposition": "Rejected", "summary": "Candidate checkpoint deletion and delegated workflow documentation are intentional quarantine/orchestration changes, not accepted CT-8 product semantics; no superseded candidate checkpoint claims will be published." }
+    ]
+  },
+  "verification": {
+    "focusedCommand": { "result": "Passed", "summary": "After owner-authorized repair continuation, 47 Configuration, 105 Wording, and 45 Rendering tests passed (197 total)." },
+    "finalGate": { "result": "Passed", "summary": "47 Configuration, 105 Wording, 45 Rendering, and 19 CLI tests passed. Initial CLI failures were caused by unrestored fixture assets; after fixture restore the unchanged candidate passed all CLI tests." }
+  },
+  "notes": [
+    "The original external candidate remains unchanged on a local branch. CT-8 repairs its presentation delta in place and will publish only a clean squashed tree.",
+    "Candidate documentation was removed because its execution states and verification claims were not reliable durable authority.",
+    "Seven risk-focused claims were added. Orchestrator inspection confirmed filtering is computed before participant/message construction, dedicated documentation exclusions replace misuse of selection.exclude, concise labels are retained, and generic break notes are no longer invented.",
+    "Two review-repair reruns failed and CT-8 was procedurally Blocked with the local worktree preserved.",
+    "The owner explicitly authorized autonomous continuation on 2026-08-19 despite procedural failures, with instructions to stop only when the clean integration is ready for final merge or a substantive external blocker makes completion impossible.",
+    "All independent review findings are resolved and CT-8 is closed."
+  ]
+}

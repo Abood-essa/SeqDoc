@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "CT-9",
+  "status": "Closed",
+  "baselineRevision": "a7e20d1",
+  "candidateRevision": null,
+  "review": {
+    "status": "Completed",
+    "findings": [
+      { "id": "CT-9-F1", "severity": "High", "disposition": "Fixed", "summary": "DirectExact traversal requires a loaded-project target and rejects generated-source expansion with a deterministic source-unavailable boundary." },
+      { "id": "CT-9-F2", "severity": "High", "disposition": "Fixed", "summary": "Typed null is carried additively and rendered as bare null, distinct from the string literal null." },
+      { "id": "CT-9-F3", "severity": "High", "disposition": "Fixed", "summary": "Argument summaries require unique contiguous ordinals beginning at zero." },
+      { "id": "CT-9-F4", "severity": "High", "disposition": "Fixed", "summary": "Conservative credential suppression is covered end to end." },
+      { "id": "CT-9-F5", "severity": "Medium", "disposition": "Fixed", "summary": "A compiler-backed Roslyn fixture proves true parameter ordinals, optional gaps, typed null, escaped strings, and credential literals through extraction; downstream focused tests prove presentation suppression." }
+    ]
+  },
+  "verification": {
+    "focusedCommand": { "result": "Passed", "summary": "41 focused Analysis, Behavior, Scenario, and Wording tests passed after resolving all CT-9 review findings." },
+    "finalGate": { "result": "Passed", "summary": "181 Analysis, 63 Behavior, 149 Scenario, 105 Wording, and 25 locally available Acceptance tests passed. Four external-corpus tests were unavailable because their repositories are not installed; fresh CreditTransfer regeneration passed as the external lane." }
+  },
+  "notes": [
+    "CT-9 retains the delegated mismatch diagnosis and traversal implementation but does not accept its original documentation or safety claims without verification.",
+    "The original candidate remains local and unchanged; only the final hardened tree will be prepared for publication.",
+    "Orchestrator inspection confirmed true Roslyn parameter ordinals are carried into all-or-nothing Method Flow summaries, incompatible body fingerprints are no longer compared, and no-flow/ambiguous-flow diagnostics are distinct.",
+    "Fresh CreditTransfer regeneration produced eight diagrams with 63 messages, zero logging messages/participants, zero generic control placeholders, and zero SC-DIRECT-MISMATCH or cross-project boundaries. Exact custom logger filtering recorded deterministic audit fallbacks."
+  ]
+}

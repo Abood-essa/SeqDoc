@@ -53,11 +53,19 @@ of placeholder control labels follow before child-body mismatch repair and broad
 CT-7 moved the sequence diagram ahead of behavior and technical fallback in generated Markdown without changing
 Mermaid or wording content. Independent review strengthened complete-document ordering coverage, and all 44 Rendering
 tests passed; CT-7 is closed.
-The owner has paused SeqDoc product work for several days because of model usage limits. The complete resume order is
-durable in `docs/project/presentation-and-traversal-plan.md`: cheap participant hygiene, low-signal/logging cleanup,
-placeholder control-label removal, `SC-DIRECT-MISMATCH` diagnosis/repair, depth-2 regeneration, exact call arguments,
-then compatible cross-project traversal. Perfect naming and semantic line wrapping are explicitly deferred unless the
-cheap label repairs remain unreadable.
+CT-8 through CT-10 hardened an externally produced candidate rather than rewriting its useful implementation. The
+integration added exact presentation exclusions, removed orphan logging participants and generic control placeholders,
+preserved concise collision-safe labels, repaired direct-call flow compatibility, enabled exact loaded-source
+cross-project traversal, and made constant arguments positional, escaped, and credential-safe. Independent review
+found and resolved presentation, evidence, source-boundary, null, optional-argument, credential, and label-collision
+defects. Fresh CreditTransfer output contains eight diagrams and 63 messages with no logger, generic placeholder, or
+direct mismatch/cross-project-stop output. The verified tree is ready for clean squashed publication; the original
+candidate and its intermediate history remain local only.
+CT-11 fixed a final visual-layout regression found before publication: empty nested fragments collapsed over Mermaid
+participant headers after placeholder removal, and quoted aliases displayed literal quote characters in the VS Code
+renderer. Empty fragments are now recursively pruned, sole surviving alt arms become valid `opt` fragments, aliases
+are injection-safe without visible quotes, all 54 Rendering tests pass, and Mermaid CLI rendered all eight fresh
+CreditTransfer diagrams successfully.
 
 ## Next execution order
 

@@ -2,18 +2,18 @@
 
 ## Status and evidence
 
-This plan records the priorities accepted after reviewing the first CT-4/CT-5/CT-6 CreditTransfer suite. CT-7 is
-closed and puts the sequence diagram first in Markdown. The reviewed implementation is published through `14d0e13`.
+This plan records priorities accepted after reviewing generated CreditTransfer output. CT-8 through CT-10 complete
+the immediate presentation and direct-traversal hardening: exact configurable exclusions, concise participants,
+placeholder removal, compatible same-profile cross-project traversal, and safe constant-argument labels.
 
-The current external suite contains eight diagrams and 97 Mermaid messages, compared with two messages in the stale
-Web-only baseline. Each Web diagram increased from one to six messages and `SC013` fell from 16 to 11. The output now
-contains real service, engine, branch, transaction, and worker evidence, but it is not presentation-ready: logging and
-placeholder control labels dominate, configured roots invent a `Caller`, labels are overly long, repeated calls lack
-argument meaning, and 92 `SC-DIRECT-MISMATCH` boundaries prevent most child-body expansion.
+The hardened external suite contains eight diagrams and 63 Mermaid messages. It has no logging messages or logger
+participant, no generic `Condition`/`Continue`/`Path terminates` labels, no `SC-DIRECT-MISMATCH` or cross-project stop,
+and concise configured and HTTP root labels. Exact arguments distinguish supported repeated calls. Remaining limits
+are explicit depth/node/guard/body boundaries, sparse data-oriented roots, and framework semantics not yet modeled.
 
 ## Immediate resume order
 
-### 1. Cheap participant hygiene
+### 1. Cheap participant hygiene — complete
 
 Bound this work tightly to changes that are likely to take no more than one focused checkpoint:
 
@@ -26,7 +26,7 @@ Do not pursue perfect shortest-unique naming, configurable abbreviations, or gen
 semantic wrapping only if concise labels remain unreadable; defer it if renderer/validator behavior makes it more than
 a small mechanical repair.
 
-### 2. Remove low-signal presentation
+### 2. Remove low-signal presentation — complete
 
 - Hide recognized logging-framework calls by default.
 - Support exact configured exclusions for custom logging wrappers without hardcoding application vocabulary.
@@ -37,7 +37,7 @@ a small mechanical repair.
 
 This precedes broader traversal so new messages do not amplify current noise.
 
-### 3. Diagnose and repair `SC-DIRECT-MISMATCH`
+### 3. Diagnose and repair `SC-DIRECT-MISMATCH` — complete
 
 First distinguish no matching Method Flow, multiple matching flows, and body-fingerprint disagreement. Compare exact
 `MethodId`, active profile, Program Index fingerprint, Program Method body fingerprint, and candidate Method Flow
@@ -48,19 +48,19 @@ the active snapshot, exact method identity, unique flow, and body availability. 
 Expected effort is easy-to-medium: hours for diagnosis and roughly one to three focused days for the likely systemic
 repair, with a larger three-to-five-day bound only if async/partial/generated method identity is involved.
 
-### 4. Regenerate and measure fixed depth 2
+### 4. Regenerate and measure fixed depth 2 — complete
 
 Keep the current depth-2/64-node policy until mismatch repair reveals how much behavior it actually exposes. Compare
 message count, useful participants, inherited guards, mismatch/boundary diagnostics, and diagram readability on
 CreditTransfer and at least one unrelated project. Do not increase depth merely because changing the constant is easy.
 
-### 5. Add exact call-argument presentation
+### 5. Add exact call-argument presentation — complete for safe constants
 
 Project compiler-proven constant, parameter, enum, and safe expression arguments so repeated calls such as `GetItem`
 are distinguishable. Collapse only adjacent calls proven semantically identical; never collapse by member name alone.
 Keep runtime values, secrets, and unsupported expressions unknown.
 
-### 6. Add compatible cross-project traversal
+### 6. Add compatible cross-project traversal — complete for loaded exact source
 
 Follow exact source bodies across project references only when profile, target framework, Program Index snapshot,
 method identity, body compatibility, and source availability agree. Keep generated clients and network/service
