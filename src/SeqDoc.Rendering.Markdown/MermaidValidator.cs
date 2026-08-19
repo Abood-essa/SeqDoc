@@ -5,7 +5,7 @@ namespace SeqDoc.Rendering.Markdown;
 
 /// <summary>
 /// Structural Mermaid sequence-diagram validation. The validator checks the header, participant
-/// declarations, the canonical DQ-1 Break-termination note, message arrows, and balanced nested
+/// declarations, message arrows, and balanced nested
 /// <c>alt</c>/<c>else</c>, <c>opt</c>, <c>break</c>, <c>loop</c>, and <c>end</c> blocks using a
 /// stack. It deterministically rejects misplaced <c>else</c> (outside an open <c>alt</c>), a
 /// <c>break</c> outside any open block, unsupported <c>par</c>, unknown tokens, blank lines,
@@ -40,6 +40,12 @@ public static partial class MermaidValidator
             if (line.Length == 0)
             {
                 errors.Add($"Line {index + 1} is empty; canonical output must not contain blank lines.");
+                continue;
+            }
+
+            if (ObsoleteControlLabelRegex().IsMatch(line))
+            {
+                errors.Add($"Line {index + 1}: generic control labels are not accepted in fragment or note positions.");
                 continue;
             }
 
@@ -114,22 +120,6 @@ public static partial class MermaidValidator
                 continue;
             }
 
-            if (BreakTerminationNoteRegex().IsMatch(line))
-            {
-                // DQ-1-F3: the canonical termination note is an annotation that only documents an
-                // empty typed Break, so it is accepted only while the current stack frame is exactly
-                // a 'break'. The same canonical text at top level or inside any other fragment is a
-                // context error, so a documentation-set build can never silently admit the
-                // termination phrase outside a terminating region.
-                if (blockStack.Count == 0
-                    || !string.Equals(blockStack[^1], "break", StringComparison.Ordinal))
-                {
-                    errors.Add($"Line {index + 1}: 'Note over' termination annotation appears outside a 'break' block.");
-                }
-
-                continue;
-            }
-
             if (MessageRegex().IsMatch(line))
             {
                 continue;
@@ -156,16 +146,11 @@ public static partial class MermaidValidator
         blockStack.Add(kind);
     }
 
-    [GeneratedRegex(@"^participant\s+\S+\s+as\s+""[^""]*""$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^participant\s+\S+\s+as\s+(?:#(?:quot|59|96);|[^""`;\p{Cc}])+$", RegexOptions.CultureInvariant)]
     private static partial Regex ParticipantRegex();
 
-    /// <summary>
-    /// The single canonical note SeqDoc ever emits: the DQ-1 termination annotation inside an empty
-    /// Break block. The regex is deliberately strict (anchored, exact label) so the validator
-    /// accepts only this canonical sequence note syntax and rejects generic Mermaid note forms.
-    /// </summary>
-    [GeneratedRegex(@"^Note over\s+\S+(,\s*\S+)?:\s+Path terminates$", RegexOptions.CultureInvariant)]
-    private static partial Regex BreakTerminationNoteRegex();
+    [GeneratedRegex(@"^(?:alt|else|opt|break|loop)\s+(?:Condition|Continue|Continue evaluating condition|Path terminates)$", RegexOptions.CultureInvariant)]
+    private static partial Regex ObsoleteControlLabelRegex();
 
     [GeneratedRegex(@"^\S+(-{2}>>|->>)\S+:\s*\S.*$", RegexOptions.CultureInvariant)]
     private static partial Regex MessageRegex();

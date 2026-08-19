@@ -12,11 +12,8 @@ namespace SeqDoc.Rendering.Markdown;
 /// indentation per fragment level (base 4 spaces: a fragment opener/closer at depth d sits at
 /// 4 + 2*(d-1) and its contents at 4 + 2*d). When the sequence is empty (legacy topology-empty
 /// plans), the accepted flat <see cref="DiagramBranch"/> alt/else output is emitted byte-stable. The
-/// renderer never chooses fragment kind, arm polarity, or order. An empty typed Break (the Core
-/// closed-shape contract admits no content) additionally receives the canonical deterministic
-/// termination note derived solely from Break semantics and the plan's stable participant keys, so
-/// terminating regions always carry renderable content; the note is an annotation, never an
-/// invented interaction. Output always uses canonical newlines.
+/// renderer never chooses fragment kind, arm polarity, or order. Fragments and arms are emitted only
+/// when their recursively filtered content remains renderable. Output always uses canonical newlines.
 /// </summary>
 public static class MermaidRenderer
 {
@@ -29,7 +26,7 @@ public static class MermaidRenderer
         foreach (var participant in plan.Participants)
         {
             builder.Append("    participant ").Append(participant.Key)
-                .Append(" as \"").Append(EscapeLabel(participant.Label)).Append('"').Append('\n');
+                .Append(" as ").Append(EscapeAlias(participant.Label)).Append('\n');
         }
 
         if (plan.Sequence is not null && plan.Sequence.Elements.Length > 0)
@@ -70,23 +67,64 @@ public static class MermaidRenderer
 
     private static void RenderFragment(StringBuilder builder, DiagramPlan plan, DiagramFragment fragment, int depth)
     {
+        if (!HasRenderableContent(plan, fragment))
+        {
+            return;
+        }
+
         int openerIndent = 4 + (2 * (depth - 1));
         switch (fragment.Kind)
         {
             case DiagramFragmentKind.Alt:
-                foreach (var arm in fragment.Arms)
+                var survivingArms = fragment.Arms.Where(arm => HasRenderableContent(plan, arm)).ToArray();
+                if (survivingArms.Length == 1)
                 {
-                    // The planner records the arm role explicitly (IsElse); the renderer serializes
-                    // the recorded role and never infers alt/else from array index.
-                    string opener = arm.IsElse
-                        ? $"else {EscapeLabel(arm.Label)}"
-                        : $"alt {EscapeLabel(fragment.Label)}";
-                    builder.Append(' ', openerIndent).Append(opener).Append('\n');
+                    var arm = survivingArms[0];
+                    builder.Append(' ', openerIndent)
+                        .Append("opt ")
+                        .Append(EscapeLabel(arm.Label))
+                        .Append('\n');
                     RenderSequence(
                         builder,
                         plan,
                         new DiagramSequence(arm.MessageRefs, arm.Fragments),
                         depth);
+                    builder.Append(' ', openerIndent).Append("end").Append('\n');
+                    break;
+                }
+
+                bool wroteArm = false;
+                foreach (var arm in survivingArms)
+                {
+                    // The planner records the arm role explicitly (IsElse); the renderer serializes
+                    // the recorded role and never infers alt/else from array index.
+                    if (!wroteArm)
+                    {
+                        builder.Append(' ', openerIndent)
+                            .Append("alt ")
+                            .Append(EscapeLabel(fragment.Label))
+                            .Append('\n');
+                        if (arm.IsElse && !string.Equals(arm.Label, fragment.Label, StringComparison.Ordinal))
+                        {
+                            builder.Append(' ', openerIndent)
+                                .Append("else ")
+                                .Append(EscapeLabel(arm.Label))
+                                .Append('\n');
+                        }
+                    }
+                    else
+                    {
+                        builder.Append(' ', openerIndent)
+                            .Append("else ")
+                            .Append(EscapeLabel(arm.Label))
+                            .Append('\n');
+                    }
+                    RenderSequence(
+                        builder,
+                        plan,
+                        new DiagramSequence(arm.MessageRefs, arm.Fragments),
+                        depth);
+                    wroteArm = true;
                 }
 
                 builder.Append(' ', openerIndent).Append("end").Append('\n');
@@ -99,31 +137,11 @@ public static class MermaidRenderer
                     .Append(' ')
                     .Append(EscapeLabel(fragment.Label))
                     .Append('\n');
-                if (fragment.Kind == DiagramFragmentKind.Break
-                    && fragment.MessageRefs.IsDefaultOrEmpty
-                    && fragment.Fragments.IsDefaultOrEmpty)
-                {
-                    // DQ-1: a typed Break is an empty marker by the Core closed-shape contract
-                    // (no arms, message refs, or nested fragments), which serialized as an empty
-                    // `break {label}` / `end` pair that collapsed layout in Visual Studio Code and
-                    // Mermaid Live. Emit one deterministic non-interaction annotation derived
-                    // solely from Break semantics and the plan's stable participant keys so every
-                    // terminating region carries renderable content. The note never synthesizes a
-                    // message arrow or invents project vocabulary. A future non-empty Break (were
-                    // the closed-shape contract ever relaxed) keeps the shared content path below
-                    // without an invented note.
-                    builder.Append(' ', 4 + (2 * depth))
-                        .Append(RenderBreakTerminationNote(plan))
-                        .Append('\n');
-                }
-                else
-                {
-                    RenderSequence(
-                        builder,
-                        plan,
-                        new DiagramSequence(fragment.MessageRefs, fragment.Fragments),
-                        depth);
-                }
+                RenderSequence(
+                    builder,
+                    plan,
+                    new DiagramSequence(fragment.MessageRefs, fragment.Fragments),
+                    depth);
 
                 builder.Append(' ', openerIndent).Append("end").Append('\n');
                 break;
@@ -134,6 +152,29 @@ public static class MermaidRenderer
         }
     }
 
+    private static bool HasRenderableContent(DiagramPlan plan, DiagramFragment fragment)
+    {
+        if (fragment.Kind == DiagramFragmentKind.Break)
+        {
+            return false;
+        }
+
+        if (fragment.Kind == DiagramFragmentKind.Alt)
+        {
+            return fragment.Arms.Any(arm => HasRenderableContent(plan, arm));
+        }
+
+        return fragment.MessageRefs.Any(reference => HasMessage(plan, reference))
+            || fragment.Fragments.Any(nested => HasRenderableContent(plan, nested));
+    }
+
+    private static bool HasRenderableContent(DiagramPlan plan, DiagramAltArm arm)
+        => arm.MessageRefs.Any(reference => HasMessage(plan, reference))
+            || arm.Fragments.Any(fragment => HasRenderableContent(plan, fragment));
+
+    private static bool HasMessage(DiagramPlan plan, DiagramPlanElementId id)
+        => plan.Messages.Any(message => message.Id == id);
+
     /// <summary>Canonical lowercase Mermaid keyword for a fragment kind.</summary>
     private static string FragmentKeyword(DiagramFragmentKind kind) => kind switch
     {
@@ -142,29 +183,6 @@ public static class MermaidRenderer
         DiagramFragmentKind.Loop => "loop",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), $"Undefined diagram fragment kind '{kind}'."),
     };
-
-    /// <summary>
-    /// Canonical DQ-1 termination note emitted inside an empty typed Break. The note spans the
-    /// plan's stable participant keys in deterministic plan order: a single key for a
-    /// one-participant plan, otherwise the first and last keys of the participant list. The label
-    /// is a fixed Break-semantics phrase and never project vocabulary, timestamps, paths, or
-    /// invented calls, and the note never becomes a message arrow. A plan with zero participants
-    /// cannot name an anchor, so rendering fails closed instead of inventing a key.
-    /// </summary>
-    private static string RenderBreakTerminationNote(DiagramPlan plan)
-    {
-        if (plan.Participants.IsDefaultOrEmpty)
-        {
-            throw new InvalidOperationException(
-                "A Break fragment requires at least one planned participant to render its termination note; the plan has none.");
-        }
-
-        string first = plan.Participants[0].Key;
-        string span = plan.Participants.Length == 1
-            ? first
-            : $"{first},{plan.Participants[^1].Key}";
-        return $"Note over {span}: Path terminates";
-    }
 
     /// <summary>
     /// Resolves a message reference or fails closed: an unresolved reference that somehow arrives at
@@ -246,12 +264,43 @@ public static class MermaidRenderer
 
     /// <summary>
     /// Mermaid cannot represent newlines inside a label; they collapse to a single space. Embedded
-    /// quotes use the Mermaid entity so quoted participant aliases and message labels stay balanced,
-    /// and no label ever introduces a backtick that could close a Markdown fence.
+    /// quotes use the Mermaid entity so labels stay balanced.
     /// </summary>
     private static string EscapeLabel(string label)
     {
         string normalized = label.Replace("\r\n", " ").Replace('\r', ' ').Replace('\n', ' ');
         return normalized.Replace("\"", "#quot;");
+    }
+
+    /// <summary>
+    /// Participant aliases are emitted without Mermaid's optional wrapping quotes. Encode characters
+    /// that could escape the declaration, terminate a statement, or close the Markdown fence while
+    /// retaining ordinary readable text.
+    /// </summary>
+    private static string EscapeAlias(string label)
+    {
+        var builder = new StringBuilder(label.Length);
+        foreach (char character in label)
+        {
+            if (char.IsControl(character) || character is ';' or '`')
+            {
+                builder.Append(character switch
+                {
+                    ';' => "#59;",
+                    '`' => "#96;",
+                    _ => " ",
+                });
+            }
+            else if (character == '"')
+            {
+                builder.Append("#quot;");
+            }
+            else
+            {
+                builder.Append(character);
+            }
+        }
+
+        return builder.ToString();
     }
 }

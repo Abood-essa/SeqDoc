@@ -59,7 +59,8 @@ public sealed class FragmentPlannerTests
     [Fact]
     public void NestedAltElseTreeDerivesFromAbsentLockedTopology()
     {
-        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph()).Diagram;
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph())).Diagram;
 
         // Unscoped pre-decision facts stay flat at the sequence level in semantic edge order.
         AssertRefsEqual(
@@ -69,10 +70,10 @@ public sealed class FragmentPlannerTests
         var absent = Assert.Single(plan.Sequence.Fragments);
         Assert.Equal(DiagramFragmentKind.Alt, absent.Kind);
         Assert.Equal("decision:" + FragmentScenarioTestFactory.AbsentCondition.Value, absent.Key, StringComparer.Ordinal);
-        // accepted contract label contract: primary labels are sentence-case technical wording, never the raw
-        // operation id; the terminating arm without a typed terminal uses "Condition" and the
-        // rejoining arm uses "Continue".
-        Assert.Equal("Condition", absent.Label, StringComparer.Ordinal);
+        // Exact-wording contract: a rendered decision always carries exact compiler-evidenced owner
+        // predicate wording (never the generic "Condition"/"Continue" tokens); the terminating arm
+        // uses the exact predicate of the true arm and the rejoining arm the exact complement.
+        Assert.Equal("reservation is null", absent.Label, StringComparer.Ordinal);
         Assert.Equal(2, absent.Arms.Length);
 
         // Failure-first visual order: the terminating (true) arm is first; the continuing arm is else.
@@ -82,13 +83,13 @@ public sealed class FragmentPlannerTests
         Assert.True(continuingArm.IsElse);
         Assert.EndsWith(":arm:true", terminatingArm.Key, StringComparison.Ordinal);
         Assert.EndsWith(":arm:false", continuingArm.Key, StringComparison.Ordinal);
-        Assert.Equal("Condition", terminatingArm.Label, StringComparer.Ordinal);
-        Assert.Equal("Continue", continuingArm.Label, StringComparer.Ordinal);
+        Assert.Equal("reservation is null", terminatingArm.Label, StringComparer.Ordinal);
+        Assert.Equal("reservation != null", continuingArm.Label, StringComparer.Ordinal);
 
         // The terminating arm creates a Break and holds no continuation messages.
         var breakFragment = Assert.Single(terminatingArm.Fragments);
         Assert.Equal(DiagramFragmentKind.Break, breakFragment.Kind);
-        Assert.Equal("Condition", breakFragment.Label, StringComparer.Ordinal);
+        Assert.Equal("reservation is null", breakFragment.Label, StringComparer.Ordinal);
         Assert.Empty(breakFragment.MessageRefs);
         Assert.Empty(terminatingArm.MessageRefs);
 
@@ -96,12 +97,12 @@ public sealed class FragmentPlannerTests
         var locked = Assert.Single(continuingArm.Fragments);
         Assert.Equal(DiagramFragmentKind.Alt, locked.Kind);
         Assert.Equal("decision:" + FragmentScenarioTestFactory.LockedCondition.Value, locked.Key, StringComparer.Ordinal);
-        Assert.Equal("Condition", locked.Label, StringComparer.Ordinal);
+        Assert.Equal("reservation is null", locked.Label, StringComparer.Ordinal);
         var lockedTerminating = locked.Arms[0];
         var lockedContinuing = locked.Arms[1];
         Assert.Equal(DiagramFragmentKind.Break, Assert.Single(lockedTerminating.Fragments).Kind);
-        Assert.Equal("Condition", lockedTerminating.Label, StringComparer.Ordinal);
-        Assert.Equal("Continue", lockedContinuing.Label, StringComparer.Ordinal);
+        Assert.Equal("reservation is null", lockedTerminating.Label, StringComparer.Ordinal);
+        Assert.Equal("reservation != null", lockedContinuing.Label, StringComparer.Ordinal);
         Assert.Empty(lockedTerminating.MessageRefs);
         AssertRefsEqual(
             Refs(plan, "scenario-edge:v1:workitem:query2", "scenario-edge:v1:workitem:save"),
@@ -117,7 +118,8 @@ public sealed class FragmentPlannerTests
     [Fact]
     public void TerminatingArmCreatesBreakAndNeverContainsContinuation()
     {
-        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph()).Diagram;
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph())).Diagram;
 
         var alts = CollectAlts(plan.Sequence.Fragments);
         Assert.Equal(2, alts.Count);
@@ -137,7 +139,8 @@ public sealed class FragmentPlannerTests
     [Fact]
     public void OneSidedDecisionProducesOptWithoutElse()
     {
-        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateOneSidedOptGraph()).Diagram;
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateOneSidedOptGraph())).Diagram;
 
         AssertRefsEqual(
             Refs(plan, "scenario-edge:v1:opt:entry", "scenario-edge:v1:opt:call", "scenario-edge:v1:opt:query1"),
@@ -145,7 +148,7 @@ public sealed class FragmentPlannerTests
         var opt = Assert.Single(plan.Sequence.Fragments);
         Assert.Equal(DiagramFragmentKind.Opt, opt.Kind);
         Assert.Equal("decision:" + FragmentScenarioTestFactory.LockedCondition.Value, opt.Key, StringComparer.Ordinal);
-        Assert.Equal("Condition", opt.Label, StringComparer.Ordinal);
+        Assert.Equal("reservation != null", opt.Label, StringComparer.Ordinal);
         Assert.True(opt.Arms.IsEmpty, "An Opt must never materialize an invented else arm.");
         AssertRefsEqual(
             Refs(plan, "scenario-edge:v1:opt:query2", "scenario-edge:v1:opt:save"),
@@ -173,19 +176,39 @@ public sealed class FragmentPlannerTests
     }
 
     [Fact]
-    public void TypedSubordinateKeepsConservativeFragmentAndArmLabels()
+    public void SubordinateWithoutValidOwnerGroupIsWithheldWithTechnicalFallback()
     {
         var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph(
-            predicateRole: ScenarioPredicateWordingRole.Subordinate)).Diagram;
-        var alt = Assert.Single(plan.Sequence.Fragments);
-        Assert.Equal("Continue evaluating condition", alt.Label);
-        Assert.Equal("Continue", alt.Arms[1].Label);
+            predicateRole: ScenarioPredicateWordingRole.Subordinate));
+
+        // A subordinate decision without a valid exact owner group never renders the generic
+        // "Continue evaluating condition" label: it is withheld, its exclusively-guarded messages
+        // are withheld with DP002, and the boundary is retained as Conservative evidence-backed
+        // technical-fallback phrases.
+        Assert.DoesNotContain(
+            plan.Diagram.Sequence.Fragments,
+            fragment => fragment.Label.Contains("Continue", StringComparison.Ordinal)
+                || fragment.Label.Contains("Condition", StringComparison.Ordinal));
+        Assert.DoesNotContain(plan.Diagram.Sequence.Fragments.SelectMany(AllFragments),
+            fragment => fragment.Label.Contains("Continue", StringComparison.Ordinal)
+                || fragment.Label.Contains("Condition", StringComparison.Ordinal));
+        var fallbacks = plan.Wording.Phrases
+            .Where(phrase => phrase.Key.StartsWith("fallback:DP005", StringComparison.Ordinal))
+            .ToArray();
+        Assert.NotEmpty(fallbacks);
+        Assert.All(fallbacks, phrase =>
+        {
+            Assert.Equal(CertaintyLevel.Conservative, phrase.Certainty);
+            Assert.NotEmpty(phrase.Evidence);
+        });
+        Assert.Contains(plan.Diagram.Diagnostics, diagnostic => diagnostic.Code == "DP002");
     }
 
     [Fact]
     public void BothMaterialDecisionProducesFailureFirstAltWithStableSemanticIdentities()
     {
-        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateBothMaterialAltGraph()).Diagram;
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateBothMaterialAltGraph())).Diagram;
 
         var alt = Assert.Single(plan.Sequence.Fragments);
         Assert.Equal(DiagramFragmentKind.Alt, alt.Kind);
@@ -196,10 +219,10 @@ public sealed class FragmentPlannerTests
         var successArm = alt.Arms[1];
         Assert.False(failureArm.IsElse);
         Assert.True(successArm.IsElse);
-        // accepted contract label contract: without typed terminal facts the arms carry sentence-case technical
-        // labels ("Condition"/"Continue") rather than "Terminates"/"Rejoins".
-        Assert.Equal("Condition", failureArm.Label, StringComparer.Ordinal);
-        Assert.Equal("Continue", successArm.Label, StringComparer.Ordinal);
+        // Exact-wording contract: without typed terminal facts the arms carry the exact predicate
+        // wording and its complement, never the generic "Condition"/"Continue" tokens.
+        Assert.Equal("reservation is null", failureArm.Label, StringComparer.Ordinal);
+        Assert.Equal("reservation != null", successArm.Label, StringComparer.Ordinal);
         AssertRefsEqual(
             Refs(plan, "scenario-edge:v1:both:fail-result", "scenario-edge:v1:both:fail-outcome"),
             failureArm.MessageRefs);
@@ -213,8 +236,75 @@ public sealed class FragmentPlannerTests
         Assert.EndsWith(":arm:true", alt.Arms[0].Key, StringComparison.Ordinal);
 
         // Repeated planning of an unchanged graph keeps identities and visual order byte-for-byte equal.
-        var repeated = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateBothMaterialAltGraph()).Diagram;
+        var repeated = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateBothMaterialAltGraph())).Diagram;
         AssertSequenceEqual(plan.Sequence, repeated.Sequence);
+    }
+
+    [Fact]
+    public void DecisionWithoutExactPredicateWordingIsWithheldWithFallbackAndDp002()
+    {
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph());
+
+        // A decision without exact compiler-evidenced predicate wording never renders a generic
+        // "Condition" fragment: it is withheld, its guarded messages are withheld with DP002, and
+        // each withheld boundary is retained as a Conservative evidence-backed fallback phrase.
+        Assert.Empty(plan.Diagram.Sequence.Fragments);
+        Assert.DoesNotContain(
+            plan.Diagram.Sequence.Fragments.SelectMany(AllFragments),
+            fragment => fragment.Label.Contains("Condition", StringComparison.Ordinal)
+                || fragment.Label.Contains("Continue", StringComparison.Ordinal));
+        Assert.Contains(plan.Diagram.Diagnostics, diagnostic => diagnostic.Code == "DP002");
+        var fallbacks = plan.Wording.Phrases
+            .Where(phrase => phrase.Key.StartsWith("fallback:DP005", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Equal(2, fallbacks.Length);
+        Assert.All(fallbacks, phrase =>
+        {
+            Assert.Equal(WordingPhraseKind.TechnicalFallback, phrase.Kind);
+            Assert.Equal(CertaintyLevel.Conservative, phrase.Certainty);
+            Assert.NotEmpty(phrase.Evidence);
+        });
+        Assert.DoesNotContain(plan.Diagram.Messages, message => message.Key.Contains("query2", StringComparison.Ordinal));
+        Assert.DoesNotContain(plan.Diagram.Messages, message => message.Key.Contains("save", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void OpaquePredicateIsWithheldInsteadOfRenderingGenericCondition()
+    {
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateBothMaterialAltGraph(
+            predicateRole: ScenarioPredicateWordingRole.Owner,
+            predicatePartition: "unsupported"));
+
+        // An owner predicate whose normalized expression contains an opaque value formats to the
+        // generic "Condition" token, so the decision is withheld rather than presented as useful
+        // behavior; the boundary stays in technical fallback.
+        Assert.Empty(plan.Diagram.Sequence.Fragments);
+        Assert.DoesNotContain(plan.Wording.Phrases, phrase => phrase.Text.Contains("Condition", StringComparison.Ordinal));
+        Assert.NotEmpty(
+            plan.Wording.Phrases.Where(phrase => phrase.Key.StartsWith("fallback:DP005", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void SourceConditionCallbackRegionIsWithheldWithDp003AndTechnicalFallback()
+    {
+        var plan = DocumentationPlanner.Plan(
+            FragmentScenarioTestFactory.CreateCompositionEmptyTopologyGraph(sourceConditionRegion: true));
+
+        // A source-condition callback region has no exact framework-condition wording: the generic
+        // "Condition" Opt is never rendered, the region refs are withheld with DP003, and the
+        // boundary is retained as a Conservative technical-fallback phrase. The guarded query never
+        // renders as unconditional behavior.
+        Assert.DoesNotContain(
+            plan.Diagram.Sequence.Fragments.SelectMany(AllFragments),
+            fragment => fragment.Label == "Condition");
+        Assert.Contains(plan.Diagram.Diagnostics, diagnostic => diagnostic.Code == "DP003");
+        var fallback = Assert.Single(
+            plan.Wording.Phrases,
+            phrase => phrase.Key.StartsWith("fallback:DP003", StringComparison.Ordinal));
+        Assert.Equal(CertaintyLevel.Conservative, fallback.Certainty);
+        Assert.NotEmpty(fallback.Evidence);
+        Assert.DoesNotContain(plan.Diagram.Messages, message => message.Key.Contains("query", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -288,8 +378,10 @@ public sealed class FragmentPlannerTests
     [Fact]
     public void DepthLimitProducesDeterministicDiagnosticAndNonTruncatedFlatFallback()
     {
-        var first = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateDeepNestedGraph()).Diagram;
-        var second = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateDeepNestedGraph()).Diagram;
+        var first = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateDeepNestedGraph())).Diagram;
+        var second = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateDeepNestedGraph())).Diagram;
 
         var diagnostic = Assert.Single(first.Diagnostics);
         Assert.Equal("DP001", diagnostic.Code, StringComparer.Ordinal);
@@ -317,8 +409,10 @@ public sealed class FragmentPlannerTests
     [Fact]
     public void ReversedTopologyConstructionYieldsEqualFragmentTree()
     {
-        var forward = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph(reverseConstruction: false)).Diagram;
-        var reversed = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph(reverseConstruction: true)).Diagram;
+        var forward = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph(reverseConstruction: false))).Diagram;
+        var reversed = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph(reverseConstruction: true))).Diagram;
 
         // The fragment tree and planning diagnostics are derived from stable semantic keys and
         // membership containment, never from topology array order. Rendering-level determinism for
@@ -331,7 +425,8 @@ public sealed class FragmentPlannerTests
     [Fact]
     public void ScenarioGraphToPlanBoundaryProducesValidResolvableSequenceTree()
     {
-        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph());
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph()));
 
         // Every message reference in the sequence tree resolves to a planned message.
         Assert.All(AllRefs(plan.Diagram), id => Assert.Contains(plan.Diagram.Messages, message => message.Id == id));
@@ -365,29 +460,50 @@ public sealed class FragmentPlannerTests
     }
 
     [Fact]
-    public void PredicateOwnerGroupWithSubordinateTerminationRetainsOriginalTopology()
+    public void PredicateOwnerGroupWithSubordinateTerminationWithholdsSubordinatesAndRendersExactOwner()
     {
         var plan = DocumentationPlanner.Plan(
-            FragmentScenarioTestFactory.CreatePredicateOwnerGroupGraph(subordinateHasTerminatingArm: true)).Diagram;
+            FragmentScenarioTestFactory.CreatePredicateOwnerGroupGraph(subordinateHasTerminatingArm: true));
 
-        // Any subordinate termination makes the entire group unsafe: no owner fragment may absorb
-        // the subordinate Break or its messages, and no evidence-free diagnostic is emitted.
-        Assert.DoesNotContain(AllFragments(plan.Sequence.Fragments), fragment => fragment.Label == "reservation is null");
-        Assert.DoesNotContain(plan.Diagnostics, diagnostic => diagnostic.Code == "DP004");
+        // Any subordinate termination makes the group unsafe: the terminating subordinate never
+        // renders a generic label and its boundary is retained as a Conservative fallback phrase.
+        // The exact owner still renders with compiler-evidenced wording and claims the shared
+        // guarded messages exactly once; no evidence-free diagnostic is emitted.
+        var owner = Assert.Single(plan.Diagram.Sequence.Fragments);
+        Assert.Equal(DiagramFragmentKind.Alt, owner.Kind);
+        Assert.Equal("reservation is null", owner.Label, StringComparer.Ordinal);
+        Assert.DoesNotContain(
+            plan.Diagram.Sequence.Fragments.SelectMany(AllFragments),
+            fragment => fragment.Label == "Continue evaluating condition");
+        Assert.DoesNotContain(plan.Diagram.Diagnostics, diagnostic => diagnostic.Code == "DP004");
+        Assert.DoesNotContain(plan.Diagram.Diagnostics, diagnostic => diagnostic.Code == "DP001");
+        Assert.NotEmpty(
+            plan.Wording.Phrases.Where(phrase => phrase.Key.StartsWith("fallback:DP005", StringComparison.Ordinal)));
+        Assert.All(
+            plan.Wording.Phrases.Where(phrase => phrase.Key.StartsWith("fallback:DP005", StringComparison.Ordinal)),
+            phrase => Assert.Equal(CertaintyLevel.Conservative, phrase.Certainty));
         Assert.Equal(
-            plan.Messages.Select(message => message.Key).Order(StringComparer.Ordinal),
-            AllRefs(plan).Select(id => MessageKeyOf(plan, id)).Order(StringComparer.Ordinal));
+            plan.Diagram.Messages.Select(message => message.Key).Order(StringComparer.Ordinal),
+            AllRefs(plan.Diagram).Select(id => MessageKeyOf(plan.Diagram, id)).Order(StringComparer.Ordinal));
     }
 
     [Fact]
-    public void AmbiguousPredicateOwnersRetainOriginalFragmentsWithoutDp004()
+    public void AmbiguousPredicateOwnersRenderExactFragmentsWithoutDp004OrGenericLabels()
     {
         var plan = DocumentationPlanner.Plan(
-            FragmentScenarioTestFactory.CreatePredicateOwnerGroupGraph(ambiguousOwners: true)).Diagram;
+            FragmentScenarioTestFactory.CreatePredicateOwnerGroupGraph(ambiguousOwners: true));
 
-        Assert.NotEmpty(plan.Sequence.Fragments);
-        Assert.DoesNotContain(plan.Diagnostics, diagnostic => diagnostic.Code == "DP004");
-        Assert.Contains(AllFragments(plan.Sequence.Fragments), fragment => fragment.Label == "Continue evaluating condition");
+        // Two owners share one predicate id: the group cannot be absorbed, so each exact owner
+        // renders its own fragment; the remaining subordinate is withheld instead of ever rendering
+        // the generic "Continue evaluating condition" label, with the boundary retained as a
+        // Conservative fallback phrase.
+        Assert.NotEmpty(plan.Diagram.Sequence.Fragments);
+        Assert.DoesNotContain(plan.Diagram.Diagnostics, diagnostic => diagnostic.Code == "DP004");
+        Assert.DoesNotContain(
+            plan.Diagram.Sequence.Fragments.SelectMany(AllFragments),
+            fragment => fragment.Label == "Continue evaluating condition");
+        Assert.NotEmpty(
+            plan.Wording.Phrases.Where(phrase => phrase.Key.StartsWith("fallback:DP005", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -636,7 +752,8 @@ public sealed class FragmentPlannerTests
         // F5: fragment, arm, and Break evidence combines every supporting fact (decision, arm,
         // membership, terminal) and certainty degrades to the weakest contributor; a Conservative
         // membership must never be promoted to the decision's Exact certainty.
-        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateMixedCertaintyGraph()).Diagram;
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateMixedCertaintyGraph())).Diagram;
 
         var alt = Assert.Single(plan.Sequence.Fragments);
         Assert.Equal(DiagramFragmentKind.Alt, alt.Kind);
@@ -675,7 +792,8 @@ public sealed class FragmentPlannerTests
         // shared message is emitted exactly once at the enclosing sequence level. The unclaimed
         // entry/call messages precede the shared guarded messages in planner edge order, and F3
         // coverage keeps every planned message referenced exactly once.
-        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateEqualMembershipGraph()).Diagram;
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateEqualMembershipGraph())).Diagram;
 
         Assert.Empty(plan.Sequence.Fragments);
         AssertRefsEqual(
@@ -695,7 +813,8 @@ public sealed class FragmentPlannerTests
         // F6 guard: when a child membership set is contained in two minimal parent arms (neither
         // arm's set contains the other), the child has no unique parent and stays flat at the
         // enclosing sequence level instead of nesting under either parent.
-        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateAmbiguousParentGraph()).Diagram;
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateAmbiguousParentGraph())).Diagram;
         string childKey = "decision:" + FragmentScenarioTestFactory.GuardCCondition.Value;
 
         string[] rootKeys = plan.Sequence.Fragments.Select(fragment => fragment.Key).Order(StringComparer.Ordinal).ToArray();
@@ -719,10 +838,12 @@ public sealed class FragmentPlannerTests
         // (profile + entry point + element kind + semantic key), not manual concatenation. The
         // same topology under a different profile/entry point must yield different IDs, and every
         // ID is a hashed diagram-element identity.
-        var basePlan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph()).Diagram;
-        var otherPlan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph(
-            profileId: new CompilationProfileId("compilation-profile:v1:other"),
-            entryPointId: new EntryPointId("entry-point:v1:other"))).Diagram;
+        var basePlan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph())).Diagram;
+        var otherPlan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph(
+                profileId: new CompilationProfileId("compilation-profile:v1:other"),
+                entryPointId: new EntryPointId("entry-point:v1:other")))).Diagram;
 
         var baseAbsent = basePlan.Sequence.Fragments.Single();
         var otherAbsent = otherPlan.Sequence.Fragments.Single();
@@ -743,8 +864,10 @@ public sealed class FragmentPlannerTests
     {
         // F7 guard: IDs follow stable semantic keys, so reversed topology construction and
         // label/visual presentation never change fragment, arm, or break identities.
-        var forward = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph(reverseConstruction: false)).Diagram;
-        var reversed = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph(reverseConstruction: true)).Diagram;
+        var forward = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph(reverseConstruction: false))).Diagram;
+        var reversed = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph(reverseConstruction: true))).Diagram;
 
         Assert.Equal(FragmentIdLines(forward), FragmentIdLines(reversed));
     }
@@ -756,7 +879,8 @@ public sealed class FragmentPlannerTests
         // message references first in planner edge order, then the root fragment — so renderer
         // chronology is inspectable without invoking the renderer. Each element line records the
         // element kind and its exact position in the ordered sequence.
-        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph()).Diagram;
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph())).Diagram;
 
         string[] elementLines = plan.DebugProjection
             .Split('\n')

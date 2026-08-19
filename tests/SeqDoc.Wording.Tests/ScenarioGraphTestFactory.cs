@@ -65,6 +65,31 @@ internal static class ScenarioGraphTestFactory
             "/collision", "POST /collision", [action, .. targets], edges, [], "collision", ScenarioTopology.Empty);
     }
 
+    internal static ScenarioGraph CreateHttpActionLabelCollisionGraph()
+    {
+        var evidence = ImmutableArray.Create(SourceEvidence("http-action-label-collision"));
+        var action = new ScenarioNode(
+            new("scenario-node:v1:http-label-collision:action"), ScenarioNodeKind.Action, "action",
+            new("method:v1:Api.B.Method"), null, "controller action", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(
+                ActionKind: ScenarioActionKind.ControllerAction,
+                ControllerTypeName: "Api.B",
+                ActionMethodName: "Method"));
+        var targets = ImmutableArray.Create("Acme.B.Method", "Other.Method").Select((type, index) => new ScenarioNode(
+            new($"scenario-node:v1:http-label-collision:call-{index}"), ScenarioNodeKind.MethodCall,
+            $"method-call:{index}", new($"method:v1:{type}.Run"), new($"operation:v1:http-label-collision:{index}"),
+            "generic call", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(TargetContainingTypeName: type, TargetMemberName: "Run")))
+            .ToArray();
+        var edges = targets.Select((target, index) => new ScenarioEdge(
+            new($"scenario-edge:v1:http-label-collision:{index}"), action.Id, target.Id,
+            ScenarioEdgeKind.Call, "generic call", evidence, CertaintyLevel.Exact, index)).ToImmutableArray();
+        return new ScenarioGraph(
+            new("entry-point:v1:http-label-collision"), Profile.Id, new("method:v1:Api.B.Method"),
+            HttpMethodKind.Post, "/collision", "POST /collision", [action, .. targets], edges, [],
+            "http-action-label-collision", ScenarioTopology.Empty);
+    }
+
     internal static ScenarioGraph CreateMinimalApiHandlerGraph(string? actionParticipant = null)
     {
         var evidence = ImmutableArray.Create(SourceEvidence("minimal-handler"));
@@ -1071,4 +1096,55 @@ internal static class ScenarioGraphTestFactory
             "test-symbol",
             null,
             certainty);
+
+    /// <summary>
+    /// Builds a graph with two service calls to the same member (GetItem) that carry different
+    /// compiler-proven constant arguments, verifying that the argument label distinguishes them.
+    /// </summary>
+    internal static ScenarioGraph CreateCallArgumentPresentationGraph()
+    {
+        var actionMethodId = new MethodId("method:v1:GetItemController.Get");
+        var serviceMethodId = new MethodId("method:v1:GetItemService.GetItem");
+        var action = Node(
+            "scenario-node:v1:call-args:action",
+            ScenarioNodeKind.Action,
+            $"action:{actionMethodId}",
+            "controller action",
+            "action",
+            method: "method:v1:GetItemController.Get",
+            presentation: new ScenarioNodePresentation(ControllerTypeName: "GetItemController"));
+        var serviceA = Node(
+            "scenario-node:v1:call-args:service-a",
+            ScenarioNodeKind.ServiceCall,
+            $"service:{serviceMethodId}:a",
+            "resolved service implementation GetItemService",
+            "service",
+            method: "method:v1:GetItemService.GetItem",
+            presentation: new ScenarioNodePresentation(
+                ContractTypeName: "IGetItemService",
+                ImplementationTypeName: "GetItemService",
+                CalledMemberName: "GetItem",
+                ArgumentLabel: "1"));
+        var serviceB = Node(
+            "scenario-node:v1:call-args:service-b",
+            ScenarioNodeKind.ServiceCall,
+            $"service:{serviceMethodId}:b",
+            "resolved service implementation GetItemService",
+            "service",
+            sequenceOrdinal: 1,
+            method: "method:v1:GetItemService.GetItem",
+            presentation: new ScenarioNodePresentation(
+                ContractTypeName: "IGetItemService",
+                ImplementationTypeName: "GetItemService",
+                CalledMemberName: "GetItem",
+                ArgumentLabel: "\"alpha\""));
+        return new ScenarioGraph(
+            new EntryPointId("entry-point:v1:call-args"), Profile.Id, actionMethodId, HttpMethodKind.Get,
+            "/items", "GET /items", [action, serviceA, serviceB],
+            [
+                Edge("edge:call-args:a", action, serviceA, ScenarioEdgeKind.Call, "call-args"),
+                Edge("edge:call-args:b", action, serviceB, ScenarioEdgeKind.Call, "call-args", sequenceOrdinal: 1),
+            ],
+            [], "call-args", ScenarioTopology.Empty);
+    }
 }

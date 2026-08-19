@@ -40,7 +40,7 @@ public static class PredicateWordingFormatter
         };
         text = Format(new PredicateExpression(PredicateExpressionKind.Comparison, root.Children, root.TypeName, op)); return true;
     }
-    public static string FormatSubordinate() => "Continue evaluating condition";
+    public static string FormatSubordinate() => "Otherwise";
     private static string Format(PredicateExpression e, int parent)
     {
         int p = e.Kind switch { PredicateExpressionKind.LogicalOr => 1, PredicateExpressionKind.LogicalAnd => 2, PredicateExpressionKind.Comparison => 3, PredicateExpressionKind.BinaryArithmetic => e.ArithmeticOperator is PredicateArithmeticOperatorKind.Multiply or PredicateArithmeticOperatorKind.Divide or PredicateArithmeticOperatorKind.Remainder ? 5 : 4, PredicateExpressionKind.Negation or PredicateExpressionKind.BooleanTruth => 6, _ => 7 };
@@ -52,13 +52,13 @@ public static class PredicateWordingFormatter
             PredicateExpressionKind.StringConstant => "\"" + Escape(e.ConstantValue!) + "\"",
             PredicateExpressionKind.CharacterConstant => "'" + Escape(e.ConstantValue!) + "'",
             PredicateExpressionKind.SymbolValue => e.DisplayName!,
-            PredicateExpressionKind.OpaqueValue => "Condition",
+            PredicateExpressionKind.OpaqueValue => "typed predicate unavailable",
             PredicateExpressionKind.BooleanTruth => Format(e.Children[0], p),
             PredicateExpressionKind.Negation => "!" + (e.Children[0].Kind is PredicateExpressionKind.SymbolValue ? Format(e.Children[0], p) : "(" + Format(e.Children[0], 0) + ")"),
             PredicateExpressionKind.Comparison => Format(e.Children[0], p) + " " + Comparison(e.ComparisonOperator!.Value) + " " + Format(e.Children[1], p),
             PredicateExpressionKind.LogicalAnd or PredicateExpressionKind.LogicalOr => Format(e.Children[0], p) + (e.Kind == PredicateExpressionKind.LogicalAnd ? " && " : " || ") + Format(e.Children[1], p),
             PredicateExpressionKind.BinaryArithmetic => Format(e.Children[0], p) + " " + Arithmetic(e.ArithmeticOperator!.Value) + " " + Format(e.Children[1], p),
-            _ => "Condition",
+            _ => "typed predicate unavailable",
         };
         if (e.Kind == PredicateExpressionKind.Comparison && e.Children[0].Kind == PredicateExpressionKind.SymbolValue && e.Children[1].Kind == PredicateExpressionKind.NullConstant && e.ComparisonOperator == PredicateComparisonOperatorKind.Equal)
         {
@@ -104,12 +104,88 @@ public static class DocumentationPlanner
     private const string FallbackPhraseKeyPrefix = "fallback";
     private static readonly string[] ReservedParticipantKeys = ["client", "action", "dispatch", "handler", "service", "data"];
 
-    public static DocumentationPlan Plan(ScenarioGraph graph)
+    private sealed record PresentationFilter(
+        HashSet<ScenarioNodeId> HiddenNodes,
+        HashSet<ScenarioEdgeId> HiddenEdges,
+        int FilteredInteractionCount,
+        ImmutableArray<EvidenceRef> FilteredInteractionEvidence)
+    {
+        public static PresentationFilter Create(
+            ScenarioGraph graph,
+            ImmutableSortedSet<string>? participants,
+            ImmutableSortedSet<string>? calls)
+        {
+            participants ??= ImmutableSortedSet.Create<string>(StringComparer.Ordinal);
+            calls ??= ImmutableSortedSet.Create<string>(StringComparer.Ordinal);
+            var hiddenNodes = new HashSet<ScenarioNodeId>();
+            foreach (var node in graph.Nodes)
+            {
+                string? type = NodeContainingType(node);
+                bool configuredParticipant = type is not null && participants.Contains(type);
+                bool builtInLogging = IsRecognizedLoggingCall(node);
+                bool configuredCall = node.Kind == ScenarioNodeKind.MethodCall
+                    && CallMatches(node, calls);
+                if (configuredParticipant || configuredCall || builtInLogging)
+                {
+                    hiddenNodes.Add(node.Id);
+                }
+            }
+
+            var hiddenEdges = new HashSet<ScenarioEdgeId>();
+            var countedInteractions = new HashSet<string>(StringComparer.Ordinal);
+            var filteredEvidence = new List<(string Key, EvidenceRef Evidence)>();
+            foreach (var edge in graph.Edges)
+            {
+                var source = graph.Nodes.FirstOrDefault(node => node.Id == edge.Source);
+                var target = graph.Nodes.FirstOrDefault(node => node.Id == edge.Target);
+                bool hidden = hiddenNodes.Contains(edge.Source) || hiddenNodes.Contains(edge.Target);
+                if (edge.Kind == ScenarioEdgeKind.Call && target is not null)
+                {
+                    hidden |= hiddenNodes.Contains(target.Id);
+                }
+                if (hidden && edge.Kind is ScenarioEdgeKind.Call or ScenarioEdgeKind.Query or ScenarioEdgeKind.Mutation
+                    or ScenarioEdgeKind.Save or ScenarioEdgeKind.Dispatch or ScenarioEdgeKind.ResultSuccess
+                    or ScenarioEdgeKind.ResultFailure or ScenarioEdgeKind.ResultStatus or ScenarioEdgeKind.OutcomeSuccess
+                    or ScenarioEdgeKind.OutcomeFailure)
+                {
+                    hiddenEdges.Add(edge.Id);
+                    bool hasHiddenInteractionNode = graph.Nodes.Any(node =>
+                        (node.Id == edge.Source || node.Id == edge.Target)
+                        && hiddenNodes.Contains(node.Id)
+                        && IsFilteredInteractionNode(node));
+                    if (!hasHiddenInteractionNode)
+                    {
+                        countedInteractions.Add("edge:" + edge.Id.Value);
+                        filteredEvidence.AddRange(edge.Evidence.Select(evidence => ("edge:" + edge.Id.Value + ":" + evidence.Id.Value, evidence)));
+                    }
+                }
+            }
+
+            foreach (var node in graph.Nodes.Where(node => hiddenNodes.Contains(node.Id) && IsFilteredInteractionNode(node)))
+            {
+                countedInteractions.Add("node:" + node.Id.Value);
+                filteredEvidence.AddRange(node.Evidence.Select(evidence => ("node:" + node.Id.Value + ":" + evidence.Id.Value, evidence)));
+            }
+
+            return new PresentationFilter(
+                hiddenNodes,
+                hiddenEdges,
+                countedInteractions.Count,
+                filteredEvidence.OrderBy(item => item.Key, StringComparer.Ordinal).Select(item => ConservativeCopy(item.Evidence)).ToImmutableArray());
+        }
+    }
+
+    public static DocumentationPlan Plan(
+        ScenarioGraph graph,
+        ImmutableSortedSet<string>? excludeParticipants = null,
+        ImmutableSortedSet<string>? excludeCalls = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
+        ValidateStructuralExclusions(graph, excludeParticipants);
+        var filter = PresentationFilter.Create(graph, excludeParticipants, excludeCalls);
 
-        var phrases = BuildPhrases(graph);
-        var diagram = BuildDiagram(graph);
+        var phrases = BuildPhrases(graph, filter);
+        var diagram = BuildDiagram(graph, filter);
 
         var wording = new WordingDocument(
             graph.EntryPoint,
@@ -124,7 +200,7 @@ public static class DocumentationPlanner
         return new DocumentationPlan(wording, diagram);
     }
 
-    private static ImmutableArray<WordingPhrase> BuildPhrases(ScenarioGraph graph)
+    private static ImmutableArray<WordingPhrase> BuildPhrases(ScenarioGraph graph, PresentationFilter filter)
     {
         var phrases = new List<WordingPhrase>();
         var phraseOrdinals = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -139,6 +215,10 @@ public static class DocumentationPlanner
                      .ThenBy(node => NodeOrderKey(graph, node).Rank)
                      .ThenBy(node => node.Id.Value, StringComparer.Ordinal))
         {
+            if (filter.HiddenNodes.Contains(node.Id))
+            {
+                continue;
+            }
             switch (node.Kind)
             {
                 case ScenarioNodeKind.EntryPoint:
@@ -181,6 +261,12 @@ public static class DocumentationPlanner
                         node.Certainty);
                     break;
                 case ScenarioNodeKind.MethodCall:
+                    if (IsRecognizedLoggingCall(node))
+                    {
+                        // Recognized logging-framework calls are hidden from presentation by
+                        // default; the node and its evidence remain in the graph for audit.
+                        break;
+                    }
                     CreatePhrase(
                         graph,
                         phraseOrdinals,
@@ -364,6 +450,54 @@ public static class DocumentationPlanner
                 CertaintyLevel.Conservative);
         }
 
+        // Withheld decision and callback boundaries retain their unsupported status as explicit
+        // technical fallbacks: a decision without exact compiler-evidenced owner predicate wording
+        // is never presented with a generic label, and a source-condition callback region has no
+        // exact framework-condition wording. Every phrase is grounded in the affected decision's or
+        // region's own evidence (conservatively) with a stable condition-grounded key, and absorbed
+        // owner-group subordinates are excluded because their boundary is presented by the exact
+        // owner.
+        foreach (var decision in graph.Topology.Decisions
+                     .Where(decision => !TryGetExactPredicateLabel(decision, out _)
+                          && DecisionHasVisibleMember(graph, decision, filter)
+                         && !IsAbsorbedSubordinate(graph, decision))
+                     .OrderBy(decision => decision.Id.Value, StringComparer.Ordinal))
+        {
+            CreatePhrase(
+                graph,
+                phraseOrdinals,
+                phrases,
+                WordingPhraseKind.TechnicalFallback,
+                $"{FallbackPhraseKeyPrefix}:DP005:{decision.Condition.Value}",
+                "Technical fallback: a conditional boundary lacks exact compiler-evidenced predicate wording; the guarded behavior is withheld rather than labeled generically.",
+                decision.Evidence.Select(ConservativeCopy).ToImmutableArray(),
+                CertaintyLevel.Conservative);
+        }
+
+        foreach (var region in graph.CallbackRegions
+                     .Where(region => region.FrameworkCondition != FrameworkCallbackConditionKind.CacheMiss
+                          && RegionHasVisibleMember(graph, region, filter))
+                     .OrderBy(region => region.Id.Value, StringComparer.Ordinal))
+        {
+            CreatePhrase(
+                graph,
+                phraseOrdinals,
+                phrases,
+                WordingPhraseKind.TechnicalFallback,
+                $"{FallbackPhraseKeyPrefix}:DP003:{region.Id.Value}",
+                "Technical fallback: a source-condition callback region has no exact framework-condition wording; the guarded behavior is withheld.",
+                region.Evidence.Select(ConservativeCopy).ToImmutableArray(),
+                CertaintyLevel.Conservative);
+        }
+
+        if (filter.FilteredInteractionCount > 0)
+        {
+            CreatePhrase(graph, phraseOrdinals, phrases, WordingPhraseKind.TechnicalFallback,
+                "fallback:DP-FILTER",
+                $"Technical fallback: {filter.FilteredInteractionCount} interaction(s) were filtered from presentation.",
+                filter.FilteredInteractionEvidence, CertaintyLevel.Conservative);
+        }
+
         return phrases.ToImmutableArray();
     }
 
@@ -385,7 +519,7 @@ public static class DocumentationPlanner
         _ => null,
     };
 
-    private static DiagramPlan BuildDiagram(ScenarioGraph graph)
+    private static DiagramPlan BuildDiagram(ScenarioGraph graph, PresentationFilter filter)
     {
         var participants = new Dictionary<string, DiagramParticipant>(StringComparer.Ordinal);
         var messages = new List<DiagramMessage>();
@@ -399,7 +533,7 @@ public static class DocumentationPlanner
         var serviceNode = graph.Nodes.FirstOrDefault(node => node.Kind == ScenarioNodeKind.ServiceCall);
         var dataNode = graph.Nodes.FirstOrDefault(node =>
             node.Kind is ScenarioNodeKind.EntityQuery or ScenarioNodeKind.EntityMutation);
-        var methodCallParticipantKeys = BuildMethodCallParticipantKeys(graph);
+        var methodCallParticipantKeys = BuildMethodCallParticipantKeys(graph, actionNode);
         bool configuredRoot = graph.RootKind == ScenarioRootKind.ConfiguredMethod;
         string callerKey = configuredRoot ? "caller" : "client";
 
@@ -407,13 +541,16 @@ public static class DocumentationPlanner
         // the controller, DI-resolved implementation, and DbContext use concise names resolved with
         // deterministic minimal qualification so same-short-name collisions stay distinct without
         // leaking full application namespaces. Missing presentation facts fall back to neutral role
-        // labels; display naming never parses detail strings.
+        // labels; display naming never parses detail strings. A configured root never invents a
+        // caller/client participant: the diagram begins at the selected method, so the root
+        // participant carries the concise deterministic type.member label while the full signature
+        // stays in behavior text and evidence.
         var participantSources = new (string Key, ScenarioNode? Source, string? FullTypeName, string FallbackLabel, DiagramParticipantKind Kind)[]
         {
-            (callerKey, entryNode, null, configuredRoot ? "Caller" : "API client", configuredRoot ? DiagramParticipantKind.Unknown : DiagramParticipantKind.Client),
+            (callerKey, configuredRoot ? null : entryNode, null, configuredRoot ? "Caller" : "API client", configuredRoot ? DiagramParticipantKind.Unknown : DiagramParticipantKind.Client),
              ("action", actionNode, actionNode?.Presentation?.ControllerTypeName,
                  configuredRoot
-                     ? actionNode?.Presentation?.ConfiguredDisplaySignature ?? "Selected method"
+                     ? ConfiguredActionDisplayName(actionNode?.Presentation) ?? "Selected method"
                      : actionNode?.Presentation?.ActionKind == ScenarioActionKind.MinimalApiHandler
                      ? "Minimal API handler"
                      : "Controller action",
@@ -430,7 +567,8 @@ public static class DocumentationPlanner
         }.ToList();
         foreach (var group in graph.Nodes
                      .Where(node => node.Kind == ScenarioNodeKind.MethodCall
-                         && !string.IsNullOrWhiteSpace(node.Presentation?.TargetContainingTypeName))
+                         && !string.IsNullOrWhiteSpace(node.Presentation?.TargetContainingTypeName)
+                          && !filter.HiddenNodes.Contains(node.Id))
                      .GroupBy(node => node.Presentation!.TargetContainingTypeName!, StringComparer.Ordinal)
                      .OrderBy(group => group.Key, StringComparer.Ordinal))
         {
@@ -444,9 +582,22 @@ public static class DocumentationPlanner
         }
         var participantLabels = ResolveParticipantLabels(
             participantSources.Select(source => (source.Key, source.FullTypeName, source.FallbackLabel)));
-        if (actionNode?.Presentation is { ActionKind: ScenarioActionKind.MinimalApiHandler, ControllerTypeName: { Length: > 0 } controllerType, ActionMethodName: { Length: > 0 } actionMethod })
+        var collidingMethodTypes = methodCallParticipantKeys.Keys
+            .GroupBy(NormalizeParticipantKey, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .SelectMany(group => group)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (string type in collidingMethodTypes)
+        {
+            participantLabels[methodCallParticipantKeys[type]] = type;
+        }
+        if (actionNode?.Presentation is { ActionKind: ScenarioActionKind.ControllerAction, ControllerTypeName: { Length: > 0 } controllerType, ActionMethodName: { Length: > 0 } actionMethod })
         {
             participantLabels["action"] = $"{ShortTypeName(controllerType)}.{actionMethod}";
+        }
+        else if (actionNode?.Presentation is { ActionKind: ScenarioActionKind.MinimalApiHandler, ControllerTypeName: { Length: > 0 } minimalControllerType, ActionMethodName: { Length: > 0 } minimalActionMethod })
+        {
+            participantLabels["action"] = $"{ShortTypeName(minimalControllerType)}.{minimalActionMethod}";
         }
         else if (actionNode?.Presentation is { ActionKind: ScenarioActionKind.MinimalApiHandler, ControllerTypeName: { Length: > 0 } legacyAction }
                  && legacyAction.Contains('.', StringComparison.Ordinal))
@@ -455,9 +606,11 @@ public static class DocumentationPlanner
             // two typed fields above, while generic lambdas still arrive without either field.
             participantLabels["action"] = legacyAction;
         }
-        else if (configuredRoot && actionNode?.Presentation is { ConfiguredDisplaySignature: { Length: > 0 } signature })
+        else if (configuredRoot)
         {
-            participantLabels["action"] = signature;
+            participantLabels["action"] = ConfiguredActionDisplayName(actionNode?.Presentation)
+                ?? actionNode?.Presentation?.ConfiguredDisplaySignature
+                ?? "Selected method";
         }
         // A typed composition owns the service participant's role: the contract type (for example
         // ICustomerService) humanized to its namespace-free role ("Customer service"), never the
@@ -469,12 +622,26 @@ public static class DocumentationPlanner
         }
         foreach (var typeName in methodCallParticipantKeys)
         {
-            participantLabels[typeName.Value] = typeName.Key;
+            // The resolver may already have assigned a concise collision-safe label (or the
+            // configured root action label). Never replace that deterministic presentation with a
+            // canonical type name.
+            participantLabels.TryAdd(typeName.Value, typeName.Key);
+        }
+
+        // The concise HTTP action label is allowed to be short only while it remains unique. A
+        // collision can be introduced by a later typed-role override, so qualify the action with
+        // its compiler-proven controller type and member after every label override has completed.
+        if (actionNode?.Presentation is { ActionKind: ScenarioActionKind.ControllerAction, ControllerTypeName: { Length: > 0 } qualifiedControllerType, ActionMethodName: { Length: > 0 } qualifiedActionMethod }
+            && participantLabels
+                .Where(item => item.Key != "action")
+                .Any(item => string.Equals(item.Value, participantLabels["action"], StringComparison.Ordinal)))
+        {
+            participantLabels["action"] = $"{qualifiedControllerType}.{qualifiedActionMethod}";
         }
 
         foreach (var source in participantSources)
         {
-            if (source.Source is not null)
+            if (source.Source is not null && !filter.HiddenNodes.Contains(source.Source.Id))
             {
                 AddParticipant(participants, graph, source.Key, participantLabels[source.Key], source.Kind, source.Source);
             }
@@ -493,9 +660,19 @@ public static class DocumentationPlanner
                      .ThenBy(edge => EdgeOrderKey(edge).Rank)
                      .ThenBy(edge => edge.Id.Value, StringComparer.Ordinal))
         {
+            if (filter.HiddenEdges.Contains(edge.Id))
+            {
+                continue;
+            }
             switch (edge.Kind)
             {
                 case ScenarioEdgeKind.Entry:
+                    if (configuredRoot)
+                    {
+                        // A configured root begins at the selected method: no invented caller
+                        // participant or entry request message is planned.
+                        break;
+                    }
                     messages.Add(CreateMessage(
                         graph,
                         edge,
@@ -508,22 +685,27 @@ public static class DocumentationPlanner
                 case ScenarioEdgeKind.Call:
                     var callTarget = graph.Nodes.FirstOrDefault(node => node.Id == edge.Target);
                     var callSource = graph.Nodes.FirstOrDefault(node => node.Id == edge.Source);
+                    if (callTarget is null || filter.HiddenNodes.Contains(callTarget.Id))
+                    {
+                        break;
+                    }
                     var sourceKey = callSource?.Kind == ScenarioNodeKind.MethodCall
-                        && !string.IsNullOrWhiteSpace(callSource.Presentation?.TargetContainingTypeName)
-                        ? methodCallParticipantKeys[callSource.Presentation.TargetContainingTypeName!]
+                        && callSource.Presentation?.TargetContainingTypeName is { Length: > 0 } sourceType
+                        && methodCallParticipantKeys.TryGetValue(sourceType, out var sourceParticipantKey)
+                        ? sourceParticipantKey
                         : "action";
                     var targetKey = callTarget?.Kind == ScenarioNodeKind.MethodCall
-                        && !string.IsNullOrWhiteSpace(callTarget.Presentation?.TargetContainingTypeName)
-                        ? methodCallParticipantKeys[callTarget.Presentation.TargetContainingTypeName!]
+                        && callTarget.Presentation?.TargetContainingTypeName is { Length: > 0 } targetType
+                        && methodCallParticipantKeys.TryGetValue(targetType, out var targetParticipantKey)
+                        ? targetParticipantKey
                         : "service";
+                    // Configurable exclusion: skip calls whose target type+member matches an exclude pattern.
                     messages.Add(CreateMessage(
                         graph,
                         edge,
                          sourceKey,
                         targetKey,
-                        callTarget?.Kind == ScenarioNodeKind.MethodCall
-                            ? callTarget.Presentation?.TargetMemberName ?? edge.Detail
-                            : ServiceCalledMemberLabel(graph, edge) ?? edge.Detail,
+                        CallMessageLabel(callTarget, ServiceCalledMemberLabel(graph, edge) ?? edge.Detail),
                         DiagramMessageKind.Request));
                     orderedMessageRefs.Add((edge.Target, CreateMessageRef(edge)));
                     break;
@@ -614,6 +796,10 @@ public static class DocumentationPlanner
                     failureEvidence.AddRange(edge.Evidence);
                     break;
                 case ScenarioEdgeKind.OutcomeSuccess:
+                    if (configuredRoot)
+                    {
+                        break;
+                    }
                     messages.Add(CreateMessage(
                         graph,
                         edge,
@@ -626,6 +812,10 @@ public static class DocumentationPlanner
                     successEvidence.AddRange(edge.Evidence);
                     break;
                 case ScenarioEdgeKind.OutcomeFailure:
+                    if (configuredRoot)
+                    {
+                        break;
+                    }
                     messages.Add(CreateMessage(
                         graph,
                         edge,
@@ -872,7 +1062,10 @@ public static class DocumentationPlanner
             orderedParticipants,
             orderedMessages,
             orderedBranches,
-            BuildDiagramDebugProjection(orderedParticipants, orderedMessages, sequence, orderedBranches, diagnostics),
+            BuildDiagramDebugProjection(orderedParticipants, orderedMessages, sequence, orderedBranches, diagnostics)
+                + (filter.FilteredInteractionCount > 0
+                    ? $"\nfiltered interaction count: {filter.FilteredInteractionCount}"
+                    : string.Empty),
             sequence,
             diagnostics);
     }
@@ -1008,11 +1201,20 @@ public static class DocumentationPlanner
         var supported = orderedDecisions
             .Where(decision => IsSupportedDecision(decision, context))
             .ToHashSet();
-        // Decisions admitted by the terminal/classification contract before the equal-set hoisting
-        // rule removes shared-set candidates. Hoisted supported decisions still own their guarded
-        // messages (F6 flat behavior), so withholding applies only to messages whose every owning
-        // decision is genuinely unsupported (for example SC013 exception-region or loop guards).
-        var supportedByContractIds = supported
+        // A decision renders a fragment only when it carries exact compiler-evidenced owner
+        // predicate wording whose normalized expression contains no opaque value (the formatted
+        // label is never the generic "Condition" token). Subordinate decisions stay structurally
+        // supported so safe owner groups still absorb them and merge their evidence, but they are
+        // not renderable and never produce a fragment of their own.
+        var renderable = supported
+            .Where(decision => TryGetExactPredicateLabel(decision, out _))
+            .ToHashSet();
+        // Decisions admitted by the terminal/classification/wording contract before the equal-set
+        // hoisting rule removes shared-set candidates. Hoisted renderable decisions still own their
+        // guarded messages (F6 flat behavior), so withholding applies only to messages whose every
+        // owning decision is genuinely non-renderable (for example SC013 exception-region, loop
+        // guards, or decisions without exact predicate wording).
+        var renderableIds = renderable
             .Select(decision => decision.Id)
             .ToHashSet();
 
@@ -1048,6 +1250,9 @@ public static class DocumentationPlanner
             }
         }
 
+        // Hoisted decisions are not renderable (F6 flat behavior); the pre-hoist snapshot above
+        // keeps their guarded messages owned.
+        renderable.RemoveWhere(decision => !supported.Contains(decision));
 
         // Parent selection: a child decision nests only inside the unique minimal arm whose node
         // set properly contains the child's full membership set. Equal membership sets never prove
@@ -1060,7 +1265,7 @@ public static class DocumentationPlanner
             var candidates = new List<ScenarioArmId>();
             foreach (var other in orderedDecisions)
             {
-                if (other.Id == decision.Id || !supported.Contains(other))
+                if (other.Id == decision.Id || !renderable.Contains(other))
                 {
                     continue;
                 }
@@ -1095,7 +1300,7 @@ public static class DocumentationPlanner
         var rootDecisions = new List<ScenarioDecision>();
         foreach (var decision in orderedDecisions)
         {
-            if (!supported.Contains(decision) || context.TransparentDecisions.Contains(decision.Id))
+            if (!renderable.Contains(decision) || context.TransparentDecisions.Contains(decision.Id))
             {
                 continue;
             }
@@ -1109,7 +1314,7 @@ public static class DocumentationPlanner
             }
             if (parent is not null
                 && decisionByArm.TryGetValue(parent.Value, out var parentDecision)
-                && supported.Contains(parentDecision))
+                && renderable.Contains(parentDecision))
             {
                 if (!context.ChildrenByArm.TryGetValue(parent.Value, out var children))
                 {
@@ -1141,11 +1346,12 @@ public static class DocumentationPlanner
 
         // Guarded-but-unplaceable messages: a message whose node has exact arm membership (the
         // topology proves it is guarded by at least one decision) but whose every owning decision is
-        // unsupported (for example an SC013 exception-region or loop guard) cannot be rendered inside
-        // a continuing arm. Emitting it as an unconditional top-level message before the guards would
-        // overclaim unconditional execution, so the planner fails closed: the message is withheld
-        // from the diagram and DP002 records the withholding. Messages with no arm membership are
-        // truly unscoped and keep the accepted flat behavior.
+        // non-renderable (for example an SC013 exception-region or loop guard, or a decision
+        // without exact predicate wording) cannot be rendered inside a continuing arm. Emitting it
+        // as an unconditional top-level message before the guards would overclaim unconditional
+        // execution, so the planner fails closed: the message is withheld from the diagram and DP002
+        // records the withholding. Messages with no arm membership are truly unscoped and keep the
+        // accepted flat behavior.
         var withheldRefs = new HashSet<DiagramPlanElementId>();
         foreach (var (node, reference) in orderedMessageRefs)
         {
@@ -1159,7 +1365,7 @@ public static class DocumentationPlanner
                 .Select(pair => decisionByArm[pair.Key].Id)
                 .ToHashSet();
             if (owningDecisions.Count == 0
-                || owningDecisions.Any(owner => supportedByContractIds.Contains(owner)))
+                || owningDecisions.Any(owner => renderableIds.Contains(owner)))
             {
                 continue;
             }
@@ -1387,9 +1593,10 @@ public static class DocumentationPlanner
             .Where(info => !info.Refs.IsEmpty)
             .ToArray();
         bool regionShapeUnsupported =
-            regionInfo.Any(info =>
-                info.Region.FrameworkCondition != FrameworkCallbackConditionKind.CacheMiss
-                && info.Region.Trigger != CallbackTriggerKind.Conditional)
+            // A source-condition callback region has no exact framework-condition wording and would
+            // otherwise render an Opt labeled with the generic "Condition" token; it is withheld
+            // instead (DP003) with the boundary retained in technical fallback.
+            regionInfo.Any(info => info.Region.FrameworkCondition != FrameworkCallbackConditionKind.CacheMiss)
             || regionInfo.Any(info => !info.WhollyTrue && !info.WhollyFalse)
             || regionInfo.Any(info => info.WhollyTrue && info.WhollyFalse)
             || regionInfo.GroupBy(info => info.WhollyTrue).Any(group => group.Count() > 1)
@@ -1516,21 +1723,25 @@ public static class DocumentationPlanner
     }
 
     /// <summary>
-    /// One Opt fragment for a callback region wholly inside one composition arm. The label is the
-    /// exact framework condition wording "On cache miss" for a
-    /// <see cref="FrameworkCallbackConditionKind.CacheMiss"/> region, or the existing technical
-    /// "Condition" label for a source-condition region; evidence and certainty come from the region
-    /// unchanged (never promoted). The Opt never materializes arms.
+    /// One Opt fragment for a callback region wholly inside one composition arm. Only a
+    /// <see cref="FrameworkCallbackConditionKind.CacheMiss"/> region reaches this path: a
+    /// source-condition region is withheld as an unsupported shape before fragment construction so
+    /// the generic "Condition" token is never rendered as useful behavior. Evidence and certainty
+    /// come from the region unchanged (never promoted). The Opt never materializes arms.
     /// </summary>
     private static DiagramFragment BuildCallbackOptFragment(
         ScenarioGraph graph,
         ScenarioCallbackRegion region,
         ImmutableArray<DiagramPlanElementId> refs)
     {
+        if (region.FrameworkCondition != FrameworkCallbackConditionKind.CacheMiss)
+        {
+            throw new InvalidOperationException(
+                "A source-condition callback region must be withheld before building an Opt fragment.");
+        }
+
         string key = "callback:" + region.Id.Value;
-        string label = region.FrameworkCondition == FrameworkCallbackConditionKind.CacheMiss
-            ? "On cache miss"
-            : "Condition";
+        const string label = "On cache miss";
         return new DiagramFragment(
             CreateElementId(graph, "fragment", key),
             key,
@@ -1835,7 +2046,7 @@ public static class DocumentationPlanner
 
     private static string FragmentLabel(ScenarioDecision decision, FragmentContext context)
         => decision.PredicateWording is null
-            ? "Condition"
+            ? "Otherwise"
             : decision.PredicateWording.Role == ScenarioPredicateWordingRole.Subordinate
                 ? PredicateWordingFormatter.FormatSubordinate()
                 : PredicateWordingFormatter.Format(decision.PredicateWording.Root);
@@ -1947,15 +2158,15 @@ public static class DocumentationPlanner
         {
             return TerminalArmLabel(graph, arm, context)
                 ?? PredicateArmLabel(decision, arm)
-                ?? "Condition";
+                ?? "Terminal path";
         }
 
         if (decision.PredicateWording?.Role == ScenarioPredicateWordingRole.Subordinate)
         {
-            return "Continue";
+            return "Otherwise";
         }
 
-        return PredicateArmLabel(decision, arm) ?? "Continue";
+        return PredicateArmLabel(decision, arm) ?? "Otherwise";
     }
 
     private static string? PredicateArmLabel(ScenarioDecision decision, ScenarioArm arm)
@@ -2567,11 +2778,14 @@ public static class DocumentationPlanner
     private static string ShortTypeName(string fullyQualifiedName)
         => ParseTypeDisplay(fullyQualifiedName).Name;
 
-    private static Dictionary<string, string> BuildMethodCallParticipantKeys(ScenarioGraph graph)
+    private static Dictionary<string, string> BuildMethodCallParticipantKeys(ScenarioGraph graph, ScenarioNode? actionNode)
     {
+        string? rootContainingType = actionNode?.Presentation?.ConfiguredContainingTypeName
+            ?? actionNode?.Presentation?.ControllerTypeName;
         var types = graph.Nodes
             .Where(node => node.Kind == ScenarioNodeKind.MethodCall
-                && !string.IsNullOrWhiteSpace(node.Presentation?.TargetContainingTypeName))
+                && !string.IsNullOrWhiteSpace(node.Presentation?.TargetContainingTypeName)
+                && !IsRecognizedLoggingType(node.Presentation?.TargetContainingTypeName))
             .Select(node => node.Presentation!.TargetContainingTypeName!)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(type => type, StringComparer.Ordinal)
@@ -2599,6 +2813,16 @@ public static class DocumentationPlanner
             }
         }
 
+        if (rootContainingType is { Length: > 0 } rootType && types.Contains(rootType, StringComparer.Ordinal))
+        {
+            // Exact same-type calls reuse the root participant instead of duplicating it: a
+            // configured root calling another method of its own type (or a controller action
+            // calling another method of the same controller) renders against the single "action"
+            // participant. The mapping is exact canonical type identity; participant creation and
+            // edge resolution skip this key defensively through TryGetValue fallbacks.
+            keys[rootType] = "action";
+        }
+
         return keys;
     }
 
@@ -2622,6 +2846,234 @@ public static class DocumentationPlanner
 
     private static string TypeKeySuffix(string canonicalTypeName)
         => Convert.ToHexString(Encoding.UTF8.GetBytes(canonicalTypeName)).ToLowerInvariant();
+
+    /// <summary>
+    /// Concise deterministic root participant label for a configured method: the namespace-free
+    /// containing type and the member name (for example "TransferEngine.SubmitAsync"). The full
+    /// signature stays in behavior text and evidence; the diagram label is scannable. Returns null
+    /// when the typed fields are absent so callers keep the previous signature or neutral fallback.
+    /// </summary>
+    private static string? ConfiguredActionDisplayName(ScenarioNodePresentation? presentation)
+    {
+        if (presentation is { ConfiguredContainingTypeName: { Length: > 0 } type, ConfiguredMethodName: { Length: > 0 } method })
+        {
+            return $"{ShortTypeName(type)}.{method}";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Exact canonical Microsoft.Extensions.Logging surface hidden from presentation by default.
+    /// Recognition is exact fully-qualified type identity plus the framework's exact member names,
+    /// never name matching, so an application type named e.g. "LoggerExtensions" is never filtered.
+    /// Filtered nodes, edges, and their evidence remain in the graph so the presentation filter is
+    /// auditable; only messages, phrases, and participants are withheld.
+    /// </summary>
+    private static readonly string[] RecognizedLoggingTypes =
+    [
+        "Microsoft.Extensions.Logging.ILogger",
+        "Microsoft.Extensions.Logging.LoggerExtensions",
+    ];
+
+    private static readonly HashSet<string> RecognizedLoggingMembers = new(StringComparer.Ordinal)
+    {
+        "Log", "LogTrace", "LogDebug", "LogInformation", "LogWarning", "LogError", "LogCritical",
+        "BeginScope", "IsEnabled",
+    };
+
+    private static bool IsRecognizedLoggingType(string? containingType)
+        => containingType is not null && RecognizedLoggingTypes.Contains(containingType);
+
+    private static bool IsRecognizedLoggingCall(ScenarioNode? node)
+        => node?.Kind == ScenarioNodeKind.MethodCall
+            && IsRecognizedLoggingType(node.Presentation?.TargetContainingTypeName)
+            && node.Presentation?.TargetMemberName is { Length: > 0 } member
+            && RecognizedLoggingMembers.Contains(member);
+
+    private static string? NodeContainingType(ScenarioNode node)
+        => node.Presentation?.TargetContainingTypeName
+            ?? node.Presentation?.ImplementationTypeName
+            ?? node.Presentation?.DbContextTypeName
+            ?? node.Presentation?.ConfiguredContainingTypeName
+            ?? node.Presentation?.ControllerTypeName
+            ?? node.Presentation?.HandlerTypeName;
+
+    private static bool CallMatches(ScenarioNode node, ImmutableSortedSet<string> patterns)
+    {
+        if (node.Presentation?.TargetContainingTypeName is not { Length: > 0 } type
+            || node.Presentation.TargetMemberName is not { Length: > 0 } member)
+        {
+            return false;
+        }
+
+        return patterns.Contains($"{type}.{member}") || patterns.Contains($"{type}.*");
+    }
+
+    private static void ValidateStructuralExclusions(
+        ScenarioGraph graph,
+        ImmutableSortedSet<string>? excludeParticipants)
+    {
+        if (excludeParticipants is null || excludeParticipants.Count == 0)
+        {
+            return;
+        }
+
+        var structuralTypes = graph.Nodes
+            .Where(node => node.Kind == ScenarioNodeKind.Action)
+            .Select(node => node.Presentation)
+            .Where(presentation => presentation is not null)
+            .SelectMany(presentation => new[]
+            {
+                presentation!.ConfiguredContainingTypeName,
+                presentation.ControllerTypeName,
+            })
+            .Where(type => !string.IsNullOrWhiteSpace(type))
+            .ToHashSet(StringComparer.Ordinal);
+        string? invalid = excludeParticipants.FirstOrDefault(structuralTypes.Contains);
+        if (invalid is not null)
+        {
+            throw new ArgumentException(
+                $"Participant exclusion '{invalid}' matches the structural root participant type and cannot be applied.",
+                nameof(excludeParticipants));
+        }
+    }
+
+    /// <summary>
+    /// Exact renderable predicate wording for a decision: the predicate must carry Owner role and
+    /// its normalized expression must contain no opaque value, so the formatted label is never the
+    /// generic "Condition" token. Decisions without such wording are withheld from the diagram
+    /// (their guarded messages are withheld and the boundary is retained in technical fallback)
+    /// rather than presented with a meaningless label.
+    /// </summary>
+    private static bool TryGetExactPredicateLabel(ScenarioDecision decision, out string label)
+    {
+        if (decision.PredicateWording is { Role: ScenarioPredicateWordingRole.Owner } wording
+            && !PredicateExpressionContainsOpaqueValue(wording.Root))
+        {
+            label = PredicateWordingFormatter.Format(wording.Root);
+            return true;
+        }
+
+        label = string.Empty;
+        return false;
+    }
+
+    private static bool PredicateExpressionContainsOpaqueValue(PredicateExpression expression)
+        => expression.Kind == PredicateExpressionKind.OpaqueValue
+            || expression.Children.Any(PredicateExpressionContainsOpaqueValue);
+
+    /// <summary>True when a decision guards at least one member node that produces a diagram message.</summary>
+    private static bool DecisionHasVisibleMember(ScenarioGraph graph, ScenarioDecision decision, PresentationFilter filter)
+    {
+        var armIds = graph.Topology.Arms
+            .Where(arm => arm.Decision == decision.Id)
+            .Select(arm => arm.Id)
+            .ToHashSet();
+        return graph.Topology.Memberships
+            .Where(membership => armIds.Contains(membership.Arm))
+            .Select(membership => membership.ScenarioNode)
+            .Any(nodeId => graph.Nodes.Any(node => node.Id == nodeId
+                && !filter.HiddenNodes.Contains(node.Id)
+                && ProducesDiagramMessage(node)));
+    }
+
+    private static bool RegionHasVisibleMember(ScenarioGraph graph, ScenarioCallbackRegion region, PresentationFilter filter)
+        => graph.Nodes.Any(node => region.MemberNodes.Contains(node.Id)
+            && !filter.HiddenNodes.Contains(node.Id)
+            && ProducesDiagramMessage(node));
+
+    /// <summary>
+    /// Node kinds that produce a diagram message or reference in the ordered sequence. State
+    /// assignments and source observations order wording only and never produce diagram messages.
+    /// </summary>
+    private static bool ProducesDiagramMessage(ScenarioNode node) => node.Kind switch
+    {
+        ScenarioNodeKind.MethodCall => !IsRecognizedLoggingCall(node),
+        ScenarioNodeKind.ServiceCall or ScenarioNodeKind.Dispatch or ScenarioNodeKind.Handler
+            or ScenarioNodeKind.EntityQuery or ScenarioNodeKind.EntityMutation
+            or ScenarioNodeKind.Result or ScenarioNodeKind.Outcome => true,
+        _ => false,
+    };
+
+    private static bool IsFilteredInteractionNode(ScenarioNode node)
+        => ProducesDiagramMessage(node) || IsRecognizedLoggingCall(node);
+
+    /// <summary>
+    /// Conservative presentation copy of an evidence reference: the same stable identity and fact,
+    /// presented with conservative certainty so a withheld-boundary fallback phrase never claims
+    /// more support than the planner's conservative withholding.
+    /// </summary>
+    private static EvidenceRef ConservativeCopy(EvidenceRef evidence)
+        => new(
+            evidence.Id,
+            evidence.Kind,
+            evidence.Artifact,
+            evidence.Range,
+            evidence.Symbol,
+            evidence.Detail,
+            CertaintyLevel.Conservative,
+            evidence.UnderlyingEvidence,
+            evidence.ProducerId,
+            evidence.ProducerVersion);
+
+    /// <summary>
+    /// True when a subordinate decision belongs to a valid exact owner group and is therefore
+    /// presented by the owner rather than withheld: exactly one owner shares the predicate id with
+    /// exact wording, no subordinate arm terminates, and every member node of the subordinate is
+    /// contained in the owner's arm member sets. This mirrors the fragment builder's predicate-group
+    /// absorption contract for the wording fallback filter so absorbed subordinates never receive a
+    /// spurious withheld-boundary phrase.
+    /// </summary>
+    private static bool IsAbsorbedSubordinate(ScenarioGraph graph, ScenarioDecision subordinate)
+    {
+        if (subordinate.PredicateWording?.Role != ScenarioPredicateWordingRole.Subordinate)
+        {
+            return false;
+        }
+
+        var predicateId = subordinate.PredicateWording.PredicateId;
+        var owners = graph.Topology.Decisions
+            .Where(candidate => candidate.PredicateWording is { Role: ScenarioPredicateWordingRole.Owner }
+                && candidate.PredicateWording.PredicateId == predicateId
+                && TryGetExactPredicateLabel(candidate, out _))
+            .ToArray();
+        if (owners.Length != 1)
+        {
+            return false;
+        }
+
+        var owner = owners[0];
+        var ownerArmIds = graph.Topology.Arms
+            .Where(arm => arm.Decision == owner.Id)
+            .Select(arm => arm.Id)
+            .ToHashSet();
+        var ownerMembers = graph.Topology.Memberships
+            .Where(membership => ownerArmIds.Contains(membership.Arm))
+            .Select(membership => membership.ScenarioNode)
+            .ToHashSet();
+        if (ownerMembers.Count == 0)
+        {
+            return false;
+        }
+
+        var subordinateArmIds = graph.Topology.Arms
+            .Where(arm => arm.Decision == subordinate.Id)
+            .Select(arm => arm.Id)
+            .ToHashSet();
+        if (graph.Topology.Terminals.Any(terminal =>
+                subordinateArmIds.Contains(terminal.Arm)
+                && terminal.Kind == ScenarioTerminalKind.Terminates))
+        {
+            return false;
+        }
+
+        var subordinateMembers = graph.Topology.Memberships
+            .Where(membership => subordinateArmIds.Contains(membership.Arm))
+            .Select(membership => membership.ScenarioNode)
+            .ToHashSet();
+        return subordinateMembers.Count > 0 && subordinateMembers.IsSubsetOf(ownerMembers);
+    }
 
     /// <summary>Structurally derived display parts of a canonical compiler type name.</summary>
     private sealed record TypeDisplay(string[] Namespace, string Name);
@@ -2825,6 +3277,54 @@ public static class DocumentationPlanner
     /// <summary>Exact called member concise name proven by the service-call node presentation; null when the graph proves none.</summary>
     private static string? ServiceCalledMemberLabel(ScenarioGraph graph, ScenarioEdge edge)
         => graph.Nodes.FirstOrDefault(node => node.Id == edge.Target)?.Presentation?.CalledMemberName;
+
+    /// <summary>
+    /// Builds the full call message label: the concise member name plus the compiler-proven
+    /// argument summary when available. Strings are quoted; other constant values are bare.
+    /// Falls back to the bare member name when no argument label is proven.
+    /// </summary>
+    private static string CallMessageLabel(ScenarioNode? targetNode, string fallback)
+    {
+        var memberName = targetNode?.Kind == ScenarioNodeKind.MethodCall
+            ? targetNode.Presentation?.TargetMemberName
+            : targetNode?.Presentation?.CalledMemberName;
+        var label = memberName ?? fallback;
+        var argumentLabel = targetNode?.Presentation?.ArgumentLabel;
+        if (argumentLabel is not null)
+        {
+            return $"{label}({argumentLabel})";
+        }
+        return label;
+    }
+
+    /// <summary>
+    /// Checks whether a call should be excluded based on configurable exclude patterns.
+    /// Patterns are "Type.Method" or "Type.*" where * matches any method on that type.
+    /// Matching is case-sensitive on the full containing type name and member name.
+    /// </summary>
+    private static bool IsExcludedByPattern(ScenarioNode? targetNode, string fallbackLabel, ImmutableSortedSet<string> excludePatterns)
+    {
+        if (excludePatterns.Count == 0)
+        {
+            return false;
+        }
+
+        string typeName = targetNode?.Presentation?.TargetContainingTypeName
+            ?? targetNode?.Presentation?.CalledMemberName
+            ?? string.Empty;
+        string methodName = targetNode?.Presentation?.TargetMemberName
+            ?? fallbackLabel;
+
+        if (string.IsNullOrEmpty(typeName))
+        {
+            return false;
+        }
+
+        string fullKey = $"{typeName}.{methodName}";
+        string typeAny = $"{typeName}.*";
+
+        return excludePatterns.Contains(fullKey) || excludePatterns.Contains(typeAny);
+    }
 
     private static string MessageKey(ScenarioEdge edge) => $"message:{edge.Id.Value}";
 
@@ -3131,7 +3631,8 @@ public static class DocumentationPlanner
         {
             builder.Append("participant ").Append(participant.Id.Value).Append(" key=").Append(participant.Key)
                 .Append(" kind=").Append(participant.Kind.ToString()).Append(" certainty=").Append(participant.Certainty)
-                .Append(" label=").Append(participant.Label).Append('\n');
+                .Append(" label=").Append(participant.Label)
+                .Append(" canonical=").Append(CanonicalParticipantDebugIdentity(participant)).Append('\n');
         }
 
         foreach (var message in messages)
@@ -3163,6 +3664,12 @@ public static class DocumentationPlanner
 
         return builder.ToString().TrimEnd('\n');
     }
+
+    private static string CanonicalParticipantDebugIdentity(DiagramParticipant participant)
+        => participant.Evidence
+            .Select(evidence => evidence.Symbol)
+            .FirstOrDefault(symbol => !string.IsNullOrWhiteSpace(symbol))
+            ?? participant.Evidence[0].Id.Value;
 
     /// <summary>
     /// Emits one <c>element</c> line per ordered sequence element with its exact zero-based position

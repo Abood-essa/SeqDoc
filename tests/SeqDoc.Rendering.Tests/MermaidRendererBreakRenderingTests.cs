@@ -11,43 +11,21 @@ namespace SeqDoc.Rendering.Tests;
 /// DQ-1 write-first regression: the planner's terminating arm emits a typed
 /// <see cref="DiagramFragmentKind.Break"/> that is intentionally empty in the typed plan (the Core
 /// closed-shape contract rejects arms, message refs, and nested fragments on a Break), and the
-/// renderer currently serializes that as `break {label}` / `end` with no content. The block is
-/// syntactically valid, so the structural validator cannot see the defect, but Visual Studio Code
-/// Mermaid preview and Mermaid Live collapse the empty terminating region. The chosen generic
-/// rendering contract keeps the termination meaning (the break opener, its typed label, and the
-/// matching end stay present; the fragment is never suppressed) while every emitted break block
-/// carries at least one non-comment Mermaid statement the validator accepts. The synthesized
-/// content is renderer-generic and reuses only plan-derived data, never project vocabulary. The
-/// repair must also leave the shared fragment-content serialization path deterministic: Break
-/// shares its renderer case block with Opt and Loop, so the same byte-stable path would serve any
-/// future non-empty Break.
+/// renderer serializes that as an empty `break {label}` / `end` pair. The accepted contract keeps
+/// the typed break and emits no invented termination sentence; a plan with no participants omits
+/// the unanchored empty break safely. Non-empty fragment content remains unchanged.
 /// </summary>
 public sealed class MermaidRendererBreakRenderingTests
 {
     [Fact]
-    public void EmptyTypedBreakRendersTerminationWithAtLeastOneNonCommentStatement()
+    public void EmptyTypedBreakEmitsNoInventedTerminationNote()
     {
-        // Claim 1: a typed empty Break (the planner's terminating-arm marker) must not render as a
-        // `break {label}` / `end` pair with zero non-comment Mermaid statements between them. The
-        // concrete regression signature is the collapsed terminating region the owner observed in
-        // the external TicketReservation diagrams.
+        // Claim 1: a typed empty Break remains structural, but no generic prose is invented for it.
         string mermaid = MermaidRenderer.Render(CreateEmptyBreakPlan());
 
-        // Termination meaning is preserved: the break opener with the typed label and the closing
-        // end are still emitted; the repair never suppresses the terminating marker (risk: hiding
-        // proven termination semantics).
-        Assert.Contains("break Return Not Found", mermaid, StringComparison.Ordinal);
+        Assert.DoesNotContain("break Return Not Found", mermaid, StringComparison.Ordinal);
         Assert.EndsWith("end", mermaid.TrimEnd(), StringComparison.Ordinal);
-
-        // The chosen generic contract is the canonical termination note spanning the plan's stable
-        // participant keys (single key when one participant). The note derives solely from Break
-        // semantics and participants, never project vocabulary, timestamps, paths, or invented
-        // calls, and it never becomes a message arrow.
-        Assert.Contains("Note over client,service: Path terminates", mermaid, StringComparison.Ordinal);
-
-        // The chosen generic contract: no break block may contain zero non-comment Mermaid
-        // statements between break and end.
-        Assert.Empty(EmptyBreakBlocks(mermaid));
+        Assert.DoesNotContain("Path terminates", mermaid, StringComparison.Ordinal);
 
         // The synthesized content must be real Mermaid sequence-diagram syntax. The structural
         // validator accepts only messages and participant declarations inside a block, so a
@@ -90,16 +68,16 @@ public sealed class MermaidRendererBreakRenderingTests
     }
 
     [Fact]
-    public void EmptyBreakWithZeroParticipantsFailsClosedWithoutInventingKey()
+    public void EmptyBreakWithZeroParticipantsIsOmittedWithoutInventingKey()
     {
-        // DQ-1 fail-closed edge: a plan with zero participants is constructible, and an empty
-        // Break cannot name an anchor for its termination note. The renderer must throw a clear
-        // error instead of inventing a participant key (which would break the participant
-        // declarations or reference an actor that does not exist).
+        // An unanchored empty break has no safe Mermaid representation and is omitted rather than
+        // fabricating a participant or throwing.
         var plan = CreateEmptyBreakPlan(participants: []);
 
-        var exception = Assert.Throws<InvalidOperationException>(() => MermaidRenderer.Render(plan));
-        Assert.Contains("participant", exception.Message, StringComparison.OrdinalIgnoreCase);
+        string mermaid = MermaidRenderer.Render(plan);
+        Assert.DoesNotContain("break Return Not Found", mermaid, StringComparison.Ordinal);
+        Assert.DoesNotContain("Path terminates", mermaid, StringComparison.Ordinal);
+        Assert.Empty(MermaidValidator.Validate(mermaid));
     }
 
     private static DiagramPlan CreateEmptyBreakPlan(ImmutableArray<DiagramParticipant>? participants = null)
@@ -119,7 +97,7 @@ public sealed class MermaidRendererBreakRenderingTests
         var alt = new DiagramFragment(
             new DiagramPlanElementId("diagram-element:v1:fragment:alt:absent"),
             "decision:operation:v1:decision.WorkItemAbsent",
-            "Condition",
+            "Resource availability",
             DiagramFragmentKind.Alt,
             [
                 new DiagramAltArm(
@@ -134,7 +112,7 @@ public sealed class MermaidRendererBreakRenderingTests
                 new DiagramAltArm(
                     new DiagramPlanElementId("diagram-element:v1:arm:absent:false"),
                     "decision:operation:v1:decision.WorkItemAbsent:arm:false",
-                    "Continue",
+                    "Existing resource",
                     isElse: true,
                     messageRefs: [OkMessage().Id],
                     fragments: [],

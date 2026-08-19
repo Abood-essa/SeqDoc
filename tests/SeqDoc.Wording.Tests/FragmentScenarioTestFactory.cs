@@ -1231,7 +1231,8 @@ internal static class FragmentScenarioTestFactory
     /// </summary>
     internal static ScenarioGraph CreateCompositionEmptyTopologyGraph(
         bool reverseConstruction = false,
-        bool unsupported = false)
+        bool unsupported = false,
+        bool sourceConditionRegion = false)
     {
         var entryPointId = new EntryPointId("entry-point:v1:GET-api-Customers");
         var entry = Node(
@@ -1334,6 +1335,24 @@ internal static class FragmentScenarioTestFactory
             CertaintyLevel.Exact,
             FrameworkCallbackConditionKind.CacheMiss);
 
+        // A source-condition callback region (a generic conditional callback boundary without a
+        // framework cache-miss contract) replaces the cache-miss region for the low-signal
+        // presentation partition: it must never render an Opt labeled with the generic "Condition"
+        // token.
+        var region = sourceConditionRegion
+            ? new ScenarioCallbackRegion(
+                new ScenarioCallbackRegionId("scenario-callback-region:v1:source-condition"),
+                new CallbackBoundaryId("callback-boundary:v1:source:conditional"),
+                CallbackCardinality.ZeroOrOne,
+                CallbackTriggerKind.Conditional,
+                triggerCondition: new OperationId("operation:v1:condition:source"),
+                CallbackCompletionKind.RejoinsCaller,
+                [query.Id],
+                [ScenarioGraphTestFactory.SourceEvidence("callback-region")],
+                CertaintyLevel.Exact,
+                frameworkCondition: null)
+            : cacheMissRegion;
+
         // The unsupported shape records the exact SC014 diagnostic the Scenario Graph emits after
         // callback processing; the planner maps it to a Conservative technical fallback phrase and
         // (because no EntityQuery node survives) grounds it in the entry-point evidence.
@@ -1358,7 +1377,7 @@ internal static class FragmentScenarioTestFactory
             "scenario-graph:v1:composition-empty-topology",
             ScenarioTopology.Empty,
             composition,
-            unsupported ? [] : [cacheMissRegion]);
+            unsupported ? [] : [region]);
     }
 
     /// <summary>
@@ -1514,6 +1533,55 @@ internal static class FragmentScenarioTestFactory
             CertaintyLevel.Exact,
             sequenceOrdinal: 0,
             factoryKind is null ? null : new ScenarioNodePresentation(ResultFactoryKind: factoryKind));
+
+    /// <summary>
+    /// Presentation-contract test helper: replaces every decision's wording with an exact Owner
+    /// predicate (a distinct predicate id and the canonical "reservation is null" expression) so
+    /// structure-focused fragment tests exercise the renderable path under the exact-wording
+    /// contract instead of the withholding path. Graphs without exact wording are withheld by the
+    /// planner, which is itself covered by dedicated withholding tests.
+    /// </summary>
+    internal static ScenarioGraph WithExactOwnerWording(ScenarioGraph graph)
+    {
+        var decisions = graph.Topology.Decisions
+            .Select((decision, index) => new ScenarioDecision(
+                decision.Id,
+                decision.Method,
+                decision.ControllingFlowNode,
+                decision.Condition,
+                decision.Evidence,
+                decision.Certainty,
+                new ScenarioPredicateWording(
+                    new SemanticFactId($"semantic-fact:v1:predicate:wording:{index}"),
+                    PredicateWordingTestFactory.Create("null/member"),
+                    ScenarioPredicateWordingRole.Owner,
+                    [ScenarioGraphTestFactory.SourceEvidence("predicate")],
+                    CertaintyLevel.Exact)))
+            .ToImmutableArray();
+        var topology = new ScenarioTopology(
+            decisions,
+            graph.Topology.Arms,
+            graph.Topology.Memberships,
+            graph.Topology.Terminals);
+        return new ScenarioGraph(
+            graph.EntryPoint,
+            graph.Profile,
+            graph.RootMethod,
+            graph.HttpMethod,
+            graph.CanonicalRoute,
+            graph.OperationKey,
+            graph.Nodes,
+            graph.Edges,
+            graph.Diagnostics,
+            graph.DebugProjection,
+            topology,
+            graph.Composition,
+            graph.CallbackRegions,
+            graph.HandlerTopology,
+            graph.DispatchHandlerExpansion,
+            graph.RootKind,
+            graph.DirectCallExpansion);
+    }
 
     private static ScenarioGraph CreateGraph(
         string debugProjection,

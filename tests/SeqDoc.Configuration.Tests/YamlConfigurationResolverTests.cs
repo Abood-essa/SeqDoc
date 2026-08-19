@@ -259,6 +259,97 @@ public sealed class YamlConfigurationResolverTests
     }
 
     [Fact]
+    public async Task SelectionExcludeRemainsInertAndDocumentationExclusionsCarryProvenance()
+    {
+        const string yaml = """
+            schemaVersion: 1
+            selection:
+              roots:
+                - method:v1:Alpha.Run()
+              exclude: ["flow:selection-only"]
+            documentation:
+              excludeParticipants: ["MyApp.Logger"]
+              excludeCalls: ["MyApp.Logger.LogError"]
+            """;
+
+        var result = await ResolveYamlAsync(yaml);
+
+        var value = Assert.IsType<ResolvedPassAConfiguration>(result.Value);
+        Assert.Equal(["MyApp.Logger"], value.ExcludeParticipants!.Value);
+        Assert.Equal(["MyApp.Logger.LogError"], value.ExcludeCalls!.Value);
+        Assert.Equal(ConfigurationProvenance.ConfigurationFile, value.ExcludeParticipants.Provenance);
+        Assert.Equal(ConfigurationProvenance.ConfigurationFile, value.ExcludeCalls.Provenance);
+        Assert.True(value.RootsSpecified);
+    }
+
+    [Fact]
+    public async Task PresentationIntegrityDocumentationExclusionsAreDedicatedAndDoNotChangeFlowSelection()
+    {
+        const string yaml = """
+            schemaVersion: 1
+            documentation:
+              excludeParticipants: ["Payments.AuditWriter"]
+              excludeCalls: ["Payments.TransferGateway.SendAsync"]
+            selection:
+              exclude: ["flow:keep-this-selection-contract"]
+            """;
+
+        var result = await ResolveYamlAsync(yaml);
+
+        var value = Assert.IsType<ResolvedPassAConfiguration>(result.Value);
+        Assert.Equal(["Payments.AuditWriter"], value.ExcludeParticipants!.Value);
+        Assert.Equal(["Payments.TransferGateway.SendAsync"], value.ExcludeCalls!.Value);
+    }
+
+    [Fact]
+    public async Task PresentationIntegrityRejectsStructuralRootParticipantExclusion()
+    {
+        const string yaml = """
+            schemaVersion: 1
+            selection:
+              roots: ["method:v1:Payments.TransferEngine.SubmitAsync()"]
+            documentation:
+              excludeParticipants: ["action"]
+            """;
+
+        var result = await ResolveYamlAsync(yaml);
+
+        var diagnostic = AssertConfigurationFailure(result, "SD3003");
+        Assert.Contains("excludeParticipants", diagnostic.TechnicalCause, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("A..B")]
+    [InlineData(".A.B")]
+    [InlineData("A.B.")]
+    [InlineData("A. B")]
+    public async Task MalformedParticipantExclusionSegmentsAreRejected(string value)
+    {
+        var result = await ResolveYamlAsync($"schemaVersion: 1\ndocumentation:\n  excludeParticipants: [\"{value}\"]\n");
+        AssertConfigurationFailure(result, "SD3003");
+    }
+
+    [Theory]
+    [InlineData("A..B.Call")]
+    [InlineData("A.B.*.Call")]
+    [InlineData("A.B.*Call")]
+    [InlineData("A.B.")]
+    public async Task MalformedExactAndWildcardCallExclusionPatternsAreRejected(string value)
+    {
+        var result = await ResolveYamlAsync($"schemaVersion: 1\ndocumentation:\n  excludeCalls: [\"{value}\"]\n");
+        AssertConfigurationFailure(result, "SD3003");
+    }
+
+    [Fact]
+    public async Task CommandLineExclusionOverridesUseTheSameCanonicalPatternValidation()
+    {
+        var result = await ResolveAsync(new ConfigurationResolutionRequest(
+            CommandLineOverrides: new PassAConfigurationOverrides(
+                ExcludeParticipants: ImmutableSortedSet.Create(StringComparer.Ordinal, "A..B"))));
+        AssertConfigurationFailure(result, "SD3014");
+    }
+
+    [Fact]
     public async Task SelectionRootsAreCanonicalSortedAndRetainConfigurationFileProvenance()
     {
         const string yaml = """

@@ -45,8 +45,8 @@ public sealed class DiagramFragmentRenderingTests
 {
     private const string LoopMermaid =
         "sequenceDiagram\n" +
-        "    participant client as \"Client\"\n" +
-        "    participant service as \"GadgetService\"\n" +
+        "    participant client as Client\n" +
+        "    participant service as GadgetService\n" +
         "    client->>service: GET api/Test\n" +
         "    loop Retry\n" +
         "      service-->>client: Ok -> HTTP 200\n" +
@@ -54,8 +54,8 @@ public sealed class DiagramFragmentRenderingTests
 
     private const string InterleavedChronologyMermaid =
         "sequenceDiagram\n" +
-        "    participant client as \"Client\"\n" +
-        "    participant service as \"GadgetService\"\n" +
+        "    participant client as Client\n" +
+        "    participant service as GadgetService\n" +
         "    client->>service: GET api/Test\n" +
         "    opt Guard\n" +
         "      service-->>client: Inside -> HTTP 200\n" +
@@ -64,26 +64,18 @@ public sealed class DiagramFragmentRenderingTests
 
     private const string NestedAltMermaid =
         "sequenceDiagram\n" +
-        "    participant client as \"Client\"\n" +
-        "    participant service as \"GadgetService\"\n" +
-        "    alt Condition\n" +
-        "      break Condition\n" +
-        "        Note over client,service: Path terminates\n" +
-        "      end\n" +
-        "    else Continue\n" +
-        "      alt Condition\n" +
-        "        break Condition\n" +
-        "          Note over client,service: Path terminates\n" +
-        "        end\n" +
-        "      else Continue\n" +
+        "    participant client as Client\n" +
+        "    participant service as GadgetService\n" +
+         "    opt Other\n" +
+         "      opt Other\n" +
         "        service-->>client: Ok -> HTTP 200\n" +
         "      end\n" +
         "    end";
 
     private const string LegacyFlatMermaid =
         "sequenceDiagram\n" +
-        "    participant client as \"Client\"\n" +
-        "    participant service as \"GadgetService\"\n" +
+        "    participant client as Client\n" +
+        "    participant service as GadgetService\n" +
         "    client->>service: GET api/Test\n" +
         "    alt success path\n" +
         "        service-->>client: Ok -> HTTP 200\n" +
@@ -299,6 +291,142 @@ public sealed class DiagramFragmentRenderingTests
         });
     }
 
+    [Fact]
+    public void RecursivelyEmptyBreakAltAndOptFragmentsAreOmitted()
+    {
+        string mermaid = MermaidRenderer.Render(CreateRecursivelyEmptyFragmentPlan());
+
+        Assert.Equal(
+            "sequenceDiagram\n" +
+            "    participant client as Client\n" +
+            "    participant service as GadgetService\n" +
+             "    opt Existing resource\n" +
+            "      service-->>client: Ok -> HTTP 200\n" +
+            "    end",
+            mermaid);
+        Assert.DoesNotContain("break ", mermaid, StringComparison.Ordinal);
+        Assert.Contains("opt Existing resource", mermaid, StringComparison.Ordinal);
+        Assert.DoesNotContain("\n    alt Return Not Found", mermaid, StringComparison.Ordinal);
+        Assert.Empty(MermaidValidator.Validate(mermaid));
+    }
+
+    [Fact]
+    public void MixedAltRetainsOnlyNonEmptyArmsAndChildrenInPlanOrder()
+    {
+        string mermaid = MermaidRenderer.Render(CreateMixedFragmentPlan());
+
+        Assert.Equal(
+            "sequenceDiagram\n" +
+            "    participant client as Client\n" +
+            "    participant service as GadgetService\n" +
+            "    alt Guarded lookup\n" +
+            "    else Cache hit\n" +
+            "      opt Cache hit\n" +
+            "        service-->>client: Inside -> HTTP 200\n" +
+            "      end\n" +
+            "    else Existing resource\n" +
+            "      service-->>client: Ok -> HTTP 200\n" +
+            "    end",
+            mermaid);
+        Assert.Empty(MermaidValidator.Validate(mermaid));
+    }
+
+    [Fact]
+    public void SoleSurvivingElseArmBecomesOptWithItsExactLabelAndContent()
+    {
+        string mermaid = MermaidRenderer.Render(CreateSoleSurvivingElseArmPlan());
+
+        Assert.Equal(
+            "sequenceDiagram\n" +
+            "    participant client as Client\n" +
+            "    participant service as GadgetService\n" +
+            "    opt Existing resource\n" +
+            "      service-->>client: Ok -> HTTP 200\n" +
+            "    end",
+            mermaid);
+        Assert.DoesNotContain("alt ", mermaid, StringComparison.Ordinal);
+        Assert.DoesNotContain("else ", mermaid, StringComparison.Ordinal);
+        Assert.Empty(MermaidValidator.Validate(mermaid));
+    }
+
+    private static DiagramPlan CreateSoleSurvivingElseArmPlan()
+    {
+        ImmutableArray<EvidenceRef> evidence = [PlanTestFactory.SourceEvidence("fragment")];
+        var root = new DiagramFragment(
+            new DiagramPlanElementId("diagram-element:v1:fragment:alt:sole"), "alt:sole", "Unused condition",
+            DiagramFragmentKind.Alt,
+            [
+                new DiagramAltArm(new DiagramPlanElementId("diagram-element:v1:arm:empty"), "alt:sole:empty", "Filtered",
+                    false, [], [Break("diagram-element:v1:fragment:break:sole", "break:sole")], evidence, CertaintyLevel.Exact),
+                new DiagramAltArm(new DiagramPlanElementId("diagram-element:v1:arm:surviving"), "alt:sole:surviving", "Existing resource",
+                    true, [OkMessage().Id], [], evidence, CertaintyLevel.Exact),
+            ], [], [], evidence, CertaintyLevel.Exact);
+
+        return new DiagramPlan(PlanTestFactory.EntryPoint, PlanTestFactory.Profile, "GET api/Test", Participants(),
+            [OkMessage()], [], "diagram-plan:v1:fragment-sole-arm", new DiagramSequence([], [root]), []);
+    }
+
+    private static DiagramPlan CreateRecursivelyEmptyFragmentPlan()
+    {
+        ImmutableArray<EvidenceRef> evidence = [PlanTestFactory.SourceEvidence("fragment")];
+        var emptyBreak = Break("diagram-element:v1:fragment:break:empty", "break:empty");
+        var emptyOpt = new DiagramFragment(
+            new DiagramPlanElementId("diagram-element:v1:fragment:opt:empty"), "opt:empty", "Return Not Found",
+            DiagramFragmentKind.Opt, [], [], [emptyBreak], evidence, CertaintyLevel.Exact);
+        var emptyAlt = new DiagramFragment(
+            new DiagramPlanElementId("diagram-element:v1:fragment:alt:empty"), "alt:empty", "Return Not Found",
+            DiagramFragmentKind.Alt,
+            [
+                new DiagramAltArm(
+                    new DiagramPlanElementId("diagram-element:v1:arm:empty-true"), "alt:empty:true", "Return Not Found",
+                    false, [], [emptyOpt], evidence, CertaintyLevel.Exact),
+                new DiagramAltArm(
+                    new DiagramPlanElementId("diagram-element:v1:arm:empty-false"), "alt:empty:false", "Existing resource",
+                    true, [], [emptyOpt], evidence, CertaintyLevel.Exact),
+            ],
+            [], [], evidence, CertaintyLevel.Exact);
+        var root = new DiagramFragment(
+            new DiagramPlanElementId("diagram-element:v1:fragment:alt:root"), "alt:root", "Existing resource",
+            DiagramFragmentKind.Alt,
+            [
+                new DiagramAltArm(
+                    new DiagramPlanElementId("diagram-element:v1:arm:empty-root"), "alt:root:empty", "Return Not Found",
+                    false, [], [emptyAlt], evidence, CertaintyLevel.Exact),
+                new DiagramAltArm(
+                    new DiagramPlanElementId("diagram-element:v1:arm:existing"), "alt:root:existing", "Existing resource",
+                    true, [OkMessage().Id], [], evidence, CertaintyLevel.Exact),
+            ], [], [], evidence, CertaintyLevel.Exact);
+
+        return new DiagramPlan(PlanTestFactory.EntryPoint, PlanTestFactory.Profile, "GET api/Test", Participants(),
+            [OkMessage()], [], "diagram-plan:v1:fragment-empty-recursive", new DiagramSequence([], [root]), []);
+    }
+
+    private static DiagramPlan CreateMixedFragmentPlan()
+    {
+        ImmutableArray<EvidenceRef> evidence = [PlanTestFactory.SourceEvidence("fragment")];
+        var emptyOpt = new DiagramFragment(
+            new DiagramPlanElementId("diagram-element:v1:fragment:opt:empty"), "opt:empty", "Empty",
+            DiagramFragmentKind.Opt, [], [], [Break("diagram-element:v1:fragment:break:empty-mixed", "break:empty")], evidence,
+            CertaintyLevel.Exact);
+        var cacheHit = new DiagramFragment(
+            new DiagramPlanElementId("diagram-element:v1:fragment:opt:cache"), "opt:cache", "Cache hit",
+            DiagramFragmentKind.Opt, [], [InsideMessage().Id], [], evidence, CertaintyLevel.Exact);
+        var root = new DiagramFragment(
+            new DiagramPlanElementId("diagram-element:v1:fragment:alt:mixed"), "alt:mixed", "Guarded lookup",
+            DiagramFragmentKind.Alt,
+            [
+                new DiagramAltArm(new DiagramPlanElementId("diagram-element:v1:arm:empty"), "alt:mixed:empty", "Empty",
+                    false, [], [emptyOpt], evidence, CertaintyLevel.Exact),
+                new DiagramAltArm(new DiagramPlanElementId("diagram-element:v1:arm:cache"), "alt:mixed:cache", "Cache hit",
+                    true, [], [cacheHit], evidence, CertaintyLevel.Exact),
+                new DiagramAltArm(new DiagramPlanElementId("diagram-element:v1:arm:existing"), "alt:mixed:existing", "Existing resource",
+                    true, [OkMessage().Id], [], evidence, CertaintyLevel.Exact),
+            ], [], [], evidence, CertaintyLevel.Exact);
+
+        return new DiagramPlan(PlanTestFactory.EntryPoint, PlanTestFactory.Profile, "GET api/Test", Participants(),
+            [InsideMessage(), OkMessage()], [], "diagram-plan:v1:fragment-mixed", new DiagramSequence([], [root]), []);
+    }
+
     private static DiagramPlan CreateLoopPlan(string label = "Retry")
     {
         var fragmentEvidence = PlanTestFactory.SourceEvidence("fragment");
@@ -431,13 +559,13 @@ public sealed class DiagramFragmentRenderingTests
         var locked = new DiagramFragment(
             new DiagramPlanElementId("diagram-element:v1:fragment:alt:locked"),
             "decision:operation:v1:decision.WorkItemLocked",
-            "Condition",
+            "Retry",
             DiagramFragmentKind.Alt,
             [
                 new DiagramAltArm(
                     new DiagramPlanElementId("diagram-element:v1:arm:locked:true"),
                     "decision:operation:v1:decision.WorkItemLocked:arm:true",
-                    "Condition",
+                    "Stop",
                     isElse: false,
                     messageRefs: [],
                     fragments: [breakLocked],
@@ -446,7 +574,7 @@ public sealed class DiagramFragmentRenderingTests
                 new DiagramAltArm(
                     new DiagramPlanElementId("diagram-element:v1:arm:locked:false"),
                     "decision:operation:v1:decision.WorkItemLocked:arm:false",
-                    "Continue",
+                    "Other",
                     isElse: true,
                     messageRefs: [OkMessage().Id],
                     fragments: [],
@@ -461,13 +589,13 @@ public sealed class DiagramFragmentRenderingTests
         var absent = new DiagramFragment(
             new DiagramPlanElementId("diagram-element:v1:fragment:alt:absent"),
             "decision:operation:v1:decision.WorkItemAbsent",
-            "Condition",
+            "Decision",
             DiagramFragmentKind.Alt,
             [
                 new DiagramAltArm(
                     new DiagramPlanElementId("diagram-element:v1:arm:absent:true"),
                     "decision:operation:v1:decision.WorkItemAbsent:arm:true",
-                    "Condition",
+                    "Stop",
                     isElse: false,
                     messageRefs: [],
                     fragments: [breakAbsent],
@@ -476,7 +604,7 @@ public sealed class DiagramFragmentRenderingTests
                 new DiagramAltArm(
                     new DiagramPlanElementId("diagram-element:v1:arm:absent:false"),
                     "decision:operation:v1:decision.WorkItemAbsent:arm:false",
-                    "Continue",
+                    "Other",
                     isElse: true,
                     messageRefs: [],
                     fragments: [locked],
@@ -504,7 +632,7 @@ public sealed class DiagramFragmentRenderingTests
         => new(
             new DiagramPlanElementId(id),
             key,
-            "Condition",
+            "Stop",
             DiagramFragmentKind.Break,
             [],
             [],

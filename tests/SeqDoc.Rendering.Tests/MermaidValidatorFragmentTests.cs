@@ -33,6 +33,8 @@ public sealed class MermaidValidatorFragmentTests
     [InlineData("par-unsupported", "sequenceDiagram\n    par Parallel\n        x->>y: m\n    end")]
     [InlineData("break-outside-block", "sequenceDiagram\n    break Stop\n        x->>y: m\n    end")]
     [InlineData("unknown-token", "sequenceDiagram\n    frobnicate\n        x->>y: m\n    end")]
+    [InlineData("generic-fragment-label", "sequenceDiagram\n    alt Condition\n        x->>y: m\n    end")]
+    [InlineData("generic-else-label", "sequenceDiagram\n    alt Ready\n        x->>y: m\n    else Continue\n        x->>y: n\n    end")]
     [InlineData("deep-nesting", "sequenceDiagram\n    alt A\n        alt B\n            alt C\n                alt D\n                    x->>y: m\n                end\n            end\n        end\n    end")]
     public void StackValidatorRejectsMalformedFragmentBlocks(string partition, string mermaid)
     {
@@ -48,6 +50,8 @@ public sealed class MermaidValidatorFragmentTests
             "par-unsupported" => "par",
             "break-outside-block" => "break",
             "unknown-token" => "unrecognized",
+            "generic-fragment-label" => "generic",
+            "generic-else-label" => "generic",
             "deep-nesting" => "depth",
             _ => throw new ArgumentOutOfRangeException(nameof(partition)),
         };
@@ -55,11 +59,18 @@ public sealed class MermaidValidatorFragmentTests
     }
 
     [Fact]
+    public void ValidatorAllowsControlWordsInsideMessageText()
+    {
+        Assert.Empty(MermaidValidator.Validate(
+            "sequenceDiagram\n    x->>y: Condition and Continue are message text"));
+    }
+
+    [Fact]
     public void StackValidatorAcceptsBalancedAltOptBreakLoopNesting()
     {
         const string mermaid =
             "sequenceDiagram\n" +
-            "    participant client as \"Client\"\n" +
+            "    participant client as Client\n" +
             "    alt Decision\n" +
             "        opt Guard\n" +
             "            loop Retry\n" +
@@ -75,20 +86,25 @@ public sealed class MermaidValidatorFragmentTests
     }
 
     [Theory]
-    // Positive: the canonical termination note is accepted only inside a balanced enclosing
-    // alt+break, which is the only shape the renderer emits (a top-level 'break' is itself
-    // rejected by the stack, and the note must be complete with participants and balanced blocks).
-    [InlineData("canonical-single", "sequenceDiagram\n    participant client as \"Client\"\n    alt Decision\n        break Stop\n            Note over client: Path terminates\n        end\n    end")]
-    [InlineData("canonical-range", "sequenceDiagram\n    participant client as \"Client\"\n    participant service as \"Service\"\n    alt Decision\n        break Stop\n            Note over client,service: Path terminates\n        end\n    end")]
-    // Negative: the same canonical text outside a Break fragment must fail, including top-level
-    // notes and notes inside a non-break frame; every other note form stays unrecognized.
+    [InlineData("participant client as Safe;drop")]
+    [InlineData("participant client as Safe`fence`")]
+    [InlineData("participant client as Safe\u0001label")]
+    [InlineData("participant client as \"quoted\"")]
+    public void ValidatorRejectsHostileQuoteFreeAliasForms(string participant)
+    {
+        Assert.Contains(MermaidValidator.Validate("sequenceDiagram\n    " + participant),
+            error => error.Contains("unrecognized", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    // Negative: obsolete termination notes and generic control labels are never accepted.
     [InlineData("top-level-canonical-single", "sequenceDiagram\n    Note over client: Path terminates")]
     [InlineData("top-level-canonical-range", "sequenceDiagram\n    Note over client,service: Path terminates")]
     [InlineData("note-inside-alt", "sequenceDiagram\n    participant client as \"Client\"\n    alt Decision\n        Note over client: Path terminates\n    end")]
     [InlineData("non-canonical-label", "sequenceDiagram\n    Note over client: something else")]
     [InlineData("non-canonical-form", "sequenceDiagram\n    Note right of client: Path terminates")]
     [InlineData("lowercase-keyword", "sequenceDiagram\n    note over client: Path terminates")]
-    public void ValidatorAcceptsOnlyTheCanonicalBreakTerminationNoteInExactBreakContext(string partition, string mermaid)
+    public void ValidatorRejectsObsoleteTerminationNotesAndGenericControlLabels(string partition, string mermaid)
     {
         // DQ-1 strict-note contract: the validator accepts exactly the canonical sequence note the
         // renderer emits inside an empty Break (single participant key or the first,last range with
@@ -98,18 +114,12 @@ public sealed class MermaidValidatorFragmentTests
         // documentation-set build can never silently admit generic or invented note vocabulary
         // outside a terminating region.
         ImmutableArray<string> errors = MermaidValidator.Validate(mermaid);
-        if (partition.StartsWith("canonical-", StringComparison.Ordinal))
-        {
-            Assert.Empty(errors);
-            return;
-        }
-
         Assert.NotEmpty(errors);
         string expectedKeyword = partition switch
         {
-            "top-level-canonical-single" => "break",
-            "top-level-canonical-range" => "break",
-            "note-inside-alt" => "break",
+            "top-level-canonical-single" => "unrecognized",
+            "top-level-canonical-range" => "unrecognized",
+            "note-inside-alt" => "unrecognized",
             "non-canonical-label" => "unrecognized",
             "non-canonical-form" => "unrecognized",
             "lowercase-keyword" => "unrecognized",

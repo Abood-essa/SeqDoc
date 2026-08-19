@@ -269,15 +269,18 @@ public sealed class BehaviorDocumentationFourFlowTests
                 < PhraseIndex(reservePlan.Wording, "entity-query", "counts Parts"),
             "Markdown must render the Reservations aggregation before the Parts aggregation.");
 
-        // The Mermaid diagram must order the same query messages by the same sequence ordinal.
+        // The Mermaid lane fails closed for the guarded aggregations: their owning decisions carry
+        // no exact predicate wording in this fixture, so they are withheld (DP002) rather than
+        // rendered under a generic label. The ordering guarantee lives in the wording lane above;
+        // the diagram keeps the unconditional lookup, ordered before the outcome.
+        Assert.Contains(reservePlan.Diagram.Diagnostics, diagnostic => diagnostic.Code == "DP002");
+        Assert.DoesNotContain(
+            reservePlan.Diagram.Messages,
+            message => message.Label.Contains("Count", StringComparison.Ordinal));
         Assert.True(
             FirstMessageIndex(reservePlan.Diagram, "Find at most one Widget")
-                < FirstMessageIndex(reservePlan.Diagram, "Count Reservations"),
-            "Mermaid must render the Widget lookup before the Reservations aggregation.");
-        Assert.True(
-            FirstMessageIndex(reservePlan.Diagram, "Count Reservations")
-                < FirstMessageIndex(reservePlan.Diagram, "Count Parts"),
-            "Mermaid must render the Reservations aggregation before the Parts aggregation.");
+                < FirstMessageIndex(reservePlan.Diagram, "Return a status outcome"),
+            "Mermaid must render the unconditional Widget lookup before the outcome.");
     }
 
     /// <summary>Claim 9: Reserve joins the loop-backed collection mutation exactly once.</summary>
@@ -597,28 +600,20 @@ public sealed class BehaviorDocumentationFourFlowTests
         var plannedDocuments = graphs
             .Select(graph => (Graph: graph, Plan: DocumentationPlanner.Plan(graph)))
             .ToArray();
-        var expectedMetricsByMethod = new Dictionary<HttpMethodKind, (int Conditions, int Subordinates, int Fragments)>
-        {
-            [HttpMethodKind.Post] = (12, 0, 13),
-            [HttpMethodKind.Get] = (1, 0, 6),
-            [HttpMethodKind.Delete] = (8, 0, 9),
-            [HttpMethodKind.Put] = (14, 0, 15),
-        };
-        foreach (var item in plannedDocuments)
-        {
-            Assert.True(expectedMetricsByMethod.ContainsKey(item.Graph.HttpMethod));
-            Assert.Equal(expectedMetricsByMethod[item.Graph.HttpMethod], StructuralMetrics(item.Plan.Diagram));
-        }
-
+        // The withhold contract replaces the old generic-label baseline: every admitted fragment
+        // carries exact owner predicate wording, so no generic Condition label or Continue note
+        // survives anywhere, while guarded interactions whose every owning decision lacks exact
+        // wording are withheld (DP002) instead of rendered under a meaningless label. Exact counts
+        // are not pinned (they depend on the external fixture's predicate facts); the contract is.
         var metrics = plannedDocuments
             .Select(item => StructuralMetrics(item.Plan.Diagram))
             .Aggregate((Conditions: 0, Subordinates: 0, Fragments: 0), (total, current) =>
                 (total.Conditions + current.Conditions,
                  total.Subordinates + current.Subordinates,
                  total.Fragments + current.Fragments));
-        Assert.Equal(35, metrics.Conditions);
+        Assert.Equal(0, metrics.Conditions);
         Assert.Equal(0, metrics.Subordinates);
-        Assert.Equal(43, metrics.Fragments);
+        Assert.True(metrics.Fragments > 0, "Exact owner wording must still admit guarded fragments in the external flows.");
         string combinedMermaid = string.Join(
             Environment.NewLine,
             plannedDocuments.Select(item => MermaidRenderer.Render(item.Plan.Diagram)));
@@ -639,43 +634,28 @@ public sealed class BehaviorDocumentationFourFlowTests
         int conditionCount = Regex.Count(
             combinedMermaid,
             @"(?m)^\s*(?:alt|opt|break) Condition(?:\s|$)|\[Condition\]");
-        Assert.True(conditionCount < 36, $"Expected fewer than the CR-0 baseline of 36 Condition labels, got {conditionCount}.");
+        Assert.Equal(0, conditionCount);
         if (bundle.Extraction.PredicateSemanticFacts.Diagnostics.Any(diagnostic => diagnostic.Code == "PRED001")
             && plannedDocuments.SelectMany(item => item.Graph.Topology.Decisions)
                 .Any(decision => decision.PredicateWording is null))
         {
-            Assert.Contains("Condition", combinedMermaid, StringComparison.Ordinal);
+            // Decisions without exact wording never degrade to a generic label; the withheld
+            // boundary is retained as a technical fallback phrase in the Markdown lane.
+            Assert.Contains("Technical fallback", combinedMarkdown, StringComparison.Ordinal);
         }
 
         foreach (var item in plannedDocuments)
         {
-            foreach (var group in item.Graph.Topology.Decisions
-                         .Where(decision => decision.PredicateWording is not null)
-                         .GroupBy(decision => decision.PredicateWording!.PredicateId))
+            // Subordinate decisions are never renderable on their own (they are absorbed into their
+            // exact owner group or withheld), so the generic Continue note can never appear; each
+            // exact owner label renders exactly once as its fragment header.
+            string mermaid = MermaidRenderer.Render(item.Plan.Diagram);
+            Assert.DoesNotContain("Continue evaluating condition", mermaid, StringComparison.Ordinal);
+            foreach (var owner in item.Graph.Topology.Decisions
+                         .Where(decision => decision.PredicateWording is { Role: ScenarioPredicateWordingRole.Owner }))
             {
-                var owners = group.Where(decision => decision.PredicateWording!.Role == ScenarioPredicateWordingRole.Owner).ToArray();
-                var subordinates = group.Where(decision => decision.PredicateWording!.Role == ScenarioPredicateWordingRole.Subordinate).ToArray();
-                if (owners.Length == 0 || subordinates.Length == 0)
-                {
-                    continue;
-                }
-                string ownerLabel = PredicateWordingFormatter.Format(owners[0].PredicateWording!.Root);
-                bool hasSafeSubordinate = subordinates.All(decision =>
-                    item.Graph.Topology.Arms
-                        .Where(arm => arm.Decision == decision.Id)
-                        .All(arm => item.Graph.Topology.Terminals
-                            .Where(terminal => terminal.Arm == arm.Id)
-                            .All(terminal => terminal.Kind != ScenarioTerminalKind.Terminates)));
-                string mermaid = MermaidRenderer.Render(item.Plan.Diagram);
-                if (hasSafeSubordinate)
-                {
-                    Assert.DoesNotContain("Continue evaluating condition", mermaid, StringComparison.Ordinal);
-                    Assert.Equal(1, Regex.Count(mermaid, Regex.Escape(ownerLabel)));
-                }
-                else
-                {
-                    Assert.Contains("Continue evaluating condition", mermaid, StringComparison.Ordinal);
-                }
+                string ownerLabel = PredicateWordingFormatter.Format(owner.PredicateWording!.Root);
+                Assert.Equal(1, Regex.Count(mermaid, Regex.Escape(ownerLabel)));
             }
         }
 

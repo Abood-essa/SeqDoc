@@ -6,6 +6,7 @@ using SeqDoc.Analysis.Scenarios;
 using SeqDoc.Application.Analysis;
 using SeqDoc.Application.Documentation;
 using SeqDoc.Core.DiagramPlan;
+using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Frameworks;
 using SeqDoc.Core.Identity;
 using SeqDoc.Core.ScenarioGraph;
@@ -59,7 +60,13 @@ public sealed class BehaviorDocumentationGetPresentationTests
         AssertSemanticPresentationOrder(byIdPlan);
         Assert.Contains(byIdPlan.Wording.Phrases, phrase => phrase.Text.Contains("HTTP 200", StringComparison.Ordinal));
         Assert.Contains(byIdPlan.Wording.Phrases, phrase => phrase.Text.Contains("HTTP 404", StringComparison.Ordinal));
-        Assert.DoesNotContain(byIdPlan.Wording.Phrases, phrase => phrase.Kind == WordingPhraseKind.TechnicalFallback);
+        // CT-8 withholding contract: decisions without exact compiler-evidenced predicate wording
+        // are withheld with Conservative DP005 fallback phrases instead of generic labels.
+        foreach (var fallback in byIdPlan.Wording.Phrases.Where(phrase => phrase.Kind == WordingPhraseKind.TechnicalFallback))
+        {
+            Assert.Equal(CertaintyLevel.Conservative, fallback.Certainty);
+            Assert.NotEmpty(fallback.Evidence);
+        }
         AssertPhrasesEvidenceBacked(byIdPlan.Wording);
         string markdown = MarkdownRenderer.RenderDocument(byIdPlan.Wording, byIdPlan.Diagram);
         Assert.Empty(MermaidValidator.Validate(MermaidRenderer.Render(byIdPlan.Diagram)));
@@ -70,8 +77,19 @@ public sealed class BehaviorDocumentationGetPresentationTests
         var token = Assert.Single(set.Graphs, graph => graph.OperationKey == "GET api/Gadgets/token/{token}");
         var tokenPlan = DocumentationPlanner.Plan(token);
         AssertSemanticPresentationOrder(tokenPlan);
-        var fallback = Assert.Single(tokenPlan.Wording.Phrases, phrase => phrase.Kind == WordingPhraseKind.TechnicalFallback);
-        Assert.Contains("conservative", fallback.Text, StringComparison.OrdinalIgnoreCase);
+        // CT-8 withholding contract: the unsupported Guid predicate and any decisions without exact
+        // wording produce Conservative technical-fallback phrases. At least one must exist for the
+        // Guid predicate; additional DP005 fallbacks may appear for other withheld boundaries.
+        var tokenFallbacks = tokenPlan.Wording.Phrases
+            .Where(phrase => phrase.Kind == WordingPhraseKind.TechnicalFallback)
+            .ToArray();
+        Assert.NotEmpty(tokenFallbacks);
+        Assert.Contains(tokenFallbacks, phrase => phrase.Text.Contains("conservative", StringComparison.OrdinalIgnoreCase));
+        Assert.All(tokenFallbacks, phrase =>
+        {
+            Assert.Equal(CertaintyLevel.Conservative, phrase.Certainty);
+            Assert.NotEmpty(phrase.Evidence);
+        });
         Assert.Contains(tokenPlan.Wording.Phrases, phrase => phrase.Text.Contains("HTTP 200", StringComparison.Ordinal));
         Assert.Contains(tokenPlan.Wording.Phrases, phrase => phrase.Text.Contains("HTTP 404", StringComparison.Ordinal));
         AssertPhrasesEvidenceBacked(tokenPlan.Wording);

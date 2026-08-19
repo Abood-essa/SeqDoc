@@ -22,7 +22,9 @@ internal sealed record YamlConfigurationDocument(
     AnalysisSettings Analysis,
     ImmutableSortedDictionary<string, NamedProfileSettings> Profiles,
     ImmutableSortedSet<string> Roots,
-    bool RootsSpecified)
+    bool RootsSpecified,
+    ImmutableSortedSet<string> ExcludeParticipants,
+    ImmutableSortedSet<string> ExcludeCalls)
 {
     private static readonly StringComparer KeyComparer = StringComparer.Ordinal;
 
@@ -60,8 +62,8 @@ internal sealed record YamlConfigurationDocument(
             ? ParseProfiles(profilesNode)
             : EmptyProfiles();
 
-        var (roots, rootsSpecified) = ValidateLaterSections(fields);
-        return new YamlConfigurationDocument(analysis, profiles, roots, rootsSpecified);
+        var (roots, rootsSpecified, excludeParticipants, excludeCalls) = ValidateLaterSections(fields);
+        return new YamlConfigurationDocument(analysis, profiles, roots, rootsSpecified, excludeParticipants, excludeCalls);
     }
 
     private static AnalysisSettings ParseAnalysis(YamlNode node)
@@ -107,28 +109,35 @@ internal sealed record YamlConfigurationDocument(
         return result.ToImmutable();
     }
 
-    private static (ImmutableSortedSet<string> Roots, bool Specified) ValidateLaterSections(Dictionary<string, YamlNode> root)
+    private static (ImmutableSortedSet<string> Roots, bool Specified, ImmutableSortedSet<string> ExcludeParticipants, ImmutableSortedSet<string> ExcludeCalls) ValidateLaterSections(Dictionary<string, YamlNode> root)
     {
         var roots = ImmutableSortedSet.Create<string>(KeyComparer);
+        var excludeParticipants = ImmutableSortedSet.Create<string>(KeyComparer);
+        var excludeCalls = ImmutableSortedSet.Create<string>(KeyComparer);
         bool rootsSpecified = false;
         if (root.TryGetValue("documentation", out var documentation))
         {
             var fields = ReadFields(RequireMapping(documentation, "$.documentation"), "$.documentation", [
                 "outputDirectory", "repositoryProfile", "coverageMode", "includeComprehensiveAppendix",
+                "excludeParticipants", "excludeCalls",
             ]);
             ValidateOptionalStrings(fields, "$.documentation", "outputDirectory", "repositoryProfile", "coverageMode");
             ValidateOptionalBoolean(fields, "includeComprehensiveAppendix", "$.documentation.includeComprehensiveAppendix");
+            excludeParticipants = OptionalDocumentationSet(fields, "excludeParticipants", "$.documentation.excludeParticipants", participant: true);
+            excludeCalls = OptionalDocumentationSet(fields, "excludeCalls", "$.documentation.excludeCalls", participant: false);
         }
 
         if (root.TryGetValue("selection", out var selection))
         {
             var fields = ReadFields(RequireMapping(selection, "$.selection"), "$.selection", ["include", "exclude", "critical", "roots"]);
             var include = OptionalStringSet(fields, "include", "$.selection.include");
-            var exclude = OptionalStringSet(fields, "exclude", "$.selection.exclude");
+            // Flow selection exclusions are intentionally validated for the selection contract but
+            // are not presentation filters.
+            var selectionExclude = OptionalStringSet(fields, "exclude", "$.selection.exclude");
             var critical = OptionalStringSet(fields, "critical", "$.selection.critical");
             rootsSpecified = fields.ContainsKey("roots");
             roots = OptionalRootStringSet(fields, "roots", "$.selection.roots");
-            string? conflict = critical.Intersect(exclude, KeyComparer).Order(KeyComparer).FirstOrDefault();
+            string? conflict = critical.Intersect(selectionExclude, KeyComparer).Order(KeyComparer).FirstOrDefault();
             if (conflict is not null)
             {
                 throw new ConfigurationFormatException("$.selection", $"Flow '{conflict}' cannot be both critical and excluded.");
@@ -174,8 +183,57 @@ internal sealed record YamlConfigurationDocument(
             ValidateOptionalStrings(fields, "$.diagrams", "processingColor", "successColor", "recoveryColor", "warningColor", "terminalFailureColor");
         }
 
-        return (roots, rootsSpecified);
+        return (roots, rootsSpecified, excludeParticipants, excludeCalls);
     }
+
+    private static ImmutableSortedSet<string> OptionalDocumentationSet(
+        Dictionary<string, YamlNode> fields, string key, string path, bool participant)
+    {
+        if (!fields.TryGetValue(key, out var node))
+        {
+            return ImmutableSortedSet.Create<string>(KeyComparer);
+        }
+
+        var values = RequireUniqueStringSet(node, path);
+        foreach (string value in values)
+        {
+            if (participant)
+            {
+                if (value is "action" or "client" or "caller" or "dispatch" or "handler" or "service" or "data"
+                    || !IsCanonicalTypePattern(value))
+                {
+                    throw new ConfigurationFormatException(path, $"excludeParticipants contains structural or malformed participant exclusion '{value}'.");
+                }
+            }
+            else
+            {
+                int separator = value.LastIndexOf('.');
+                bool wildcard = value.EndsWith(".*", StringComparison.Ordinal);
+                string typePattern = value[..Math.Max(separator, 0)];
+                string memberPattern = wildcard ? string.Empty : value[(separator + 1)..];
+                if (separator <= 0 || separator == value.Length - 1
+                    || !IsCanonicalTypePattern(typePattern)
+                    || (!wildcard && !IsCanonicalMemberPattern(memberPattern))
+                    || (wildcard && value.Count(character => character == '*') != 1))
+                {
+                    throw new ConfigurationFormatException(path, $"Malformed call exclusion '{value}'. Expected Type.Member or Type.*.");
+                }
+            }
+        }
+
+        return values;
+    }
+
+    private static bool IsCanonicalTypePattern(string value)
+        => value.Length > 0
+            && value.Split('.').All(segment => !string.IsNullOrWhiteSpace(segment)
+                && !segment.Any(char.IsWhiteSpace)
+                && !segment.Contains('*'));
+
+    private static bool IsCanonicalMemberPattern(string value)
+        => value.Length > 0
+            && !value.Any(char.IsWhiteSpace)
+            && !value.Contains('*');
 
     private static void ValidateObjectMap(
         YamlNode node,

@@ -65,7 +65,7 @@ public sealed class DecisionWordingTests
         Assert.Equal(expected, PredicateWordingFormatter.Format(expression));
     }
 
-    /// <summary>CR-2 polarity partitions: exact comparison complements, grouped/unsupported fallback, and subordinate marker.</summary>
+    /// <summary>CR-2 polarity partitions: exact comparison complements, conservative unsupported fallback, and subordinate marker.</summary>
     [Theory]
     [InlineData("Equal", "status != Cancelled")]
     [InlineData("NotEqual", "status == Cancelled")]
@@ -93,11 +93,13 @@ public sealed class DecisionWordingTests
     }
 
     [Fact]
-    public void GroupedAndUnsupportedPolarityDegradeToOtherwiseOrCondition()
+    public void GroupedAndUnsupportedPolarityDegradeWithoutGenericControlLabels()
     {
         Assert.Equal("Otherwise", PredicateWordingFormatter.FormatComplement(FragmentScenarioTestFactory.PredicateWordingTestFactory.CreateGrouped()));
-        Assert.Equal("Condition", PredicateWordingFormatter.Format(FragmentScenarioTestFactory.PredicateWordingTestFactory.CreateUnsupported()));
-        Assert.Equal("Continue evaluating condition", PredicateWordingFormatter.FormatSubordinate());
+        string unsupported = PredicateWordingFormatter.Format(FragmentScenarioTestFactory.PredicateWordingTestFactory.CreateUnsupported());
+        Assert.Equal("typed predicate unavailable", unsupported);
+        Assert.DoesNotContain("Condition", unsupported, StringComparison.Ordinal);
+        Assert.Equal("Otherwise", PredicateWordingFormatter.FormatSubordinate());
     }
 
     [Fact]
@@ -143,10 +145,11 @@ public sealed class DecisionWordingTests
         HttpOutcomeHelperKind failureHelperKind,
         int failureStatusCode)
     {
-        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateTypedResultDecisionGraph(
-            failureFactoryKind: failureFactoryKind,
-            failureHelperKind: failureHelperKind,
-            failureStatusCode: failureStatusCode));
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateTypedResultDecisionGraph(
+                failureFactoryKind: failureFactoryKind,
+                failureHelperKind: failureHelperKind,
+                failureStatusCode: failureStatusCode)));
 
         var failurePhrase = Assert.Single(plan.Wording.Phrases, phrase => phrase.Key == "result-failure");
         Assert.Contains(expectedFailureWording, failurePhrase.Text, StringComparison.Ordinal);
@@ -176,7 +179,8 @@ public sealed class DecisionWordingTests
     [Fact]
     public void UnknownCustomResultKindsFallBackConservatively()
     {
-        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateUnknownResultDecisionGraph());
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateUnknownResultDecisionGraph()));
 
         var failurePhrase = Assert.Single(plan.Wording.Phrases, phrase => phrase.Key == "result-failure");
         Assert.Contains("Return a failure status", failurePhrase.Text, StringComparison.Ordinal);
@@ -204,16 +208,17 @@ public sealed class DecisionWordingTests
     [Fact]
     public void TerminatingArmAndBreakUseExactTypedTerminalWording()
     {
-        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateTypedResultDecisionGraph()).Diagram;
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateTypedResultDecisionGraph())).Diagram;
 
         var alt = Assert.Single(plan.Sequence.Fragments);
         Assert.Equal(DiagramFragmentKind.Alt, alt.Kind);
-        Assert.Equal("Condition", alt.Label, StringComparer.Ordinal);
+        Assert.Equal("reservation is null", alt.Label, StringComparer.Ordinal);
 
         var terminatingArm = alt.Arms[0];
         var continuingArm = alt.Arms[1];
         Assert.Equal("Return Not Found", terminatingArm.Label, StringComparer.Ordinal);
-        Assert.Equal("Continue", continuingArm.Label, StringComparer.Ordinal);
+        Assert.Equal("reservation != null", continuingArm.Label, StringComparer.Ordinal);
 
         var breakFragment = Assert.Single(terminatingArm.Fragments);
         Assert.Equal(DiagramFragmentKind.Break, breakFragment.Kind);
@@ -230,11 +235,12 @@ public sealed class DecisionWordingTests
     [Fact]
     public void TerminatingSuccessArmAndBreakUseReturnSuccessDataWording()
     {
-        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateTypedResultDecisionGraph(successArmTerminates: true)).Diagram;
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateTypedResultDecisionGraph(successArmTerminates: true))).Diagram;
 
         var alt = Assert.Single(plan.Sequence.Fragments);
         Assert.Equal(DiagramFragmentKind.Alt, alt.Kind);
-        Assert.Equal("Condition", alt.Label, StringComparer.Ordinal);
+        Assert.Equal("reservation is null", alt.Label, StringComparer.Ordinal);
 
         var successArm = Assert.Single(alt.Arms, arm => arm.Label == "Return success data");
         var breakFragment = Assert.Single(successArm.Fragments);
@@ -242,9 +248,9 @@ public sealed class DecisionWordingTests
         Assert.Equal("Return success data", breakFragment.Label, StringComparer.Ordinal);
 
         // The success arm is terminating (visual order places it first) and the failure arm rejoins
-        // with "Continue"; neither arm ever renders the failure vocabulary.
+        // with the exact predicate wording; neither arm ever renders the failure vocabulary.
         Assert.Equal("Return success data", alt.Arms[0].Label, StringComparer.Ordinal);
-        Assert.Equal("Continue", alt.Arms[1].Label, StringComparer.Ordinal);
+        Assert.Equal("reservation is null", alt.Arms[1].Label, StringComparer.Ordinal);
         Assert.DoesNotContain(alt.Arms, arm => arm.Label.Contains("Return a failure status", StringComparison.Ordinal));
         Assert.DoesNotContain(alt.Arms, arm => arm.Label.Contains("failure", StringComparison.Ordinal));
     }
@@ -257,13 +263,14 @@ public sealed class DecisionWordingTests
     [Fact]
     public void OutcomeOnlyTerminatingArmUsesReturnHttpStatusWording()
     {
-        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateStatusSwitchTopologyGraph()).Diagram;
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateStatusSwitchTopologyGraph())).Diagram;
 
         var alt = Assert.Single(plan.Sequence.Fragments);
-        Assert.Equal("Condition", alt.Label, StringComparer.Ordinal);
+        Assert.Equal("reservation is null", alt.Label, StringComparer.Ordinal);
         Assert.Equal("Return HTTP 404", alt.Arms[0].Label, StringComparer.Ordinal);
         Assert.Equal("Return HTTP 404", Assert.Single(alt.Arms[0].Fragments).Label, StringComparer.Ordinal);
-        Assert.Equal("Continue", alt.Arms[1].Label, StringComparer.Ordinal);
+        Assert.Equal("reservation != null", alt.Arms[1].Label, StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -276,15 +283,15 @@ public sealed class DecisionWordingTests
     {
         var graphs = new[]
         {
-            FragmentScenarioTestFactory.CreateTypedResultDecisionGraph(),
-            FragmentScenarioTestFactory.CreateStatusSwitchTopologyGraph(),
-            FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph(),
+            FragmentScenarioTestFactory.WithExactOwnerWording(FragmentScenarioTestFactory.CreateTypedResultDecisionGraph()),
+            FragmentScenarioTestFactory.WithExactOwnerWording(FragmentScenarioTestFactory.CreateStatusSwitchTopologyGraph()),
+            FragmentScenarioTestFactory.WithExactOwnerWording(FragmentScenarioTestFactory.CreateNestedAbsentLockedGraph()),
         };
 
         foreach (var graph in graphs)
         {
             var plan = DocumentationPlanner.Plan(graph).Diagram;
-            Assert.Equal("Condition", Assert.Single(plan.Sequence.Fragments).Label, StringComparer.Ordinal);
+            Assert.Equal("reservation is null", Assert.Single(plan.Sequence.Fragments).Label, StringComparer.Ordinal);
             foreach (var fragment in AllFragments(plan))
             {
                 Assert.DoesNotContain("operation:v1", fragment.Label, StringComparison.Ordinal);
@@ -346,8 +353,10 @@ public sealed class DecisionWordingTests
     [Fact]
     public void PoisonedDetailCannotChangeTypedWordingOrElementIdentities()
     {
-        var clean = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateTypedResultDecisionGraph());
-        var poisoned = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateTypedResultDecisionGraph(poisoned: true));
+        var clean = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateTypedResultDecisionGraph()));
+        var poisoned = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateTypedResultDecisionGraph(poisoned: true)));
 
         var cleanFailure = Assert.Single(clean.Wording.Phrases, phrase => phrase.Key == "result-failure");
         var poisonedFailure = Assert.Single(poisoned.Wording.Phrases, phrase => phrase.Key == "result-failure");
@@ -382,14 +391,16 @@ public sealed class DecisionWordingTests
     [Fact]
     public void PhraseAndFragmentEvidenceIncludeTypedSupportAndDegradeToWeakest()
     {
-        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateTypedResultDecisionGraph());
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateTypedResultDecisionGraph()));
         var failurePhrase = Assert.Single(plan.Wording.Phrases, phrase => phrase.Key == "result-failure");
         Assert.Contains(failurePhrase.Evidence, evidence => evidence.Artifact == "structural-result");
         Assert.Contains(failurePhrase.Evidence, evidence => evidence.Artifact == "decision");
         Assert.Equal(CertaintyLevel.Exact, failurePhrase.Certainty);
 
-        var conservative = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateTypedResultDecisionGraph(
-            failureMembershipCertainty: CertaintyLevel.Conservative)).Diagram;
+        var conservative = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateTypedResultDecisionGraph(
+                failureMembershipCertainty: CertaintyLevel.Conservative))).Diagram;
         var alt = Assert.Single(conservative.Sequence.Fragments);
         Assert.Contains(alt.Evidence, evidence => evidence.Artifact == "membership");
         Assert.Equal(CertaintyLevel.Conservative, alt.Certainty);
@@ -397,8 +408,9 @@ public sealed class DecisionWordingTests
         Assert.Equal(CertaintyLevel.Conservative, Assert.Single(alt.Arms[0].Fragments).Certainty);
         Assert.Equal(CertaintyLevel.Exact, alt.Arms[1].Certainty);
 
-        var degraded = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateTypedResultDecisionGraph(
-            failureMembershipCertainty: CertaintyLevel.Conservative));
+        var degraded = DocumentationPlanner.Plan(FragmentScenarioTestFactory.WithExactOwnerWording(
+            FragmentScenarioTestFactory.CreateTypedResultDecisionGraph(
+                failureMembershipCertainty: CertaintyLevel.Conservative)));
         var degradedFailure = Assert.Single(degraded.Wording.Phrases, phrase => phrase.Key == "result-failure");
         Assert.Contains("Return Not Found", degradedFailure.Text, StringComparison.Ordinal);
         Assert.Equal(CertaintyLevel.Exact, degradedFailure.Certainty);

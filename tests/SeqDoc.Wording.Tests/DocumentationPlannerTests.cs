@@ -5,6 +5,7 @@ using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Frameworks;
 using SeqDoc.Core.Identity;
 using SeqDoc.Core.ScenarioGraph;
+using SeqDoc.Rendering.Markdown;
 using Xunit;
 
 namespace SeqDoc.Wording.Tests;
@@ -37,18 +38,121 @@ public sealed class DocumentationPlannerTests
         var plan = DocumentationPlanner.Plan(graph);
         var text = Assert.Single(plan.Wording.Phrases, phrase => phrase.Key == "action").Text;
 
+        // Behavior text preserves the full signature while the diagram participant is the concise
+        // deterministic type.member label.
         Assert.Contains("Payments.TransferEngine.SubmitAsync()", text, StringComparison.Ordinal);
         Assert.DoesNotContain("HTTP", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("controller", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("service", text, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(plan.Diagram.Participants, participant => participant.Label == "Payments.TransferEngine.SubmitAsync()");
-        Assert.Contains(plan.Diagram.Participants, participant => participant.Label == "Caller");
-        var request = Assert.Single(plan.Diagram.Messages);
-        Assert.Equal(("caller", "action"), (request.Source, request.Target));
-        Assert.Equal("Payments.TransferEngine.SubmitAsync()", request.Label);
+        Assert.Contains(plan.Diagram.Participants, participant => participant.Label == "TransferEngine.SubmitAsync");
+        // A configured root never invents a caller/client participant: the diagram begins at the
+        // selected method, so no entry request message is planned for a root with no calls.
+        Assert.DoesNotContain(plan.Diagram.Participants, participant => participant.Label == "Caller");
+        Assert.Empty(plan.Diagram.Messages);
         Assert.DoesNotContain(plan.Wording.Phrases, phrase => phrase.Text.Contains("API", StringComparison.OrdinalIgnoreCase)
             || phrase.Text.Contains("controller", StringComparison.OrdinalIgnoreCase)
             || phrase.Text.Contains("service", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void RecognizedLoggingCallsAreHiddenFromDiagramAndWording()
+    {
+        var evidence = ImmutableArray.Create(ScenarioGraphTestFactory.SourceEvidence("configured-method"));
+        var method = new MethodId("method:v1:Payments.TransferEngine.SubmitAsync");
+        var entry = new ScenarioNode(
+            new("scenario-node:v1:configured-method:entry"), ScenarioNodeKind.EntryPoint,
+            "entry-point:v1:configured-method", method, null, "entry", evidence, CertaintyLevel.Exact);
+        var action = new ScenarioNode(
+            new("scenario-node:v1:configured-method:action"), ScenarioNodeKind.Action, "configured-method", method, null,
+             "configured method", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(
+                ActionKind: ScenarioActionKind.ConfiguredMethod,
+                ConfiguredContainingTypeName: "Payments.TransferEngine",
+                ConfiguredMethodName: "SubmitAsync",
+                ConfiguredDisplaySignature: "Payments.TransferEngine.SubmitAsync()"));
+        var logCall = new ScenarioNode(
+            new("scenario-node:v1:configured-method:log"), ScenarioNodeKind.MethodCall,
+            "method-call:log", new MethodId("method:v1:Microsoft.Extensions.Logging.LoggerExtensions.LogInformation"),
+            new OperationId("operation:v1:log"), "calls Microsoft.Extensions.Logging.LoggerExtensions.LogInformation",
+            evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(
+                TargetContainingTypeName: "Microsoft.Extensions.Logging.LoggerExtensions",
+                TargetMemberName: "LogInformation"));
+        var transferCall = new ScenarioNode(
+            new("scenario-node:v1:configured-method:transfer"), ScenarioNodeKind.MethodCall,
+            "method-call:transfer", new MethodId("method:v1:Payments.TransferGateway.SendAsync"),
+            new OperationId("operation:v1:send"), "calls Payments.TransferGateway.SendAsync",
+            evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(
+                TargetContainingTypeName: "Payments.TransferGateway",
+                TargetMemberName: "SendAsync"));
+        var graph = new ScenarioGraph(
+            new("entry-point:v1:configured-method"), ScenarioGraphTestFactory.Profile.Id, method,
+             HttpMethodKind.Unknown, "", "Payments.TransferEngine.SubmitAsync()", [entry, action, logCall, transferCall],
+             [
+                 new ScenarioEdge(new("scenario-edge:v1:configured-method:entry"), entry.Id, action.Id,
+                     ScenarioEdgeKind.Entry, "", evidence, CertaintyLevel.Exact),
+                 new ScenarioEdge(new("scenario-edge:v1:configured-method:log"), action.Id, logCall.Id,
+                     ScenarioEdgeKind.Call, "direct method call", evidence, CertaintyLevel.Exact),
+                 new ScenarioEdge(new("scenario-edge:v1:configured-method:transfer"), action.Id, transferCall.Id,
+                     ScenarioEdgeKind.Call, "direct method call", evidence, CertaintyLevel.Exact),
+             ], [], "configured-method", ScenarioTopology.Empty,
+             rootKind: ScenarioRootKind.ConfiguredMethod);
+
+        var plan = DocumentationPlanner.Plan(graph);
+
+        // The recognized logging-framework call is hidden from messages, phrases, and participants;
+        // the real call stays visible with its concise member label.
+        Assert.DoesNotContain(plan.Diagram.Messages, message => message.Label.Contains("LogInformation", StringComparison.Ordinal));
+        Assert.DoesNotContain(plan.Wording.Phrases, phrase => phrase.Text.Contains("LogInformation", StringComparison.Ordinal));
+        Assert.DoesNotContain(plan.Diagram.Participants, participant => participant.Label.Contains("LoggerExtensions", StringComparison.Ordinal));
+        Assert.Contains(plan.Diagram.Messages, message => message.Label == "SendAsync");
+        Assert.Contains(plan.Diagram.Participants, participant => participant.Key == "payments_transfergateway");
+    }
+
+    [Fact]
+    public void SameTypeCallReusesRootParticipantInsteadOfDuplicatingIt()
+    {
+        var evidence = ImmutableArray.Create(ScenarioGraphTestFactory.SourceEvidence("configured-method"));
+        var method = new MethodId("method:v1:Payments.TransferEngine.SubmitAsync");
+        var entry = new ScenarioNode(
+            new("scenario-node:v1:configured-method:entry"), ScenarioNodeKind.EntryPoint,
+            "entry-point:v1:configured-method", method, null, "entry", evidence, CertaintyLevel.Exact);
+        var action = new ScenarioNode(
+            new("scenario-node:v1:configured-method:action"), ScenarioNodeKind.Action, "configured-method", method, null,
+             "configured method", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(
+                ActionKind: ScenarioActionKind.ConfiguredMethod,
+                ConfiguredContainingTypeName: "Payments.TransferEngine",
+                ConfiguredMethodName: "SubmitAsync",
+                ConfiguredDisplaySignature: "Payments.TransferEngine.SubmitAsync()"));
+        var helperCall = new ScenarioNode(
+            new("scenario-node:v1:configured-method:helper"), ScenarioNodeKind.MethodCall,
+            "method-call:helper", new MethodId("method:v1:Payments.TransferEngine.Helper"),
+            new OperationId("operation:v1:helper"), "calls Payments.TransferEngine.Helper",
+            evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(
+                TargetContainingTypeName: "Payments.TransferEngine",
+                TargetMemberName: "Helper"));
+        var graph = new ScenarioGraph(
+            new("entry-point:v1:configured-method"), ScenarioGraphTestFactory.Profile.Id, method,
+             HttpMethodKind.Unknown, "", "Payments.TransferEngine.SubmitAsync()", [entry, action, helperCall],
+             [
+                 new ScenarioEdge(new("scenario-edge:v1:configured-method:entry"), entry.Id, action.Id,
+                     ScenarioEdgeKind.Entry, "", evidence, CertaintyLevel.Exact),
+                 new ScenarioEdge(new("scenario-edge:v1:configured-method:helper"), action.Id, helperCall.Id,
+                     ScenarioEdgeKind.Call, "direct method call", evidence, CertaintyLevel.Exact),
+             ], [], "configured-method", ScenarioTopology.Empty,
+             rootKind: ScenarioRootKind.ConfiguredMethod);
+
+        var plan = DocumentationPlanner.Plan(graph);
+
+        // An exact same-type call renders against the single root participant instead of creating a
+        // duplicate participant for the root's own type.
+        Assert.Single(plan.Diagram.Participants, participant => participant.Key == "action");
+        var message = Assert.Single(plan.Diagram.Messages);
+        Assert.Equal(("action", "action"), (message.Source, message.Target));
+        Assert.Equal("Helper", message.Label);
     }
 
     [Fact]
@@ -60,7 +164,7 @@ public sealed class DocumentationPlannerTests
         Assert.Contains("SendAsync", call.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("service", call.Text, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(["action", "payments_transfergateway"], plan.Diagram.Participants.Select(item => item.Key));
-        Assert.Equal("Payments.TransferGateway", Assert.Single(plan.Diagram.Participants, item => item.Key == "payments_transfergateway").Label);
+        Assert.Equal("TransferGateway", Assert.Single(plan.Diagram.Participants, item => item.Key == "payments_transfergateway").Label);
         var message = Assert.Single(plan.Diagram.Messages);
         Assert.Equal("SendAsync", message.Label);
         Assert.Equal(("action", "payments_transfergateway"), (message.Source, message.Target));
@@ -86,6 +190,138 @@ public sealed class DocumentationPlannerTests
             Assert.Contains(message.Target, declaredKeys);
             Assert.NotEqual(("action", "action"), (message.Source, message.Target));
         });
+    }
+
+    [Fact]
+    public void PresentationIntegrityKeepsConciseCollisionSafeLabelsAndConfiguredRootSelfMappingStable()
+    {
+        var collisionPlan = DocumentationPlanner.Plan(ScenarioGraphTestFactory.CreateCollidingGenericMethodCallGraph());
+        var selfCallPlan = DocumentationPlanner.Plan(CreateConfiguredSelfCallGraph());
+
+        Assert.Equal(3, collisionPlan.Diagram.Participants.Count(item => item.Key != "action"));
+        Assert.Equal(3, collisionPlan.Diagram.Participants
+            .Where(item => item.Key != "action")
+            .Select(item => item.Label)
+            .Distinct(StringComparer.Ordinal)
+            .Count());
+        Assert.All(collisionPlan.Diagram.Participants.Where(item => item.Key != "action"), participant =>
+            Assert.DoesNotContain(".", participant.Key, StringComparison.Ordinal));
+
+        Assert.Single(selfCallPlan.Diagram.Participants, participant => participant.Key == "action");
+        Assert.Equal(("action", "action"),
+            (Assert.Single(selfCallPlan.Diagram.Messages).Source, Assert.Single(selfCallPlan.Diagram.Messages).Target));
+        Assert.Equal("Helper", Assert.Single(selfCallPlan.Diagram.Messages).Label);
+    }
+
+    [Fact]
+    public void PresentationIntegrityExactCallExclusionRemovesInteractionWordingEmptyFragmentsAndOrphanParticipant()
+    {
+        var graph = ScenarioGraphTestFactory.CreateCollidingGenericMethodCallGraph();
+        var plan = DocumentationPlanner.Plan(
+            graph,
+            excludeCalls: ImmutableSortedSet.Create(StringComparer.Ordinal, "Acme.A.B.Second"));
+        var typeWildcardPlan = DocumentationPlanner.Plan(
+            graph,
+            excludeCalls: ImmutableSortedSet.Create(StringComparer.Ordinal, "Acme.A_B.*"));
+
+        Assert.DoesNotContain(plan.Diagram.Participants, participant => participant.Label == "Acme.A.B");
+        Assert.DoesNotContain(plan.Diagram.Messages, message => message.Label == "Second");
+        Assert.DoesNotContain(plan.Wording.Phrases, phrase => phrase.Text.Contains("Acme.A.B", StringComparison.Ordinal));
+        Assert.DoesNotContain(plan.Diagram.Sequence.Fragments, fragment => fragment.MessageRefs.IsEmpty);
+        Assert.Contains("filtered interaction count: 1", plan.Diagram.DebugProjection, StringComparison.Ordinal);
+        Assert.DoesNotContain(typeWildcardPlan.Diagram.Participants, participant => participant.Label == "Acme.A_B");
+        Assert.DoesNotContain(typeWildcardPlan.Diagram.Messages, message => message.Label == "First");
+    }
+
+    [Fact]
+    public void PresentationIntegrityUnsupportedGuardedCallsRemainWithheldRatherThanUnconditional()
+    {
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateBothMaterialAltGraph(
+            predicateRole: ScenarioPredicateWordingRole.Owner,
+            predicatePartition: "unsupported"));
+
+        Assert.Empty(plan.Diagram.Sequence.Fragments);
+        Assert.DoesNotContain(plan.Diagram.Messages, message => message.Key.Contains("guard", StringComparison.Ordinal));
+        Assert.Contains(plan.Wording.Phrases, phrase => phrase.Key.StartsWith("fallback:DP005", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PresentationIntegrityConfiguredOutcomesNeverTargetAnAbsentCaller()
+    {
+        var plan = DocumentationPlanner.Plan(CreateConfiguredOutcomeGraph());
+        var participantKeys = plan.Diagram.Participants.Select(participant => participant.Key).ToHashSet(StringComparer.Ordinal);
+
+        Assert.All(plan.Diagram.Messages, message =>
+        {
+            Assert.Contains(message.Source, participantKeys);
+            Assert.Contains(message.Target, participantKeys);
+        });
+        Assert.DoesNotContain(plan.Diagram.Participants, participant => participant.Key == "caller");
+    }
+
+    [Fact]
+    public void PresentationIntegrityRejectsConfiguredRootContainingTypeExclusionAfterGraphIdentityIsKnown()
+    {
+        var exception = Assert.Throws<ArgumentException>(() => DocumentationPlanner.Plan(
+            CreateConfiguredSelfCallGraph(),
+            excludeParticipants: ImmutableSortedSet.Create(StringComparer.Ordinal, "Payments.TransferEngine")));
+
+        Assert.Contains("structural root participant type", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PresentationIntegrityCompleteRenderedOutputHasNoGenericControlPlaceholders()
+    {
+        var plan = DocumentationPlanner.Plan(FragmentScenarioTestFactory.CreateCompositionEmptyTopologyGraph(sourceConditionRegion: true));
+        var rendered = MarkdownRenderer.RenderDocument(plan.Wording, plan.Diagram) + MermaidRenderer.Render(plan.Diagram);
+
+        foreach (var token in new[] { "Condition", "Continue", "Continue evaluating condition", "Path terminates" })
+        {
+            Assert.DoesNotContain(token, rendered, StringComparison.Ordinal);
+        }
+    }
+
+    private static ScenarioGraph CreateConfiguredSelfCallGraph()
+    {
+        var evidence = ImmutableArray.Create(ScenarioGraphTestFactory.SourceEvidence("presentation-integrity-self"));
+        var method = new MethodId("method:v1:Payments.TransferEngine.SubmitAsync");
+        var entry = new ScenarioNode(new("scenario-node:v1:presentation-self:entry"), ScenarioNodeKind.EntryPoint,
+            "entry", method, null, "entry", evidence, CertaintyLevel.Exact);
+        var action = new ScenarioNode(new("scenario-node:v1:presentation-self:action"), ScenarioNodeKind.Action,
+            "action", method, null, "action", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(ActionKind: ScenarioActionKind.ConfiguredMethod,
+                ConfiguredContainingTypeName: "Payments.TransferEngine", ConfiguredMethodName: "SubmitAsync",
+                ConfiguredDisplaySignature: "Payments.TransferEngine.SubmitAsync()"));
+        var helper = new ScenarioNode(new("scenario-node:v1:presentation-self:helper"), ScenarioNodeKind.MethodCall,
+            "helper", new MethodId("method:v1:Payments.TransferEngine.Helper"), new("operation:v1:helper"),
+            "helper", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(TargetContainingTypeName: "Payments.TransferEngine", TargetMemberName: "Helper"));
+        return new ScenarioGraph(new("entry-point:v1:presentation-self"), ScenarioGraphTestFactory.Profile.Id, method,
+            HttpMethodKind.Unknown, "", "Payments.TransferEngine.SubmitAsync()", [entry, action, helper],
+            [new ScenarioEdge(new("scenario-edge:v1:presentation-self"), action.Id, helper.Id, ScenarioEdgeKind.Call,
+                "call", evidence, CertaintyLevel.Exact)], [], "presentation-self", ScenarioTopology.Empty,
+            rootKind: ScenarioRootKind.ConfiguredMethod);
+    }
+
+    private static ScenarioGraph CreateConfiguredOutcomeGraph()
+    {
+        var evidence = ImmutableArray.Create(ScenarioGraphTestFactory.SourceEvidence("presentation-integrity-outcome"));
+        var method = new MethodId("method:v1:Payments.TransferEngine.SubmitAsync");
+        var entry = new ScenarioNode(new("scenario-node:v1:presentation-outcome:entry"), ScenarioNodeKind.EntryPoint,
+            "entry", method, null, "entry", evidence, CertaintyLevel.Exact);
+        var action = new ScenarioNode(new("scenario-node:v1:presentation-outcome:action"), ScenarioNodeKind.Action,
+            "action", method, null, "action", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(ActionKind: ScenarioActionKind.ConfiguredMethod,
+                ConfiguredContainingTypeName: "Payments.TransferEngine", ConfiguredMethodName: "SubmitAsync",
+                ConfiguredDisplaySignature: "Payments.TransferEngine.SubmitAsync()"));
+        var outcome = new ScenarioNode(new("scenario-node:v1:presentation-outcome:ok"), ScenarioNodeKind.Outcome,
+            "outcome", null, new("operation:v1:presentation-outcome:ok"), "HTTP 200", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(OutcomeStatusCode: 200));
+        return new ScenarioGraph(new("entry-point:v1:presentation-outcome"), ScenarioGraphTestFactory.Profile.Id, method,
+            HttpMethodKind.Unknown, "", "Payments.TransferEngine.SubmitAsync()", [entry, action, outcome],
+            [new ScenarioEdge(new("scenario-edge:v1:presentation-outcome"), action.Id, outcome.Id,
+                ScenarioEdgeKind.OutcomeSuccess, "success", evidence, CertaintyLevel.Exact)], [],
+            "presentation-outcome", ScenarioTopology.Empty, rootKind: ScenarioRootKind.ConfiguredMethod);
     }
 
     [Fact]
@@ -227,6 +463,84 @@ public sealed class DocumentationPlannerTests
 
         var participant = Assert.Single(plan.Diagram.Participants, item => item.Key == "action");
         Assert.Equal("OrdersApi.CreateOrderDraftAsync", participant.Label);
+    }
+
+    [Fact]
+    public void ExactHttpControllerActionUsesConciseLabelAndRetainsIdentityWithoutSelfParticipant()
+    {
+        const string fullIdentity = "CreditTransfer.Api.Controllers.CreditTransferController.Post";
+        var evidence = ImmutableArray.Create(new EvidenceRef(
+            new EvidenceId("evidence:v1:http-controller-label"), EvidenceKind.Source,
+            "CreditTransferController.cs", null, "CreditTransfer.Api.Controllers.CreditTransferController.Post", null,
+            CertaintyLevel.Exact));
+        var method = new MethodId("method:v1:" + fullIdentity);
+        var action = new ScenarioNode(
+            new("scenario-node:v1:http-controller-label:action"), ScenarioNodeKind.Action, "action", method, null,
+            fullIdentity, evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(
+                ActionKind: ScenarioActionKind.ControllerAction,
+                ControllerTypeName: "CreditTransfer.Api.Controllers.CreditTransferController",
+                ActionMethodName: "Post"));
+        var selfCall = new ScenarioNode(
+            new("scenario-node:v1:http-controller-label:self"), ScenarioNodeKind.MethodCall, "self-call", method,
+            new("operation:v1:http-controller-label:self"), fullIdentity, evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(
+                TargetContainingTypeName: "CreditTransfer.Api.Controllers.CreditTransferController",
+                TargetMemberName: "Validate"));
+        var graph = new ScenarioGraph(
+            new("entry-point:v1:http-controller-label"), ScenarioGraphTestFactory.Profile.Id, method,
+            HttpMethodKind.Post, "/credit-transfers", "POST /credit-transfers", [action, selfCall],
+            [new ScenarioEdge(new("scenario-edge:v1:http-controller-label:self"), action.Id, selfCall.Id,
+                ScenarioEdgeKind.Call, "call", evidence, CertaintyLevel.Exact)], [], fullIdentity,
+            ScenarioTopology.Empty);
+
+        var plan = DocumentationPlanner.Plan(graph);
+        var participant = Assert.Single(plan.Diagram.Participants, item => item.Key == "action");
+
+        Assert.Equal("CreditTransferController.Post", participant.Label);
+        Assert.Equal(fullIdentity, method.Value["method:v1:".Length..]);
+        Assert.Equal("CreditTransfer.Api.Controllers.CreditTransferController.Post", participant.Evidence[0].Symbol);
+        Assert.Equal(("action", "action"), (Assert.Single(plan.Diagram.Messages).Source, Assert.Single(plan.Diagram.Messages).Target));
+        Assert.Contains("label=CreditTransferController.Post", plan.Diagram.DebugProjection, StringComparison.Ordinal);
+        Assert.Contains("canonical=CreditTransfer.Api.Controllers.CreditTransferController.Post", plan.Diagram.DebugProjection, StringComparison.Ordinal);
+        Assert.DoesNotContain("label=CreditTransfer.Api.Controllers.CreditTransferController.Post", plan.Diagram.DebugProjection, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void HttpActionLabelQualifiesAfterCollisionWithAnotherParticipant()
+    {
+        var plan = DocumentationPlanner.Plan(ScenarioGraphTestFactory.CreateHttpActionLabelCollisionGraph());
+
+        Assert.Equal("Api.B.Method", Assert.Single(plan.Diagram.Participants, item => item.Key == "action").Label);
+        Assert.Contains(plan.Diagram.Participants, item => item.Label == "B.Method");
+    }
+
+    [Theory]
+    [InlineData("", "Post", "Controller action")]
+    [InlineData("CreditTransfer.Api.Controllers.CreditTransferController", "", "CreditTransferController")]
+    [InlineData("", "", "Controller action")]
+    public void IncompleteControllerActionFactsKeepTheNeutralFallback(
+        string controllerType, string actionMember, string expectedParticipantLabel)
+    {
+        var evidence = ImmutableArray.Create(ScenarioGraphTestFactory.SourceEvidence("incomplete-controller-action"));
+        var method = new MethodId("method:v1:incomplete-controller-action");
+        var action = new ScenarioNode(
+            new("scenario-node:v1:incomplete-controller-action"), ScenarioNodeKind.Action, "action", method, null,
+            "incomplete controller action", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(
+                ActionKind: ScenarioActionKind.ControllerAction,
+                ControllerTypeName: controllerType,
+                ActionMethodName: actionMember));
+        var graph = new ScenarioGraph(
+            new("entry-point:v1:incomplete-controller-action"), ScenarioGraphTestFactory.Profile.Id,
+            method, HttpMethodKind.Get, "/incomplete", "GET /incomplete", [action], [], [],
+            "incomplete-controller-action", ScenarioTopology.Empty);
+
+        var participant = Assert.Single(DocumentationPlanner.Plan(graph).Diagram.Participants, item => item.Key == "action");
+
+        Assert.Equal(expectedParticipantLabel, participant.Label);
+        Assert.DoesNotContain('.', participant.Label);
+        Assert.DoesNotContain("Post", participant.Label, StringComparison.Ordinal);
     }
 
     [Fact]

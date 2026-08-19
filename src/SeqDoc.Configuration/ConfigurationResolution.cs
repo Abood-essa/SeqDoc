@@ -22,7 +22,9 @@ public sealed record PassAConfigurationOverrides(
     string? BinaryAnalysis = null,
     string? SourceLink = null,
     ImmutableSortedDictionary<string, string>? MsBuildProperties = null,
-    ImmutableSortedDictionary<string, string>? KnownValues = null);
+    ImmutableSortedDictionary<string, string>? KnownValues = null,
+    ImmutableSortedSet<string>? ExcludeParticipants = null,
+    ImmutableSortedSet<string>? ExcludeCalls = null);
 
 /// <summary>
 /// Selects an optional YAML file and named profile, then supplies the final command-line overlay.
@@ -44,7 +46,9 @@ public sealed record ResolvedPassAConfiguration(
     ResolvedConfigurationValue<ImmutableSortedSet<string>> Roots,
     ImmutableSortedDictionary<string, ResolvedConfigurationValue<string>> MsBuildProperties,
     ImmutableSortedDictionary<string, ResolvedConfigurationValue<string>> KnownValues,
-    bool RootsSpecified = false);
+    bool RootsSpecified = false,
+    ResolvedConfigurationValue<ImmutableSortedSet<string>>? ExcludeParticipants = null,
+    ResolvedConfigurationValue<ImmutableSortedSet<string>>? ExcludeCalls = null);
 
 public interface IConfigurationResolver
 {

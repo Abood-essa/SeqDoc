@@ -287,4 +287,26 @@ public sealed class PresentationReadabilityTests
                     || phrase.Text.Contains("Classs", StringComparison.Ordinal)
                     || phrase.Text.Contains("Statuss", StringComparison.Ordinal)));
     }
+
+    /// <summary>
+    /// CA1: Compiler-proven constant arguments append a parenthesized summary to the call label,
+    /// distinguishing repeated calls to the same member by their argument values. String arguments
+    /// are quoted; numeric arguments are bare.
+    /// </summary>
+    [Fact]
+    public void CallArgumentLabelsDistinguishSameMemberWithDifferentConstantArguments()
+    {
+        var plan = DocumentationPlanner.Plan(ScenarioGraphTestFactory.CreateCallArgumentPresentationGraph());
+
+        var callLabels = plan.Diagram.Messages
+            .Where(message => message.Source == "action" && message.Target == "service")
+            .Select(message => message.Label)
+            .ToArray();
+
+        Assert.Equal(2, callLabels.Length);
+        Assert.Contains("GetItem(1)", callLabels);
+        Assert.Contains("GetItem(\"alpha\")", callLabels);
+        // The two calls must be distinct labels, never both "GetItem".
+        Assert.NotEqual(callLabels[0], callLabels[1]);
+    }
 }

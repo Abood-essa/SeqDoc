@@ -240,7 +240,10 @@ public static class CliHost
         DocumentationSummary? documentation = null;
         if (result.IsSuccess && outputPath is not null)
         {
-            var generation = GenerateDocumentation(result.Value!, paths.RepositoryRoot, outputPath, entry);
+            var generation = GenerateDocumentation(
+                result.Value!, paths.RepositoryRoot, outputPath, entry,
+                configuration.ExcludeParticipants?.Value ?? ImmutableSortedSet.Create<string>(StringComparer.Ordinal),
+                configuration.ExcludeCalls?.Value ?? ImmutableSortedSet.Create<string>(StringComparer.Ordinal));
             if (generation.InvalidEntry)
             {
                 // An unknown or ambiguous focused entry is user input error, never a documentation
@@ -255,6 +258,14 @@ public static class CliHost
                     invalidData,
                     result.Diagnostics.Add(generation.Diagnostic!),
                     humanSuccessWritten: true);
+            }
+
+            if (generation.InvalidInput)
+            {
+                object? invalidData = result.Value is null ? null : CreateAnalyzeData(result.Value, paths, configuration, null);
+                return WriteResult(
+                    output, error, json, "analyze", ApplicationOutcome.InvalidInput, invalidData,
+                    result.Diagnostics.Add(generation.Diagnostic!), humanSuccessWritten: true);
             }
 
             if (!generation.Succeeded)
@@ -367,7 +378,9 @@ public static class CliHost
     /// The focused entry must be an exact operation key or an entry-ID prefix resolving to exactly one
     /// flow; unknown or ambiguous selections fail as InvalidInput without touching prior output.
     /// </summary>
-    private static GenerationResult GenerateDocumentation(PassAAnalysisSummary summary, string repositoryRoot, string outputPath, string? entry)
+    private static GenerationResult GenerateDocumentation(
+        PassAAnalysisSummary summary, string repositoryRoot, string outputPath, string? entry,
+        ImmutableSortedSet<string> excludeParticipants, ImmutableSortedSet<string> excludeCalls)
     {
         string absoluteOutput = Path.GetFullPath(outputPath, repositoryRoot);
         var graphs = summary.CompanionInspections
@@ -395,7 +408,19 @@ public static class CliHost
         var entries = new List<DocumentSetEntry>();
         foreach (var graph in selected)
         {
-            var plan = DocumentationPlanner.Plan(graph);
+            DocumentationPlan plan;
+            try
+            {
+                plan = DocumentationPlanner.Plan(graph, excludeParticipants, excludeCalls);
+            }
+            catch (ArgumentException exception) when (exception.ParamName == "excludeParticipants")
+            {
+                return GenerationResult.InvalidDocumentationInput(CreateGenerationDiagnostic(
+                    "SD4011",
+                    "The documentation exclusion is invalid.",
+                    outputPath,
+                    exception.Message));
+            }
             string fileName = DocumentationFileNaming.EntryKey(graph.EntryPoint, graph.OperationKey);
             entries.Add(new DocumentSetEntry(fileName, plan.Wording, plan.Diagram));
         }
@@ -542,13 +567,15 @@ public static class CliHost
 
     private sealed record DocumentationSummary(string OutputPath, ImmutableArray<string> Files);
 
-    private sealed record GenerationResult(bool Succeeded, bool InvalidEntry, DocumentationSummary? Summary, AnalysisDiagnostic? Diagnostic)
+    private sealed record GenerationResult(bool Succeeded, bool InvalidEntry, bool InvalidInput, DocumentationSummary? Summary, AnalysisDiagnostic? Diagnostic)
     {
-        public static GenerationResult Success(DocumentationSummary summary) => new(true, false, summary, null);
+        public static GenerationResult Success(DocumentationSummary summary) => new(true, false, false, summary, null);
 
-        public static GenerationResult Failure(AnalysisDiagnostic diagnostic) => new(false, false, null, diagnostic);
+        public static GenerationResult Failure(AnalysisDiagnostic diagnostic) => new(false, false, false, null, diagnostic);
 
-        public static GenerationResult InvalidEntrySelection(AnalysisDiagnostic diagnostic) => new(false, true, null, diagnostic);
+        public static GenerationResult InvalidEntrySelection(AnalysisDiagnostic diagnostic) => new(false, true, false, null, diagnostic);
+
+        public static GenerationResult InvalidDocumentationInput(AnalysisDiagnostic diagnostic) => new(false, false, true, null, diagnostic);
     }
 
     private static async Task<int> RunCatalogAsync(

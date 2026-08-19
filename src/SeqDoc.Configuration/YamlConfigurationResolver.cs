@@ -129,6 +129,25 @@ public sealed class YamlConfigurationResolver : IConfigurationResolver
         }
 
         AnalysisDiagnostic? invalid = ValidateResolved(configuration, targetFramework, runtimeIdentifier, maxParallelism, binaryAnalysis, sourceLink);
+        var excludeParticipants = new ResolvedConfigurationValue<ImmutableSortedSet<string>>(
+            document?.ExcludeParticipants ?? ImmutableSortedSet.Create<string>(StringComparer.Ordinal),
+            document is null ? ConfigurationProvenance.Default : ConfigurationProvenance.ConfigurationFile);
+        var excludeCalls = new ResolvedConfigurationValue<ImmutableSortedSet<string>>(
+            document?.ExcludeCalls ?? ImmutableSortedSet.Create<string>(StringComparer.Ordinal),
+            document is null ? ConfigurationProvenance.Default : ConfigurationProvenance.ConfigurationFile);
+        if (commandLine?.ExcludeParticipants is not null)
+        {
+            excludeParticipants = new(commandLine.ExcludeParticipants, ConfigurationProvenance.CommandLine);
+        }
+        if (commandLine?.ExcludeCalls is not null)
+        {
+            excludeCalls = new(commandLine.ExcludeCalls, ConfigurationProvenance.CommandLine);
+        }
+        AnalysisDiagnostic? invalidExclusion = ValidateExclusions(excludeParticipants.Value, excludeCalls.Value);
+        if (invalidExclusion is not null)
+        {
+            return ApplicationResult.Failure<ResolvedPassAConfiguration>(ApplicationOutcome.InvalidInput, [invalidExclusion]);
+        }
         return invalid is null
             ? ApplicationResult.Success(new ResolvedPassAConfiguration(
                 configuration,
@@ -140,7 +159,9 @@ public sealed class YamlConfigurationResolver : IConfigurationResolver
                 roots,
                 msbuildProperties,
                  knownValues,
-                 rootsSpecified))
+                  rootsSpecified,
+                  excludeParticipants,
+                  excludeCalls))
             : ApplicationResult.Failure<ResolvedPassAConfiguration>(ApplicationOutcome.InvalidInput, [invalid]);
     }
 
@@ -190,6 +211,46 @@ public sealed class YamlConfigurationResolver : IConfigurationResolver
 
         return null;
     }
+
+    private static AnalysisDiagnostic? ValidateExclusions(
+        ImmutableSortedSet<string> participants,
+        ImmutableSortedSet<string> calls)
+    {
+        foreach (string value in participants)
+        {
+            if (!IsCanonicalType(value))
+            {
+                return CreateDiagnostic("SD3014", "A participant exclusion pattern is malformed.",
+                    "documentation.excludeParticipants", $"'{value}' is not a non-empty dot-separated type identity.",
+                    "Use a canonical containing type without wildcard characters.");
+            }
+        }
+
+        foreach (string value in calls)
+        {
+            int separator = value.LastIndexOf('.');
+            bool wildcard = value.EndsWith(".*", StringComparison.Ordinal);
+            string type = separator > 0 ? value[..separator] : string.Empty;
+            string member = separator >= 0 && !wildcard ? value[(separator + 1)..] : string.Empty;
+            if (!IsCanonicalType(type) || (!wildcard && !IsCanonicalMember(member)) ||
+                (wildcard && value.Count(character => character == '*') != 1))
+            {
+                return CreateDiagnostic("SD3015", "A call exclusion pattern is malformed.",
+                    "documentation.excludeCalls", $"'{value}' is not an exact Type.Member or Type.* pattern.",
+                    "Use non-empty dot-separated canonical segments and only a trailing Type.* wildcard.");
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsCanonicalType(string value)
+        => value.Length > 0 && value.Split('.').All(segment => !string.IsNullOrWhiteSpace(segment)
+            && !segment.Any(char.IsWhiteSpace)
+            && !segment.Contains('*'));
+
+    private static bool IsCanonicalMember(string value)
+        => value.Length > 0 && !value.Any(char.IsWhiteSpace) && !value.Contains('*');
 
     private static AnalysisDiagnostic? ValidateMap(
         ImmutableSortedDictionary<string, ResolvedConfigurationValue<string>> values,
