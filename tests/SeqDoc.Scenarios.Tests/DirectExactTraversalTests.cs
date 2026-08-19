@@ -157,8 +157,9 @@ public sealed class DirectExactTraversalTests
 
     [Theory]
     [InlineData("body-unavailable", "SC-DIRECT-BODY-UNAVAILABLE")]
-    [InlineData("foreign-project", "SC-DIRECT-CROSS-PROJECT")]
-    [InlineData("flow-body-mismatch", "SC-DIRECT-MISMATCH")]
+    [InlineData("unloaded-project", "SC-DIRECT-SOURCE-UNAVAILABLE")]
+    [InlineData("metadata-target", "SC-DIRECT-SOURCE-UNAVAILABLE")]
+    [InlineData("generated-target", "SC-DIRECT-SOURCE-UNAVAILABLE")]
     public void ExpansionBoundariesKeepParentVisibleAndWithholdChildren(string partition, string code)
     {
         var graph = DirectExactTraversalFixture.BuildGraph(partition);
@@ -168,6 +169,23 @@ public sealed class DirectExactTraversalTests
         Assert.DoesNotContain(expansion.Steps, step => step.Depth > 2);
         Assert.False(expansion.IsComplete);
         Assert.Contains(expansion.Diagnostics, diagnostic => diagnostic.Code == code);
+    }
+
+    [Theory]
+    [InlineData("sensitive-aws", "AKIA" + "1234567890ABCDEF")]
+    [InlineData("sensitive-github", "ghp_test_credential_value")]
+    [InlineData("sensitive-jwt", "eyJhbGciOiJIUzI1NiJ9")]
+    [InlineData("sensitive-openai", "sk-test-credential-value-123")]
+    [InlineData("sensitive-generic", "Abcdefghijklmnop1234")]
+    public void SensitiveArgumentValuesNeverReachScenarioOrWordingProjection(string partition, string secret)
+    {
+        var graph = DirectExactTraversalFixture.BuildGraph(partition);
+        var projection = DocumentationPlanner.Plan(graph).Diagram.DebugProjection?.ToString() ?? string.Empty;
+
+        Assert.DoesNotContain(secret, projection, StringComparison.Ordinal);
+        Assert.DoesNotContain("AKIA", projection, StringComparison.Ordinal);
+        Assert.DoesNotContain("ghp_", projection, StringComparison.Ordinal);
+        Assert.DoesNotContain("sk-", projection, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -186,6 +204,37 @@ public sealed class DirectExactTraversalTests
         Assert.Equal("SC-DIRECT-MISMATCH", diagnostic.Code);
     }
 
+    [Theory]
+    [InlineData("no-flow", "SC-DIRECT-NO-FLOW")]
+    [InlineData("ambiguous-flow", "SC-DIRECT-AMBIGUOUS-FLOW")]
+    public void MissingAndAmbiguousTargetFlowsHaveDistinctConservativeDiagnostics(string partition, string code)
+    {
+        var expansion = DirectExactTraversalFixture.BuildGraph(partition).DirectCallExpansion;
+
+        Assert.Contains(expansion.Steps, step => step.Depth == 1);
+        Assert.Contains(expansion.Diagnostics, diagnostic => diagnostic.Code == code);
+        Assert.DoesNotContain(expansion.Diagnostics, diagnostic => diagnostic.Code == "SC-DIRECT-MISMATCH");
+    }
+
+    /// <summary>
+    /// Generic loaded cross-project traversal is allowed when both projects are loaded in the same
+    /// compilation and the target has a MethodFlow. The foreign-project partition places Child
+    /// in a different project than Root, and traversal expands into it without a cross-project stop.
+    /// </summary>
+    [Fact]
+    public void CrossProjectTraversalExpandsWhenBothProjectsAreLoaded()
+    {
+        var graph = DirectExactTraversalFixture.BuildGraph("foreign-project");
+        var expansion = graph.DirectCallExpansion;
+
+        // The cross-project boundary is no longer emitted; traversal expands into the child.
+        Assert.Contains(expansion.Steps, step => step.Depth == 1);
+        Assert.DoesNotContain(expansion.Diagnostics,
+            diagnostic => diagnostic.Code == "SC-DIRECT-CROSS-PROJECT");
+        // The child body was traversed: Child's call to Grandchild is visible as a MethodCall node.
+        Assert.Contains(graph.Nodes, node => node.Kind == ScenarioNodeKind.MethodCall);
+    }
+
     [Fact]
     public void DescendantsInheritRootArmAndGuardedCalleeCallsFailClosed()
     {
@@ -198,7 +247,9 @@ public sealed class DirectExactTraversalTests
             Assert.Equal(rootGuarded.RootArmIds, step.RootArmIds));
         Assert.DoesNotContain(expansion.Steps, step => step.Operation.Value == "child.guarded");
         Assert.DoesNotContain(graph.Diagnostics, diagnostic => diagnostic.Code == "SC011");
-        Assert.DoesNotContain(DocumentationPlanner.Plan(graph).Diagram.Diagnostics, diagnostic => diagnostic.Code == "DP002");
+        Assert.DoesNotContain(
+            DocumentationPlanner.Plan(ScenarioTestFactory.WithExactOwnerWording(graph)).Diagram.Diagnostics,
+            diagnostic => diagnostic.Code == "DP002");
         foreach (var descendant in expansion.Steps.Where(step => step.Depth > 1))
         {
             Assert.Contains(graph.Topology.Memberships, membership => membership.ScenarioNode == descendant.ScenarioNodeId

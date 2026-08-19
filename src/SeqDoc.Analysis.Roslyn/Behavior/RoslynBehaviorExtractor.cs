@@ -3916,6 +3916,14 @@ internal static class RoslynBehaviorExtractor
                     ResolveProject(target, project, projectsByAssembly)));
                 referencedMethods = [targetId];
                 referencedTypes = ImmutableArray.Create(CreateSymbolId(target.ContainingType, project, projectsByAssembly));
+                var argumentMappings = call.Arguments
+                    .Where(argument => !argument.IsImplicit)
+                    .Select(argument => new ExtractedInvocationArgument(
+                        operationById.GetValueOrDefault(argument.Value),
+                        argument.Parameter?.Ordinal,
+                        argument.Parameter is not null && operationById.ContainsKey(argument.Value)))
+                    .OrderBy(argument => argument.ParameterOrdinal ?? int.MaxValue)
+                    .ToImmutableArray();
                 invocation = new ExtractedInvocationPayload(
                     targetId,
                     IsDispatchable(target),
@@ -3933,7 +3941,8 @@ internal static class RoslynBehaviorExtractor
                      IsInsideNestedFunction(operation),
                      projectsByAssembly.ContainsKey(target.ContainingAssembly),
                      target.ContainingAssembly.Identity.Name,
-                     IsPlatformAssembly(target.ContainingAssembly.Identity.Name));
+                      IsPlatformAssembly(target.ContainingAssembly.Identity.Name),
+                      argumentMappings);
                 break;
             case IDynamicInvocationOperation dynamicCall:
                 invocation = new ExtractedInvocationPayload(
@@ -4066,7 +4075,9 @@ internal static class RoslynBehaviorExtractor
             evaluationOrdinal,
             operation.Type?.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) ?? string.Empty,
             operation.ConstantValue.HasValue
-                ? Convert.ToString(operation.ConstantValue.Value, CultureInfo.InvariantCulture) ?? string.Empty
+                 ? operation.ConstantValue.Value is null
+                     ? null
+                     : Convert.ToString(operation.ConstantValue.Value, CultureInfo.InvariantCulture) ?? string.Empty
                 : null,
             operation.IsImplicit,
             IsSourceBacked(operation),
@@ -4082,7 +4093,8 @@ internal static class RoslynBehaviorExtractor
             localName,
             parameterOrdinal,
             ResolveEvidence(operation, documents, methodEvidence),
-            CertaintyLevel.Exact));
+             CertaintyLevel.Exact,
+             operation.ConstantValue.HasValue));
         evaluationOrdinal++;
         return operationId;
     }

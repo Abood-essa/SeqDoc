@@ -36,6 +36,61 @@ public sealed class MethodFlowBuilderTests
     }
 
     [Fact]
+    public void InvocationProjectsEverySupportedPositionalConstant()
+    {
+        var invocation = new OperationId("behavior-operation:v1:invoke");
+        var arguments = new[] { Arg("a", 0, "System.Int32", "1"), Arg("b", 1, "System.Boolean", "true"), Arg("c", 2, "System.String", "ok") };
+        var result = MethodFlowBuilder.Build(CreateInvocationBody(invocation, arguments, ["a", "b", "c"]));
+
+        Assert.Equal([(0, "1"), (1, "true"), (2, "ok")],
+            Assert.Single(result.Snapshot.Nodes.OfType<InvocationFlowNode>()).ConstantArguments
+                .Select(argument => (argument.Ordinal, argument.Value)));
+    }
+
+    [Fact]
+    public void InvocationUsesCompilerParameterOrdinalsForNamedReorderedArguments()
+    {
+        var invocation = new OperationId("behavior-operation:v1:invoke-reordered");
+        var arguments = new[] { Arg("second", 2, "System.String", "two"), Arg("first", 0, "System.Int32", "1") };
+        var result = MethodFlowBuilder.Build(CreateInvocationBody(invocation, arguments, ["second", "first"]));
+
+        Assert.Equal([0, 2], Assert.Single(result.Snapshot.Nodes.OfType<InvocationFlowNode>()).ConstantArguments.Select(argument => argument.Ordinal));
+    }
+
+    [Fact]
+    public void InvocationWithUnsupportedArgumentWithholdsTheEntireSummary()
+    {
+        var invocation = new OperationId("behavior-operation:v1:invoke-partial");
+        var arguments = new[] { Arg("supported", 0, "System.Int32", "1"), Arg("unknown", 1, "System.Object", null) };
+        var result = MethodFlowBuilder.Build(CreateInvocationBody(invocation, arguments, ["supported", "unknown"]));
+
+        Assert.Empty(Assert.Single(result.Snapshot.Nodes.OfType<InvocationFlowNode>()).ConstantArguments);
+    }
+
+    [Fact]
+    public void InvocationCarriesTypedNullWithoutConfusingItWithUnsupportedValue()
+    {
+        var invocation = new OperationId("behavior-operation:v1:invoke-null");
+        var result = MethodFlowBuilder.Build(CreateInvocationBody(invocation,
+            [Arg("null", 0, "System.String", null, hasConstantValue: true)], ["null"]));
+
+        var argument = Assert.Single(Assert.Single(result.Snapshot.Nodes.OfType<InvocationFlowNode>()).ConstantArguments);
+        Assert.True(argument.IsNull);
+        Assert.Null(argument.Value);
+        Assert.Equal("System.String", argument.FullyQualifiedType);
+    }
+
+    [Fact]
+    public void InvocationWithNonContiguousOrdinalsRetainsEvidenceButPresentationCanWithholdSummary()
+    {
+        var invocation = new OperationId("behavior-operation:v1:invoke-gap");
+        var result = MethodFlowBuilder.Build(CreateInvocationBody(invocation,
+            [Arg("first", 0, "System.Int32", "1"), Arg("third", 2, "System.Int32", "3")], ["first", "third"]));
+
+        Assert.Equal([0, 2], Assert.Single(result.Snapshot.Nodes.OfType<InvocationFlowNode>()).ConstantArguments.Select(item => item.Ordinal));
+    }
+
+    [Fact]
     public void ConditionalBlockProducesTrueAndFalseEdges()
     {
         var condition = new OperationId("behavior-operation:v1:cond");
@@ -524,4 +579,22 @@ public sealed class MethodFlowBuilderTests
             null,
             [],
             CertaintyLevel.Exact);
+
+    private static ExtractedMethodBody CreateInvocationBody(OperationId invocation, ExtractedOperation[] arguments, string[] argumentNames)
+    {
+        var argumentIds = argumentNames.Select(name => new OperationId($"behavior-operation:v1:{name}")).ToImmutableArray();
+        var call = new ExtractedOperation(invocation, Method, ExtractedOperationKind.Invocation, null, argumentIds, 0,
+            "System.Void", null, false, true, [], [], [],
+            new ExtractedInvocationPayload(new MethodId("method:v1:target"), false, false, false, false, false, argumentIds),
+            null, null, null, null, null, null, null, [], CertaintyLevel.Exact);
+        return CreateBody(
+            operations: [call, .. arguments],
+            blocks: [Block(0, [invocation], fallThrough: 1, terminal: None), Block(1, [], fallThrough: null, terminal: Exit)]);
+    }
+
+    private static ExtractedOperation Arg(string name, int parameterOrdinal, string type, string? value, bool hasConstantValue = false) =>
+        new(new OperationId($"behavior-operation:v1:{name}"), Method, ExtractedOperationKind.Literal, null, [], 1,
+            type, value, false, true, [], [], [], null, null, null, null, null, null,
+            LocalName: null, ParameterOrdinal: parameterOrdinal, Evidence: [], Certainty: CertaintyLevel.Exact,
+            HasConstantValue: hasConstantValue || value is not null);
 }

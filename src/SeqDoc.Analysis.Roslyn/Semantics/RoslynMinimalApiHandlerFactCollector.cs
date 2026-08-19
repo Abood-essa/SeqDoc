@@ -255,7 +255,8 @@ internal static class RoslynMinimalApiHandlerFactCollector
 
     private static string EffectiveRoute(OperationDescriptor operation)
     {
-        var route = operation.ConstantArguments.First(argument => argument.FullyQualifiedType == "System.String").Value;
+        var routeArgument = operation.ConstantArguments.FirstOrDefault(argument => argument.FullyQualifiedType == "System.String");
+        var route = routeArgument?.Value ?? string.Empty;
         var prefixes = operation.RouteGroup?.Prefixes ?? [];
         return "/" + string.Join("/", prefixes.Concat([route])
             .SelectMany(value => value.Split('/', StringSplitOptions.RemoveEmptyEntries)));

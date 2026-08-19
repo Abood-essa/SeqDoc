@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using SeqDoc.Core.Behavior;
 using SeqDoc.Core.Diagnostics;
 using SeqDoc.Core.Evidence;
+using SeqDoc.Core.Frameworks;
 using SeqDoc.Core.Identity;
 
 namespace SeqDoc.Analysis.Behavior;
@@ -58,7 +59,7 @@ public static class MethodFlowBuilder
                     continue;
                 }
 
-                var node = CreateOperationNode(body.Method, operation, block.Ordinal);
+                var node = CreateOperationNode(body.Method, operation, block.Ordinal, operationsById);
                 nodes.Add(node);
                 firstNodeId ??= node.Id;
                 if (lastNodeId is { } previous)
@@ -176,7 +177,7 @@ public static class MethodFlowBuilder
             snapshot.Diagnostics);
     }
 
-    private static FlowNode CreateOperationNode(MethodId method, ExtractedOperation operation, int blockOrdinal)
+    private static FlowNode CreateOperationNode(MethodId method, ExtractedOperation operation, int blockOrdinal, Dictionary<OperationId, ExtractedOperation> operationsById)
     {
         var id = StableIdentity.CreateFlowNodeId(new FlowNodeIdentityDescriptor(
             method,
@@ -206,7 +207,8 @@ public static class MethodFlowBuilder
                    blockOrdinal,
                    operation.EvaluationOrdinal,
                    operation.Invocation?.TargetAssemblyName,
-                   operation.Invocation?.IsPlatformTarget ?? false),
+                   operation.Invocation?.IsPlatformTarget ?? false,
+                   ConstantArguments: ProjectConstantArguments(operation, operationsById)),
             ExtractedOperationKind.ObjectCreation => new InvocationFlowNode(
                 id,
                 method,
@@ -253,6 +255,59 @@ public static class MethodFlowBuilder
                 operation.Evidence,
                 operation.Certainty),
         };
+    }
+
+    /// <summary>
+    /// Projects compiler-proven constant arguments from an invocation's argument operations.
+    /// Only literal and constant-valued arguments are included; parameter references,
+    /// enum members, and non-constant expressions are excluded so downstream presentation
+    /// never infers unsupported argument meaning.
+    /// </summary>
+    private static ImmutableArray<CompilerProvenArgument> ProjectConstantArguments(ExtractedOperation operation, Dictionary<OperationId, ExtractedOperation> operationsById)
+    {
+        if (operation.Invocation is not { Arguments: { Length: > 0 } arguments })
+        {
+            return [];
+        }
+
+        var builder = ImmutableArray.CreateBuilder<CompilerProvenArgument>();
+        var mappings = operation.Invocation.ArgumentMappings;
+        if (!mappings.IsDefaultOrEmpty)
+        {
+            if (mappings.Any(mapping => !mapping.IsMappingComplete || mapping.ParameterOrdinal is null))
+            {
+                return [];
+            }
+
+            foreach (var mapping in mappings.OrderBy(mapping => mapping.ParameterOrdinal))
+            {
+                if (!operationsById.TryGetValue(mapping.Operation, out var argOperation)
+                    || !argOperation.HasConstantValue
+                    || string.IsNullOrWhiteSpace(argOperation.TypeDescriptor))
+                {
+                    return [];
+                }
+                builder.Add(new CompilerProvenArgument(mapping.ParameterOrdinal!.Value,
+                    argOperation.TypeDescriptor, argOperation.ConstantValue,
+                    isNull: argOperation.ConstantValue is null));
+            }
+            return builder.ToImmutable();
+        }
+
+        for (int ordinal = 0; ordinal < arguments.Length; ordinal++)
+        {
+            if (!operationsById.TryGetValue(arguments[ordinal], out var argOperation)
+                || argOperation.ParameterOrdinal is not { } parameterOrdinal
+                || !argOperation.HasConstantValue
+                || string.IsNullOrWhiteSpace(argOperation.TypeDescriptor))
+            {
+                return [];
+            }
+            builder.Add(new CompilerProvenArgument(parameterOrdinal, argOperation.TypeDescriptor,
+                argOperation.ConstantValue, isNull: argOperation.ConstantValue is null));
+        }
+
+        return builder.OrderBy(argument => argument.Ordinal).ToImmutableArray();
     }
 
     private static OperationId[] CollectBlockOperations(

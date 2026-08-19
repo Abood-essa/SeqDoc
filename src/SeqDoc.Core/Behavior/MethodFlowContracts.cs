@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text.Json.Serialization;
 using SeqDoc.Core.Diagnostics;
 using SeqDoc.Core.Evidence;
+using SeqDoc.Core.Frameworks;
 using SeqDoc.Core.Identity;
 
 namespace SeqDoc.Core.Behavior;
@@ -134,7 +135,8 @@ public sealed record InvocationFlowNode : FlowNode
          int BlockOrdinal = 0,
          int EvaluationOrdinal = 0,
          string? TargetAssemblyName = null,
-         bool IsPlatformTarget = false) : base(Id, Method, Evidence, Certainty)
+         bool IsPlatformTarget = false,
+         ImmutableArray<CompilerProvenArgument> ConstantArguments = default) : base(Id, Method, Evidence, Certainty)
     {
         var hasTypedPresentation = TargetContainingTypeName is not null
             || TargetMethodName is not null
@@ -177,7 +179,10 @@ public sealed record InvocationFlowNode : FlowNode
         this.EvaluationOrdinal = EvaluationOrdinal;
         this.TargetAssemblyName = TargetAssemblyName;
         this.IsPlatformTarget = IsPlatformTarget;
+        this.ConstantArguments = ConstantArguments.IsDefault ? [] : ConstantArguments;
     }
+
+    public ImmutableArray<CompilerProvenArgument> ConstantArguments { get; init; }
 
     public OperationId Operation { get; init; }
     public MethodId? Target { get; init; }

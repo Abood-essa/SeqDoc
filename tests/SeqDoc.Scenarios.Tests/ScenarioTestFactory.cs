@@ -6,6 +6,7 @@ using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Frameworks;
 using SeqDoc.Core.Identity;
 using SeqDoc.Core.ProgramIndex;
+using SeqDoc.Core.ScenarioGraph;
 using SeqDoc.Core.Semantics;
 
 namespace SeqDoc.Scenarios.Tests;
@@ -58,6 +59,61 @@ internal static class ScenarioTestFactory
     internal static readonly OperationId RootDirectCallOperation = new("operation:v1:root.transfer");
     internal static readonly MethodId RootDirectCallTarget = new("method:v1:Payments.TransferGateway.SendAsync");
     internal static readonly MethodId NestedDirectCallTarget = new("method:v1:Payments.TransferGateway.ValidateAsync");
+
+    /// <summary>
+    /// Presentation-contract helper: gives every decision exact Owner predicate wording so planner
+    /// fragment tests exercise the renderable path. Fixture requests without predicate semantic
+    /// facts produce decisions without wording, and the planner now withholds such decisions
+    /// instead of rendering generic labels.
+    /// </summary>
+    internal static ScenarioGraph WithExactOwnerWording(ScenarioGraph graph)
+    {
+        var decisions = graph.Topology.Decisions
+            .Select((decision, index) => new ScenarioDecision(
+                decision.Id,
+                decision.Method,
+                decision.ControllingFlowNode,
+                decision.Condition,
+                decision.Evidence,
+                decision.Certainty,
+                new ScenarioPredicateWording(
+                    new SemanticFactId($"semantic-fact:v1:predicate:wording:{index}"),
+                    new PredicateExpression(
+                        PredicateExpressionKind.Comparison,
+                        [
+                            new PredicateExpression(PredicateExpressionKind.SymbolValue, [], "System.Object", displayName: "reservation"),
+                            new PredicateExpression(PredicateExpressionKind.NullConstant, [], "System.Object"),
+                        ],
+                        "System.Boolean",
+                        PredicateComparisonOperatorKind.Equal),
+                    ScenarioPredicateWordingRole.Owner,
+                    [SourceEvidence("predicate")],
+                    CertaintyLevel.Exact)))
+            .ToImmutableArray();
+        var topology = new ScenarioTopology(
+            decisions,
+            graph.Topology.Arms,
+            graph.Topology.Memberships,
+            graph.Topology.Terminals);
+        return new ScenarioGraph(
+            graph.EntryPoint,
+            graph.Profile,
+            graph.RootMethod,
+            graph.HttpMethod,
+            graph.CanonicalRoute,
+            graph.OperationKey,
+            graph.Nodes,
+            graph.Edges,
+            graph.Diagnostics,
+            graph.DebugProjection,
+            topology,
+            graph.Composition,
+            graph.CallbackRegions,
+            graph.HandlerTopology,
+            graph.DispatchHandlerExpansion,
+            graph.RootKind,
+            graph.DirectCallExpansion);
+    }
 
     // accepted contract conditional DI composition anchors. The top-level method identity is the synthesized
     // Program entry that owns the if/else; the condition/read operations and the toggle key join the

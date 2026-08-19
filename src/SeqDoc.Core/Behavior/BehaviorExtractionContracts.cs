@@ -102,7 +102,8 @@ public sealed record ExtractedOperation(
     string? LocalName,
     int? ParameterOrdinal,
     ImmutableArray<EvidenceRef> Evidence,
-    CertaintyLevel Certainty);
+    CertaintyLevel Certainty,
+    bool HasConstantValue = false);
 
 public sealed record ExtractedInvocationPayload
 {
@@ -119,7 +120,8 @@ public sealed record ExtractedInvocationPayload
         bool IsInsideNestedFunction = false,
         bool IsLoadedProjectTarget = false,
         string? TargetAssemblyName = null,
-        bool IsPlatformTarget = false)
+        bool IsPlatformTarget = false,
+        ImmutableArray<ExtractedInvocationArgument> ArgumentMappings = default)
     {
         var hasTypedPresentation = TargetContainingTypeName is not null
             || TargetMethodName is not null
@@ -156,6 +158,7 @@ public sealed record ExtractedInvocationPayload
         this.IsLoadedProjectTarget = IsLoadedProjectTarget;
         this.TargetAssemblyName = TargetAssemblyName;
         this.IsPlatformTarget = IsPlatformTarget;
+        this.ArgumentMappings = ArgumentMappings.IsDefault ? [] : ArgumentMappings;
     }
 
     public MethodId? Target { get; init; }
@@ -171,7 +174,11 @@ public sealed record ExtractedInvocationPayload
     public bool IsLoadedProjectTarget { get; init; }
     public string? TargetAssemblyName { get; init; }
     public bool IsPlatformTarget { get; init; }
+    public ImmutableArray<ExtractedInvocationArgument> ArgumentMappings { get; init; }
 }
+
+/// <summary>Preserves the compiler's parameter mapping for one invocation argument.</summary>
+public sealed record ExtractedInvocationArgument(OperationId Operation, int? ParameterOrdinal, bool IsMappingComplete);
 
 public sealed record ExtractedAssignmentPayload(OperationId Target, OperationId Value, bool IsCompound);
 

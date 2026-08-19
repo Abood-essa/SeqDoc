@@ -959,7 +959,6 @@ internal static class FrameworkAnalysisRequestProjector
             if (argument.Parameter is null
                 || argument.Value is null
                 || !argument.Value.ConstantValue.HasValue
-                || argument.Value.ConstantValue.Value is null
                 || argument.Value.Type is null)
             {
                 continue;
@@ -971,10 +970,12 @@ internal static class FrameworkAnalysisRequestProjector
                 continue;
             }
 
+            var isNull = argument.Value.ConstantValue.Value is null;
             builder.Add(new CompilerProvenArgument(
                 argument.Parameter.Ordinal,
                 fullyQualifiedType,
-                Convert.ToString(argument.Value.ConstantValue.Value, CultureInfo.InvariantCulture) ?? string.Empty));
+                isNull ? null : Convert.ToString(argument.Value.ConstantValue.Value, CultureInfo.InvariantCulture),
+                isNull));
         }
 
         return builder

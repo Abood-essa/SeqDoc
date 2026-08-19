@@ -32,21 +32,27 @@ public sealed record FrameworkMethodIdentity(
 /// </summary>
 public sealed record CompilerProvenArgument
 {
-    public CompilerProvenArgument(int ordinal, string fullyQualifiedType, string value)
+    public CompilerProvenArgument(int ordinal, string fullyQualifiedType, string? value, bool isNull = false)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(ordinal);
         ArgumentException.ThrowIfNullOrWhiteSpace(fullyQualifiedType);
-        ArgumentNullException.ThrowIfNull(value);
+        if (!isNull)
+        {
+            ArgumentNullException.ThrowIfNull(value);
+        }
         Ordinal = ordinal;
         FullyQualifiedType = fullyQualifiedType;
         Value = value;
+        IsNull = isNull;
     }
 
     public int Ordinal { get; }
 
     public string FullyQualifiedType { get; }
 
-    public string Value { get; }
+    public string? Value { get; }
+
+    public bool IsNull { get; }
 }
 
 /// <summary>

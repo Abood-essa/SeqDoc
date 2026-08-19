@@ -128,9 +128,7 @@ public static class ScenarioGraphBuilder
             ? ConfiguredMethodPresentation(request.ProgramIndex, entryPoint.RootMethod)
             : entryPoint.ActionKind == ScenarioActionKind.MinimalApiHandler
             ? MinimalApiActionPresentation(request.ProgramIndex, entryPoint.RootMethod)
-            : new ScenarioNodePresentation(
-                ControllerTypeName: ControllerTypeName(request.ProgramIndex, entryPoint.RootMethod),
-                ActionKind: entryPoint.ActionKind);
+            : ControllerActionPresentation(request.ProgramIndex, entryPoint.RootMethod);
         var actionNode = CreateNodeWithPresentation(
             profileId,
             entryPointId,
@@ -166,13 +164,23 @@ public static class ScenarioGraphBuilder
                 return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, ScenarioTopology.Empty,
                     directCallExpansion: new ScenarioDirectCallExpansion([], false, [mismatch]));
             }
-            var flow = request.Behavior.MethodFlows.SingleOrDefault(item => item.Method == method.Id);
-            if (method.BodyFingerprint is null || flow is null)
+            var flows = request.Behavior.MethodFlows.Where(item => item.Method == method.Id).ToArray();
+            if (method.BodyFingerprint is null || flows.Length == 0)
             {
-                diagnostics.Add(CreateDiagnostic(profileId, entryPointId, "SC002",
-                    "The configured method body is unavailable.",
-                    $"No analyzable Method Flow was produced for {method.Id.Value}; behavior is withheld."));
+                diagnostics.Add(CreateDiagnostic(profileId, entryPointId,
+                    method.BodyFingerprint is null ? "SC002" : "SC-DIRECT-NO-FLOW",
+                    method.BodyFingerprint is null ? "The configured method body is unavailable." : "No unique Method Flow was produced for the configured method.",
+                    method.BodyFingerprint is null ? $"No source body is available for {method.Id.Value}; behavior is withheld." : $"No Method Flow was produced for {method.Id.Value}; behavior is withheld."));
                 return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, ScenarioTopology.Empty);
+            }
+            if (flows.Length > 1)
+            {
+                var diagnostic = CreateDiagnostic(profileId, entryPointId, "SC-DIRECT-AMBIGUOUS-FLOW",
+                    "More than one Method Flow matches the configured method; behavior is withheld.",
+                    $"Ambiguous Method Flow count={flows.Length} for {method.Id.Value}; no flow was selected.");
+                diagnostics.Add(diagnostic);
+                return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, ScenarioTopology.Empty,
+                    directCallExpansion: new ScenarioDirectCallExpansion([], false, [diagnostic]));
             }
 
             var directExpansion = AddConfiguredDirectCalls(request, entryPoint, profileId, actionNode, nodes, edges, diagnostics);
@@ -299,7 +307,8 @@ public static class ScenarioGraphBuilder
             new ScenarioNodePresentation(
                 ContractTypeName: resolution.Binding.ServiceType,
                 ImplementationTypeName: resolution.Registration.ImplementationType,
-                CalledMemberName: MethodConciseName(request.ProgramIndex, resolution.ServiceMethod)),
+                CalledMemberName: MethodConciseName(request.ProgramIndex, resolution.ServiceMethod),
+                ArgumentLabel: FormatArgumentLabel(InvocationConstantArguments(request, resolution.ServiceMethod, resolution.CallSite.InvocationOperation))),
             Combine(resolution.CallSite.Evidence, resolution.CallSite.Resolution.Evidence, resolution.Binding.Evidence, resolution.Registration.Evidence));
         nodes.Add(serviceNode);
         edges.Add(CreateEdge(
@@ -504,6 +513,7 @@ public static class ScenarioGraphBuilder
                 "SC-DIRECT-CYCLE" => "cycle",
                 "SC-DIRECT-DEPTH" => "depth",
                 "SC-DIRECT-BODY-UNAVAILABLE" => "body-unavailable",
+                "SC-DIRECT-SOURCE-UNAVAILABLE" => "source-unavailable",
                 "SC-DIRECT-CROSS-PROJECT" => "cross-project",
                 "SC-DIRECT-MISMATCH" => "method-flow mismatch",
                 "SC-DIRECT-DUPLICATE" => "duplicate anchor",
@@ -536,13 +546,15 @@ public static class ScenarioGraphBuilder
                 $"method-call:{stepId}", target, invocation.Operation,
                 $"calls {invocation.TargetContainingTypeName}.{invocation.TargetMethodName}",
                 new ScenarioNodePresentation(TargetContainingTypeName: invocation.TargetContainingTypeName,
-                 TargetMemberName: invocation.TargetMethodName), evidence, CertaintyLevel.Exact, SourceOrdinal(invocation));
+                 TargetMemberName: invocation.TargetMethodName,
+                 ArgumentLabel: FormatArgumentLabel(invocation.ConstantArguments)), evidence, CertaintyLevel.Exact, SourceOrdinal(invocation));
             nodes.Add(node);
             edges.Add(CreateEdge(profileId, entryPoint.EntryPointId,
                 parentStepId is null ? actionNode : nodes.Single(item => item.Id == steps.Single(step => step.Id == parentStepId).ScenarioNodeId),
                  node, ScenarioEdgeKind.Call, "direct method call", evidence, CertaintyLevel.Exact, SourceOrdinal(invocation)));
 
             var method = request.ProgramIndex.Methods.SingleOrDefault(item => item.Id == target);
+            var targetFlows = request.Behavior.MethodFlows.Where(flow => flow.Method == target).Take(2).ToArray();
             var stepComplete = true;
             var cycle = path.Contains(target);
             if (method is null || method.BodyFingerprint is null)
@@ -550,16 +562,23 @@ public static class ScenarioGraphBuilder
                 Boundary("SC-DIRECT-BODY-UNAVAILABLE", invocation.Operation.Value, evidence, target.Value);
                 stepComplete = false;
             }
-            else if (ProjectOf(request, caller) is not { } callerProject
-                || ProjectOf(request, target) is not { } targetProject
-                || callerProject != targetProject)
+            else if (!invocation.IsLoadedProjectTarget
+                || method.Evidence.Any(item => item.Kind == EvidenceKind.GeneratedSource))
             {
-                Boundary("SC-DIRECT-CROSS-PROJECT", invocation.Operation.Value, evidence, target.Value);
+                Boundary("SC-DIRECT-SOURCE-UNAVAILABLE", invocation.Operation.Value, evidence,
+                    method.Evidence.Any(item => item.Kind == EvidenceKind.GeneratedSource)
+                        ? $"generated-source:{target.Value}"
+                        : $"unloaded-project:{target.Value}");
                 stepComplete = false;
             }
-            else if (request.Behavior.MethodFlows.Count(flow => flow.Method == target && flow.BodyFingerprint == method.BodyFingerprint) != 1)
+            else if (targetFlows.Length == 0)
             {
-                Boundary("SC-DIRECT-MISMATCH", invocation.Operation.Value, evidence, target.Value);
+                Boundary("SC-DIRECT-NO-FLOW", invocation.Operation.Value, evidence, target.Value);
+                stepComplete = false;
+            }
+            else if (targetFlows.Length > 1)
+            {
+                Boundary("SC-DIRECT-AMBIGUOUS-FLOW", invocation.Operation.Value, evidence, target.Value);
                 stepComplete = false;
             }
             else if (cycle)
@@ -1045,7 +1064,8 @@ public static class ScenarioGraphBuilder
             new ScenarioNodePresentation(
                 ContractTypeName: serviceType,
                 ImplementationTypeName: arm.ImplementationType,
-                CalledMemberName: MethodConciseName(request.ProgramIndex, arm.ResolvedMethod)),
+                CalledMemberName: MethodConciseName(request.ProgramIndex, arm.ResolvedMethod),
+                ArgumentLabel: FormatArgumentLabel(InvocationConstantArguments(request, arm.ResolvedMethod, callSite.InvocationOperation))),
             Combine(callSite.Evidence, callSite.Resolution.Evidence, arm.Evidence));
 
     /// <summary>
@@ -2310,6 +2330,22 @@ public static class ScenarioGraphBuilder
         return method is null ? null : DeclaringTypeName(index, actionMethod);
     }
 
+    private static ScenarioNodePresentation ControllerActionPresentation(ProgramIndexSnapshot index, MethodId actionMethod)
+    {
+        var methods = index.Methods.Where(candidate => candidate.Id == actionMethod).ToArray();
+        if (methods.Length != 1 || string.IsNullOrEmpty(methods[0].Name))
+        {
+            return new ScenarioNodePresentation();
+        }
+
+        var types = index.Types.Where(candidate => candidate.Id == methods[0].ContainingType).ToArray();
+        return types.Length == 1 && !string.IsNullOrEmpty(types[0].MetadataName)
+            ? new ScenarioNodePresentation(
+                ControllerTypeName: types[0].MetadataName,
+                ActionMethodName: methods[0].Name)
+            : new ScenarioNodePresentation();
+    }
+
     private static ScenarioNodePresentation MinimalApiActionPresentation(ProgramIndexSnapshot index, MethodId actionMethod)
     {
         var methods = index.Methods.Where(candidate => candidate.Id == actionMethod).ToArray();
@@ -2353,6 +2389,107 @@ public static class ScenarioGraphBuilder
     /// <summary>Concise (short) member name of a method from the Program Index, used for the exact called-member display.</summary>
     private static string? MethodConciseName(ProgramIndexSnapshot index, MethodId methodId)
         => index.Methods.FirstOrDefault(candidate => candidate.Id == methodId)?.Name;
+
+    /// <summary>
+    /// Formats compiler-proven constant arguments into a concise parenthesized display label.
+    /// String arguments are quoted; numeric and boolean arguments are bare; enum and other
+    /// arguments are rendered as their constant value. Returns null when no constant arguments
+    /// are available so the caller falls back to the bare member name.
+    /// </summary>
+    private static string? FormatArgumentLabel(ImmutableArray<CompilerProvenArgument> arguments)
+    {
+        if (arguments.IsDefaultOrEmpty
+            || arguments.Select(argument => argument.Ordinal).Distinct().Count() != arguments.Length
+            || !arguments.Select(argument => argument.Ordinal).Order().SequenceEqual(Enumerable.Range(0, arguments.Length)))
+        {
+            return null;
+        }
+
+        if (arguments.Any(argument => LooksSensitive(argument.Value)))
+        {
+            return null;
+        }
+
+        var parts = new List<string>(arguments.Length);
+        foreach (var arg in arguments)
+        {
+            parts.Add(FormatArgumentValue(arg));
+        }
+
+        return string.Join(", ", parts);
+
+        static string FormatArgumentValue(CompilerProvenArgument arg)
+        {
+            if (arg.IsNull)
+            {
+                return "null";
+            }
+
+            if (arg.FullyQualifiedType == "System.String")
+            {
+                var escaped = arg.Value!
+                    .Replace("\\", "\\\\", StringComparison.Ordinal)
+                    .Replace("\"", "\\\"", StringComparison.Ordinal)
+                    .Replace("\r", "\\r", StringComparison.Ordinal)
+                    .Replace("\n", "\\n", StringComparison.Ordinal)
+                    .Replace("\t", "\\t", StringComparison.Ordinal)
+                    .Replace("`", "\\`", StringComparison.Ordinal);
+                return $"\"{escaped}\"";
+            }
+
+            return arg.Value!;
+        }
+
+        static bool LooksSensitive(string? value)
+        {
+            if (value is null)
+            {
+                return true;
+            }
+            var lower = value.ToLowerInvariant();
+            if (lower.Contains("password", StringComparison.Ordinal)
+                || lower.Contains("secret", StringComparison.Ordinal)
+                || lower.Contains("token", StringComparison.Ordinal)
+                || lower.Contains("connection-string", StringComparison.Ordinal)
+                || lower.Contains("connectionstring", StringComparison.Ordinal)
+                || lower.Contains("api_key", StringComparison.Ordinal)
+                || lower.Contains("apikey", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            return ((value.StartsWith("AKIA", StringComparison.Ordinal) || value.StartsWith("ASIA", StringComparison.Ordinal))
+                    && value.Length == 20)
+                || value.StartsWith("ghp_", StringComparison.Ordinal)
+                || value.StartsWith("gho_", StringComparison.Ordinal)
+                || value.StartsWith("ghu_", StringComparison.Ordinal)
+                || value.StartsWith("ghs_", StringComparison.Ordinal)
+                || value.StartsWith("ghr_", StringComparison.Ordinal)
+                || value.StartsWith("github_pat_", StringComparison.Ordinal)
+                || (value.StartsWith("sk-", StringComparison.Ordinal) && value.Length >= 20)
+                || (value.Count(character => character == '.') == 2
+                    && value.Split('.').All(part => part.Length >= 8
+                        && part.All(character => char.IsLetterOrDigit(character) || character is '-' or '_')))
+                || (value.Length >= 16 && value.All(char.IsLetterOrDigit)
+                    && value.Distinct().Count() >= 10 && value.Any(char.IsDigit));
+        }
+    }
+
+    /// <summary>
+    /// Looks up the InvocationFlowNode for the given operation in the method flow, returning
+    /// its ConstantArguments if available. Returns default when the flow or node is absent.
+    /// </summary>
+    private static ImmutableArray<CompilerProvenArgument> InvocationConstantArguments(ScenarioAnalysisRequest request, MethodId method, OperationId operation)
+    {
+        var flow = request.Behavior.MethodFlows.SingleOrDefault(item => item.Method == method);
+        if (flow is null)
+        {
+            return [];
+        }
+
+        var invocation = flow.Nodes.OfType<InvocationFlowNode>().SingleOrDefault(node => node.Operation == operation);
+        return invocation?.ConstantArguments ?? [];
+    }
 
     /// <summary>
     /// Derives the architecture decision decision topology from Method Flow alone: decisions and arms from

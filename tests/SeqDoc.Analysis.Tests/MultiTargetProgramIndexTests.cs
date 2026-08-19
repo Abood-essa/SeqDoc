@@ -19,8 +19,10 @@ public sealed class MultiTargetProgramIndexTests
         var profiles = resolved.Value!.Profiles;
         var builder = new RoslynProgramIndexBuilder();
 
-        var portable = await builder.BuildAsync(CreateAnalysisRequest(request, profiles[0]), CancellationToken.None);
-        var windows = await builder.BuildAsync(CreateAnalysisRequest(request, profiles[1]), CancellationToken.None);
+        var portableProfile = Assert.Single(profiles, profile => profile.TargetFramework == "net10.0");
+        var windowsProfile = Assert.Single(profiles, profile => profile.TargetFramework == "net10.0-windows");
+        var portable = await builder.BuildAsync(CreateAnalysisRequest(request, portableProfile), CancellationToken.None);
+        var windows = await builder.BuildAsync(CreateAnalysisRequest(request, windowsProfile), CancellationToken.None);
         AssertSucceeded(portable);
         AssertSucceeded(windows);
         var portableIndex = portable.Value!;
@@ -49,8 +51,8 @@ public sealed class MultiTargetProgramIndexTests
         Assert.All(portableIndex.Projects, project => Assert.Equal(portableIndex.Profile.Id, project.Profile));
         Assert.All(windowsIndex.Projects, project => Assert.Equal(windowsIndex.Profile.Id, project.Profile));
 
-        var repeatedPortable = await builder.BuildAsync(CreateAnalysisRequest(request, profiles[0]), CancellationToken.None);
-        var repeatedWindows = await builder.BuildAsync(CreateAnalysisRequest(request, profiles[1]), CancellationToken.None);
+        var repeatedPortable = await builder.BuildAsync(CreateAnalysisRequest(request, portableProfile), CancellationToken.None);
+        var repeatedWindows = await builder.BuildAsync(CreateAnalysisRequest(request, windowsProfile), CancellationToken.None);
         Assert.Equal(portableIndex.IndexFingerprint, repeatedPortable.Value!.IndexFingerprint);
         Assert.Equal(windowsIndex.IndexFingerprint, repeatedWindows.Value!.IndexFingerprint);
 
@@ -73,9 +75,11 @@ public sealed class MultiTargetProgramIndexTests
         var request = CompilationProfileResolverTests.CreateRequest(properties) with { AllTargetFrameworks = true };
         var resolved = await new MsBuildCompilationProfileResolver().ResolveAsync(request, CancellationToken.None);
         var builder = new RoslynProgramIndexBuilder();
+        var portableProfile = Assert.Single(resolved.Value!.Profiles, profile => profile.TargetFramework == "net10.0");
+        var windowsProfile = Assert.Single(resolved.Value.Profiles, profile => profile.TargetFramework == "net10.0-windows");
 
-        var portable = await builder.BuildAsync(CreateAnalysisRequest(request, resolved.Value!.Profiles[0]), CancellationToken.None);
-        var windows = await builder.BuildAsync(CreateAnalysisRequest(request, resolved.Value.Profiles[1]), CancellationToken.None);
+        var portable = await builder.BuildAsync(CreateAnalysisRequest(request, portableProfile), CancellationToken.None);
+        var windows = await builder.BuildAsync(CreateAnalysisRequest(request, windowsProfile), CancellationToken.None);
 
         Assert.Equal(ApplicationOutcome.BuildFailure, portable.Outcome);
         Assert.Null(portable.Value);

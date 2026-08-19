@@ -215,7 +215,7 @@ public sealed class ScenarioTopologyTests
     {
         var graph = Assert.Single(ScenarioGraphBuilder.Build(
             ScenarioTestFactory.CreateRootDirectCallTryRequest()).Graphs);
-        var plan = DocumentationPlanner.Plan(graph).Diagram;
+        var plan = DocumentationPlanner.Plan(ScenarioTestFactory.WithExactOwnerWording(graph)).Diagram;
 
         var decision = Assert.Single(graph.Topology.Decisions);
         var trueArm = Assert.Single(graph.Topology.Arms, arm => arm.Decision == decision.Id && arm.IsTrue);

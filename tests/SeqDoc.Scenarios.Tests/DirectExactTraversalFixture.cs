@@ -45,7 +45,7 @@ internal static class DirectExactTraversalFixture
         var project = new ProjectId("project:v1:fixture");
         var methods = new List<MethodSpec>
         {
-            new(root, "Root", project), new(child, "Child", project), new(grandchild, "Grandchild", project),
+            new(root, "Root", project), new(child, "Child", partition == "foreign-project" ? foreignProject : project), new(grandchild, "Grandchild", project),
             new(shared, "Shared", project), new(leaf, "Leaf", project),
         };
 
@@ -86,8 +86,6 @@ internal static class DirectExactTraversalFixture
 
         var boundary = partition switch
         {
-            "foreign-project" => child,
-            "flow-body-mismatch" => child,
             "body-unavailable" => child,
             _ => (MethodId?)null,
         };
@@ -96,8 +94,7 @@ internal static class DirectExactTraversalFixture
             var methodIndex = methods.FindIndex(item => item.Id == boundaryMethod);
             methods[methodIndex] = methods[methodIndex] with
             {
-                Project = partition == "foreign-project" ? foreignProject : project,
-                BodyFingerprint = partition == "body-unavailable" ? null : "body-foreign",
+                BodyFingerprint = null,
             };
         }
 
@@ -111,8 +108,16 @@ internal static class DirectExactTraversalFixture
 
         var profile = ScenarioTestFactory.Profile;
         var evidence = SourceEvidence("ct6-fixture");
-        var index = CreateIndex(profile, project, foreignProject, methods);
+        var index = CreateIndex(profile, project, foreignProject, methods, partition);
         var flows = methods.Select(spec => CreateFlow(spec, calls[spec.Id], rejected, partition, evidence)).ToImmutableArray();
+        if (partition == "no-flow")
+        {
+            flows = flows.Where(flow => flow.Method != child).ToImmutableArray();
+        }
+        else if (partition == "ambiguous-flow")
+        {
+            flows = flows.Add(flows.Single(flow => flow.Method == child) with { FlowFingerprint = "ambiguous-flow-copy" });
+        }
         var sites = flows.SelectMany(flow => flow.Nodes.OfType<InvocationFlowNode>().Select(invocation =>
         {
             var target = invocation.Target!.Value;
@@ -191,7 +196,14 @@ internal static class DirectExactTraversalFixture
                 rejected.Contains(call.Operation) && partition == "dynamic", [evidence], CertaintyLevel.Exact,
                 $"Fixture.{call.Target.Value.Split('.').Last()}", call.Operation,
                 partition == "nested-function" && rejected.Contains(call.Operation), true,
-                false, ordinal, 0, "Fixture", partition == "platform" && rejected.Contains(call.Operation));
+                partition is not ("unloaded-project" or "metadata-target"), ordinal, 0, "Fixture", partition == "platform" && rejected.Contains(call.Operation));
+            if (method.Id == Method("Root") && call.Operation == "root.first" && partition.StartsWith("sensitive-", StringComparison.Ordinal))
+            {
+                invocation = invocation with
+                {
+                    ConstantArguments = [new CompilerProvenArgument(0, "System.String", SensitiveValue(partition))]
+                };
+            }
             if (partition == "delegate" && rejected.Contains(call.Operation))
             {
                 invocation = invocation with { IsDelegateOrEventInvoke = true };
@@ -228,13 +240,13 @@ internal static class DirectExactTraversalFixture
         {
             dependences.Add(new ControlDependence(new($"flow-node:v1:{method.Id.Value}:local-decision"), guarded.Id, true, [evidence], CertaintyLevel.Exact));
         }
-        var flowFingerprint = partition == "flow-body-mismatch" && method.Id == Method("Child") ? "body" : method.BodyFingerprint ?? "flow-body";
+        var flowFingerprint = method.BodyFingerprint ?? "flow-body";
         return new MethodFlowSnapshot(method.Id, flowFingerprint, nodes.ToImmutableArray(), edges.ToImmutableArray(), [], [],
             new LocalValueGraph([], []), dependences.ToImmutableArray(), null, [], $"flow:{method.BodyFingerprint}");
     }
 
     private static ProgramIndexSnapshot CreateIndex(CompilationProfile profile, ProjectId project, ProjectId foreign,
-        List<MethodSpec> methods)
+        List<MethodSpec> methods, string partition)
     {
         var projects = ImmutableArray.Create(
             new ProgramProject(project, "Fixture", "Fixture.csproj", profile.Id, profile.TargetFramework, ProjectKind.Library, "project", [], [SourceEvidence("project")]),
@@ -243,7 +255,7 @@ internal static class DirectExactTraversalFixture
             new SymbolId("symbol:v1:namespace"), $"Fixture.{spec.Name}", ProgramTypeKind.Class, null, [], "type", [SourceEvidence("type")]));
         var programMethods = methods.Select(spec => new ProgramMethod(spec.Id, new($"symbol:v1:{spec.Id.Value}"),
             new($"symbol:v1:{spec.Id.Value}:type"), spec.Name, $"Fixture.{spec.Name}()", [], "System.Void", "signature",
-            spec.BodyFingerprint, [SourceEvidence("method")])).ToImmutableArray();
+             spec.BodyFingerprint, [SourceEvidence("method", partition == "generated-target" && spec.Id == Method("Child"))])).ToImmutableArray();
         return new ProgramIndexSnapshot(1, "ct6-test", profile, projects, [], [], types.ToImmutableArray(), [], programMethods,
             [], [], [], [], [], "ct6-input", "ct6-index");
     }
@@ -252,8 +264,17 @@ internal static class DirectExactTraversalFixture
         new(new($"flow-edge:v1:{method.Value}:{source.Id.Value}:{target.Id.Value}:{kind}"), method, source.Id, target.Id, kind, null, [evidence], CertaintyLevel.Exact);
 
     private static MethodId Method(string name) => new($"method:v1:Fixture.{name}");
-    private static EvidenceRef SourceEvidence(string value) =>
-        new(new($"evidence:v1:{value}"), EvidenceKind.Source, "ct6-fixture", null, value, null, CertaintyLevel.Exact);
+    private static string SensitiveValue(string partition) => partition switch
+    {
+        "sensitive-aws" => "AKIA" + "1234567890ABCDEF",
+        "sensitive-github" => "ghp_test_credential_value",
+        "sensitive-jwt" => "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3OCJ9.signaturevalue",
+        "sensitive-openai" => "sk-test-credential-value-123",
+        _ => "Abcdefghijklmnop1234",
+    };
+    private static EvidenceRef SourceEvidence(string value, bool generated = false) =>
+        new(new($"evidence:v1:{value}"), generated ? EvidenceKind.GeneratedSource : EvidenceKind.Source,
+            "ct6-fixture", null, value, null, CertaintyLevel.Exact);
 
     private sealed record MethodSpec(MethodId Id, string Name, ProjectId Project, string? BodyFingerprint = "body");
     private sealed record CallSpec(string Operation, MethodId Target);

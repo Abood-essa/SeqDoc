@@ -51,7 +51,7 @@ public sealed class ScenarioGraphBuilderTests
             ConfiguredRoots = [ScenarioTestFactory.ActionMethod],
         };
         var graph = Assert.Single(ScenarioGraphBuilder.Build(request).Graphs);
-        var plan = DocumentationPlanner.Plan(graph);
+        var plan = DocumentationPlanner.Plan(ScenarioTestFactory.WithExactOwnerWording(graph));
 
         Assert.Equal(ScenarioRootKind.ConfiguredMethod, graph.RootKind);
         Assert.Equal(["ValidateAsync", "SendAsync"], graph.Nodes.Where(node => node.Kind == ScenarioNodeKind.MethodCall)
@@ -268,6 +268,20 @@ public sealed class ScenarioGraphBuilderTests
         Assert.Equal(
             ScenarioActionKind.MinimalApiHandler,
             Assert.Single(minimal.Nodes, node => node.Kind == ScenarioNodeKind.Action).Presentation?.ActionKind);
+    }
+
+    [Fact]
+    public void HttpActionPresentationCarriesControllerTypeAndExactMethodFromProgramIndex()
+    {
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(ScenarioTestFactory.CreateGetRequest()).Graphs);
+        var action = Assert.Single(graph.Nodes, node => node.Kind == ScenarioNodeKind.Action);
+
+        Assert.Equal(ScenarioActionKind.ControllerAction, action.Presentation?.ActionKind);
+        Assert.Equal("GetMeaning.Controllers.GadgetsController", action.Presentation?.ControllerTypeName);
+        Assert.Equal("GetById", action.Presentation?.ActionMethodName);
+        Assert.Equal(
+            graph.Nodes.Single(node => node.Kind == ScenarioNodeKind.EntryPoint).Evidence.Select(evidence => evidence.Id.Value),
+            action.Evidence.Select(evidence => evidence.Id.Value));
     }
 
     [Fact]

@@ -159,6 +159,7 @@ public sealed record ScenarioNodePresentation(
     string? ContractTypeName = null,
     string? ImplementationTypeName = null,
     string? CalledMemberName = null,
+    string? ArgumentLabel = null,
     string? DbContextTypeName = null,
     string? EntityTypeName = null,
     EntityFrameworkQueryOperatorKind? QueryOperatorKind = null,
