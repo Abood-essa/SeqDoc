@@ -55,3 +55,15 @@ is licensed under the [Mozilla Public License 2.0](../LICENSE), the same license
 - Direct pushes to `main` are restricted; all external contributions use pull requests.
 - Address review findings on the same PR branch and request review again. The maintainer updates canonical
   roadmap/status documentation after verified merges.
+
+## Waiting for review and stacked work
+
+When a completed PR is waiting, first choose another independent issue labeled `ready` and branch from current `main`.
+Keep no more than two implementation PRs open at once. If the next issue is blocked by the pending PR, you may research
+and plan it, but production implementation requires explicit maintainer approval.
+
+Request approval in the blocked issue. If approved, the maintainer comments and adds `stack-approved`; the dependency
+remains because the work still cannot merge independently. Branch from the pending PR, open a draft PR, link the base
+PR, and limit the stack to two levels. After the base merges, rebase onto `main`, inspect the resulting issue-only diff,
+rerun verification, and then mark the PR ready. Pause the dependent work if the base is rejected or substantially
+redesigned. The PR **Approve** button is code-review approval and is not used to authorize starting stacked work.

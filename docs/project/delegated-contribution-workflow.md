@@ -20,3 +20,15 @@ enter public history.
 Canonical documentation is rewritten from verified evidence. For each integrated candidate record what was reused,
 what was repaired or rejected, why, the verification performed, and whether delegation reduced total work. Optimize
 the workflow from recurring defect categories rather than weakening review standards.
+
+## Review latency and dependent work
+
+Maintain at least one independent `ready` issue per contributor where practical. A contributor with a review-ready PR
+may start one independent branch from `main`, keeping a maximum of two open implementation PRs. Blocked work remains
+planning-only unless the maintainer explicitly authorizes a two-level stack.
+
+Stack authorization is workflow permission, not code approval: retain the GitHub `blocked by` relationship, add
+`stack-approved`, branch the dependent issue from the pending PR, and keep its PR draft with an explicit dependency.
+Do not stack review-sensitive shared contracts unless pre-approved. When the base merges, rebase, verify the isolated
+diff, rerun affected verification, and remove the label/draft state. If the base direction changes or fails review,
+stop dependent implementation rather than preserving sunk work on a rejected foundation.

@@ -66,4 +66,20 @@ documentation to SeqDoc. See `docs/usage.md` for setup.
   focused tests plus the required gate, and request review again.
 - Do not rewrite canonical roadmap/status files to claim completion. The maintainer updates them after merge.
 
+### While waiting for review
+
+1. Finish and self-review the submitted PR before starting more implementation.
+2. Prefer another independent issue labeled `ready`, branched from current `main`. Keep at most two implementation PRs
+   open per contributor.
+3. For a blocked next issue, research and comment a plan, risks, fixtures, and tests without changing production code.
+4. A dependent implementation may start only after the maintainer comments approval and applies `stack-approved`.
+   Keep the GitHub dependency in place, branch from the pending PR, open a draft PR, state `Depends on PR #...`, and
+   limit the stack to the base PR plus one dependent PR.
+5. Never stack shared Core/IR, identity, persistence, profile, or other review-sensitive foundation changes unless the
+   issue explicitly permits it.
+6. After the base merges, rebase the dependent branch onto `main`, verify its diff contains only its issue, rerun its
+   focused command and final gate, remove draft status, and request review.
+7. If the base changes substantially or is rejected, pause and rework/discard dependent changes. If no independent or
+   approved stacked work exists, comment on the parent workstream and wait rather than expanding scope.
+
 The repository is licensed under MPL-2.0. By contributing, you agree to the terms in `docs/contributing.md`.
