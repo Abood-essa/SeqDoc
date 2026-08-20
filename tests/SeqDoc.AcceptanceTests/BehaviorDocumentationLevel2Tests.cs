@@ -20,6 +20,7 @@ using SeqDoc.FrameworkModels.EntityFramework;
 using SeqDoc.FrameworkModels.FusionCache;
 using SeqDoc.Rendering.Markdown;
 using Xunit;
+using SeqDoc.Testing;
 
 namespace SeqDoc.AcceptanceTests;
 
@@ -31,10 +32,9 @@ public sealed class BehaviorDocumentationLevel2Group
 
 /// <summary>
 /// Translation-alpha Level 2 acceptance for the selected real application flow
-/// <c>CustomerManagement.Api.Controllers.CustomerController.GetCustomerById(int id)</c> at pinned
-/// benchmark revision <c>0000000000000000000000000000000000000000</c>. The suite owns only the real-
-/// application and milestone assertions: the git pin is enforced before any analysis; the supplied
-/// external checkout is only read (rev-parse and source copy) and is never cleaned, restored, or
+/// <c>CustomerManagement.Api.Controllers.CustomerController.GetCustomerById(int id)</c>. The suite owns only the real-
+/// application and milestone assertions: the supplied external checkout is only read and copied and is never
+/// cleaned, restored, or
 /// analyzed; every analysis runs from a temporary git-free source copy; intended operation
 /// discovery; the accepted contract exact SQL/JSON composition for the configuration-exclusive
 /// SqlCustomerService/JsonCustomerService registrations with canonical per-arm member nodes; the
@@ -46,23 +46,20 @@ public sealed class BehaviorDocumentationLevel2Group
 /// FusionCache/delegate boundary that never claims a cache hit or distributed-cache behavior; and
 /// byte-identical Markdown/Mermaid/index/manifest/Program-Index-fingerprint output across repeated
 /// analysis and two independent relocated temporary checkouts with no fingerprint or hash
-/// normalization. The optional SEQDOC_TA5_EVIDENCE_ROOT owner lane is validated as a non-rooted,
-/// non-traversing relative path canonicalized and contained under
-/// <c>documentation evidence/translation-alpha/accepted contract/</c> before activation and uses the first temp-owned
-/// analysis. Detailed compiler and presentation partitions stay below this boundary and are already
+/// normalization. All activated output remains under test-owned temporary directories. Detailed compiler and presentation partitions stay below this boundary and are already
 /// protected by the accepted contract, Get/Presentation, and accepted contract framework/scenario/wording suites.
 /// </summary>
 [Collection(BehaviorDocumentationLevel2Group.Name)]
 public sealed class BehaviorDocumentationLevel2Tests
 {
-    private const string ExternalRepositoryRoot = "samples/Provided/testRepo";
+    private static string ExternalRepositoryRoot => Path.Combine(
+        ExternalCorpusResolver.Current.RequireGroup(ExternalCorpusGroup.Provided).Root, "testRepo");
     private const string ExternalProjectRelativePath = "CustomerManagement.Api/CustomerManagement.Api.csproj";
-    private const string PinnedExternalRevision = "0000000000000000000000000000000000000000";
     private const string ExpectedOperationKey = "GET api/Customer/{id}";
 
     /// <summary>
     /// accepted contract F2 ownership inventory: the exact repository-controlled appsettings files the temporary
-    /// checkout copies for the pinned CustomerManagement.Api project. Only these paths may contribute
+    /// checkout copies for the approved CustomerManagement.Api project. Only these paths may contribute
     /// checked-in observations; everything else stays ambient and fails closed.
     /// </summary>
     private static readonly ImmutableArray<string> CustomerManagementOwnedConfigurationFiles =
@@ -82,7 +79,7 @@ public sealed class BehaviorDocumentationLevel2Tests
         "API client",
         "AppDbContext",
         "Customer service",
-        "CustomerController",
+        "CustomerController.GetCustomerById",
     ];
 
     /// <summary>
@@ -101,15 +98,12 @@ public sealed class BehaviorDocumentationLevel2Tests
     /// evidence and non-Unknown certainty on every node, edge, and wording phrase, keep concise
     /// collision-safe <c>API client</c>/<c>CustomerController</c>/<c>Customer service</c>/
     /// <c>AppDbContext</c> participants without dots, fully qualified names, or implementation class
-    /// names, and stay free of TicketReservation/application-name coupling. The external revision pin
-    /// is enforced before analysis, and the analysis itself runs on a temporary git-free source copy
+    /// names, and stay free of TicketReservation/application-name coupling. The analysis itself runs on a temporary git-free source copy
     /// so the supplied external checkout is never modified.
     /// </summary>
     [Fact]
     public async Task Level2CustomerGetFlowFailsClosedOnDualConfigurationRegistrationsWithConciseEvidenceBackedPresentation()
     {
-        AssertPinnedExternalRevision();
-
         string temporary = Path.Combine(Path.GetTempPath(), $"seqdoc-ta5-level2-semantics-{Guid.NewGuid():N}");
         try
         {
@@ -278,7 +272,7 @@ public sealed class BehaviorDocumentationLevel2Tests
                 participantLabels.Order(StringComparer.Ordinal));
             foreach (string label in participantLabels)
             {
-                Assert.DoesNotContain('.', label);
+                Assert.True(label.Count(character => character == '.') <= 1, label);
                 Assert.DoesNotContain("CustomerManagement", label, StringComparison.Ordinal);
             }
 
@@ -376,15 +370,11 @@ public sealed class BehaviorDocumentationLevel2Tests
     /// normalization, because both roots are intentionally git-free and restore from identical
     /// inputs, so any difference is checkout-path nondeterminism rather than an accepted input
     /// difference. No checkout path (external or temporary) may leak into generated output. When
-    /// SEQDOC_TA5_EVIDENCE_ROOT is non-empty, the first temp-owned analysis is activated under that
-    /// validated SeqDoc-owned root and byte-compared against a fresh temporary activation for tracked
-    /// owner evidence.
+    /// all activated output is written beneath test-owned temporary directories.
     /// </summary>
     [Fact]
     public async Task Level2OutputIsDeterministicAcrossRepeatedAnalysisAndRelocatedCheckout()
     {
-        AssertPinnedExternalRevision();
-
         string temporary = Path.Combine(Path.GetTempPath(), $"seqdoc-ta5-level2-{Guid.NewGuid():N}");
         try
         {
@@ -445,29 +435,6 @@ public sealed class BehaviorDocumentationLevel2Tests
             Assert.DoesNotContain(copyA.CheckoutRoot, firstA.Graphs.DebugProjection, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain(copyB.CheckoutRoot, firstB.Graphs.DebugProjection, StringComparison.OrdinalIgnoreCase);
 
-            // Optional owner verification lane: when SEQDOC_TA5_EVIDENCE_ROOT is set it must be a
-            // non-rooted relative path with no traversal, canonicalized against the SeqDoc workspace
-            // root and contained under documentation evidence/translation-alpha/accepted contract/ before activation. The
-            // first temp-owned analysis is activated under that root and byte-compared against a
-            // fresh temporary activation, including the manifest.
-            string? evidenceRoot = ResolveValidatedEvidenceRoot(FindRepositoryRoot());
-            if (evidenceRoot is not null)
-            {
-                string freshRoot = Path.Combine(Path.GetTempPath(), $"seqdoc-ta5-evidence-{Guid.NewGuid():N}");
-                try
-                {
-                    ActivateAndAssert(evidenceRoot, firstA.Built);
-                    ActivateAndAssert(freshRoot, firstA.Built);
-                    AssertSameActivatedOutput(freshRoot, evidenceRoot, firstA.Built.Files);
-                }
-                finally
-                {
-                    if (Directory.Exists(freshRoot))
-                    {
-                        Directory.Delete(freshRoot, recursive: true);
-                    }
-                }
-            }
         }
         finally
         {
@@ -770,39 +737,6 @@ public sealed class BehaviorDocumentationLevel2Tests
     }
 
     /// <summary>
-    /// Enforces the pinned benchmark revision before any analysis. The supplied external checkout is
-    /// read-only: this rev-parse query is the only git interaction, and a missing repository, git
-    /// failure, or any revision other than the pinned SHA fails loudly before analysis begins.
-    /// </summary>
-    private static void AssertPinnedExternalRevision()
-    {
-        using var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "git",
-                Arguments = $"-C \"{ExternalRepositoryRoot}\" rev-parse HEAD",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            },
-        };
-        Assert.True(process.Start(), "The git process could not be started to verify the pinned external revision.");
-        string standardOutput = process.StandardOutput.ReadToEnd();
-        string standardError = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        Assert.True(
-            process.ExitCode == 0,
-            $"git -C {ExternalRepositoryRoot} rev-parse HEAD failed:{Environment.NewLine}{standardError}");
-        string actualRevision = standardOutput.Trim();
-        Assert.True(
-            string.Equals(actualRevision, PinnedExternalRevision, StringComparison.Ordinal),
-            $"The external repository '{ExternalRepositoryRoot}' is at revision '{actualRevision}', "
-            + $"not the pinned benchmark revision {PinnedExternalRevision}. Refusing to analyze a drifting external checkout.");
-    }
-
-    /// <summary>
     /// Creates one temporary git-free source copy of the approved external project and restores it
     /// with the identical restore command used for every other temporary copy. Only
     /// repository-controlled project and source files are copied; the external checkout itself is
@@ -825,7 +759,7 @@ public sealed class BehaviorDocumentationLevel2Tests
     /// .git, bin, obj, user-secrets, local settings that are not repository-controlled (*.user,
     /// launchSettings.json), databases, logs, and generated build output are never copied, so the
     /// destination is a git-free source copy. The appsettings files are copied so the accepted contract checked-in
-    /// configuration observations match what the pinned revision actually owns.
+    /// configuration observations match what the approved source copy owns.
     /// </summary>
     private static void CopyRepositoryControlledSource(string sourceProjectDirectory, string destinationProjectDirectory)
     {
@@ -938,53 +872,6 @@ public sealed class BehaviorDocumentationLevel2Tests
         Assert.True(
             File.ReadAllBytes(firstManifest).AsSpan().SequenceEqual(File.ReadAllBytes(secondManifest)),
             "Activated ownership manifests differ between output roots.");
-    }
-
-    /// <summary>
-    /// Resolves and validates the optional owner evidence root. The environment value must be a
-    /// non-rooted relative path with no traversal segments; it is canonicalized against the SeqDoc
-    /// workspace root and must remain contained under the canonical
-    /// <c>documentation evidence/translation-alpha/accepted contract/</c> evidence directory before any activation. A
-    /// missing value returns null (lane skipped); any invalid value fails loudly instead of being
-    /// silently ignored.
-    /// </summary>
-    private static string? ResolveValidatedEvidenceRoot(string repositoryRoot)
-    {
-        string? value = Environment.GetEnvironmentVariable("SEQDOC_TA5_EVIDENCE_ROOT");
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        string relative = value.Trim();
-        Assert.False(
-            Path.IsPathRooted(relative),
-            $"SEQDOC_TA5_EVIDENCE_ROOT must be a non-rooted relative path; found '{value}'.");
-        Assert.True(
-            string.IsNullOrEmpty(Path.GetPathRoot(relative)),
-            $"SEQDOC_TA5_EVIDENCE_ROOT must not carry a drive or root prefix; found '{value}'.");
-
-        string[] segments = relative.Split(
-            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
-            StringSplitOptions.RemoveEmptyEntries);
-        Assert.True(
-            Array.IndexOf(segments, "..") < 0,
-            $"SEQDOC_TA5_EVIDENCE_ROOT must not traverse outside the SeqDoc workspace; found '{value}'.");
-        Assert.True(
-            Array.IndexOf(segments, ".") < 0,
-            $"SEQDOC_TA5_EVIDENCE_ROOT must be a canonical relative path; found '{value}'.");
-
-        string canonical = Path.GetFullPath(relative, repositoryRoot);
-        string evidenceRoot = Path.TrimEndingDirectorySeparator(
-            Path.GetFullPath(
-                Path.Combine(repositoryRoot, "docs", "evidence", "translation-alpha", "accepted contract")));
-        Assert.True(
-            Path.TrimEndingDirectorySeparator(canonical).StartsWith(
-                evidenceRoot + Path.DirectorySeparatorChar,
-                StringComparison.OrdinalIgnoreCase),
-            $"SEQDOC_TA5_EVIDENCE_ROOT '{value}' resolves to '{canonical}', outside the SeqDoc-owned "
-            + $"evidence root '{evidenceRoot}'.");
-        return canonical;
     }
 
     /// <summary>

@@ -9,6 +9,7 @@ using SeqDoc.Core.ScenarioGraph;
 using SeqDoc.FrameworkModels;
 using SeqDoc.FrameworkModels.AspNetCore;
 using SeqDoc.FrameworkModels.EntityFramework;
+using SeqDoc.Testing;
 using Xunit;
 
 namespace SeqDoc.AcceptanceTests;
@@ -23,7 +24,8 @@ public sealed class BehaviorDocumentationGetGroup
 public sealed class BehaviorDocumentationGetTests
 {
     private const string FixtureRelativePath = "tests/fixtures/BehaviorDocumentation/GetMeaning/GetMeaning.csproj";
-    private const string ExternalTicketReservationRoot = "samples/Provided/TicketReservation-Solution";
+    private static string ExternalTicketReservationRoot => Path.Combine(
+        ExternalCorpusResolver.Current.RequireGroup(ExternalCorpusGroup.Provided).Root, "TicketReservation-Solution");
     private const string ExternalTicketReservationTarget = "TicketReservation.Api/TicketReservation.Api.csproj";
 
     [Fact]
@@ -96,12 +98,7 @@ public sealed class BehaviorDocumentationGetTests
     public async Task TicketReservationGetFlowProducesEvidenceBackedScenarioGraph()
     {
         var target = Path.Combine(ExternalTicketReservationRoot, ExternalTicketReservationTarget.Replace('/', Path.DirectorySeparatorChar));
-        if (!File.Exists(target))
-        {
-            // The external corpus is a separate admission contract; the test soft-skips when the
-            // checkout is absent so the SeqDoc repository never depends on that layout at build time.
-            return;
-        }
+        Assert.True(File.Exists(target), target);
 
         var profile = CompilationProfile.Create(ExternalTicketReservationTarget, "Release", "net10.0");
         var set = await BuildScenarioGraphsAsync(ExternalTicketReservationRoot, target, profile);

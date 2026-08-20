@@ -10,23 +10,22 @@ using SeqDoc.Core.ScenarioGraph;
 using SeqDoc.FrameworkModels;
 using SeqDoc.FrameworkModels.AspNetCore;
 using SeqDoc.Rendering.Markdown;
+using SeqDoc.Testing;
 using Xunit;
 
 namespace SeqDoc.AcceptanceTests;
 
 public sealed class CorpusMinimalApiTests
 {
-    private const string ExternalRoot = "samples/Provided/testRepo";
+    private static string ExternalRoot => Path.Combine(
+        ExternalCorpusResolver.Current.RequireGroup(ExternalCorpusGroup.Provided).Root, "testRepo");
     private const string ExternalTarget = "TelecomSimulator.Api/TelecomSimulator.Api.csproj";
-    // The supplied checkout is pinned by the corpus ledger; this acceptance lane deliberately does
-    // not invoke git or mutate the checkout.
-    private const string PinnedRevision = "0000000000000000000000000000000000000000";
 
     [Fact]
     public async Task TelecomSimulatorMinimalApiProducesTypedDeterministicPostDocumentation()
     {
         string target = Path.Combine(ExternalRoot, ExternalTarget.Replace('/', Path.DirectorySeparatorChar));
-        Assert.True(File.Exists(target), $"Pinned corpus target is missing ({PinnedRevision}): {target}");
+        Assert.True(File.Exists(target), target);
 
         var profile = CompilationProfile.Create(ExternalTarget, "Release", "net10.0");
         var extraction = await new RoslynProfileAnalysisExtractor().ExtractAsync(
@@ -126,10 +125,7 @@ public sealed class CorpusMinimalApiTests
             graphs.ProgramIndexFingerprint,
             [new DocumentSetEntry(DocumentationFileNaming.EntryKey(graph.EntryPoint, graph.OperationKey), plan.Wording, plan.Diagram)]);
         Assert.True(built.Succeeded, string.Join("; ", built.Errors));
-        string? configuredRoot = Environment.GetEnvironmentVariable("SEQDOC_CR5_TELECOM_EVIDENCE_ROOT");
-        string outputRoot = string.IsNullOrWhiteSpace(configuredRoot)
-            ? Path.Combine(Path.GetTempPath(), $"seqdoc-cr5-telecom-{Guid.NewGuid():N}")
-            : Path.GetFullPath(configuredRoot);
+        string outputRoot = Path.Combine(Path.GetTempPath(), $"seqdoc-cr5-telecom-{Guid.NewGuid():N}");
         try
         {
             var activation = OutputSetActivator.Activate(outputRoot, built.Files);
@@ -153,7 +149,7 @@ public sealed class CorpusMinimalApiTests
         }
         finally
         {
-            if (string.IsNullOrWhiteSpace(configuredRoot) && Directory.Exists(outputRoot))
+            if (Directory.Exists(outputRoot))
             {
                 Directory.Delete(outputRoot, recursive: true);
             }

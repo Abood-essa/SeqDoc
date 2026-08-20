@@ -5,6 +5,7 @@ using SeqDoc.Application.Analysis;
 using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Identity;
 using SeqDoc.Core.ProgramIndex;
+using SeqDoc.Testing;
 using Xunit;
 
 namespace SeqDoc.Analysis.Tests;
@@ -124,12 +125,10 @@ public sealed class ProgramIndexBuilderTests
     [Fact]
     public async Task TicketReservationLoadsThroughBaselineIndexerWhenAvailable()
     {
-        const string root = "samples/Provided/TicketReservation-Solution";
+        string root = ExternalCorpusResolver.Current.RequireGroup(ExternalCorpusGroup.Provided).Root +
+            Path.DirectorySeparatorChar + "TicketReservation-Solution";
         var target = Path.Combine(root, "TicketReservation.sln");
-        if (!File.Exists(target))
-        {
-            return;
-        }
+        Assert.True(File.Exists(target), target);
 
         var profile = CompilationProfile.Create("TicketReservation.sln", "Release", "net10.0");
         var result = await new RoslynProgramIndexBuilder().BuildAsync(

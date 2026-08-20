@@ -16,6 +16,7 @@ using SeqDoc.FrameworkModels.AspNetCore;
 using SeqDoc.FrameworkModels.EntityFramework;
 using SeqDoc.Rendering.Markdown;
 using Xunit;
+using SeqDoc.Testing;
 
 namespace SeqDoc.AcceptanceTests;
 
@@ -29,7 +30,8 @@ namespace SeqDoc.AcceptanceTests;
 public sealed class BehaviorDocumentationGetPresentationTests
 {
     private const string FixtureRelativePath = "tests/fixtures/BehaviorDocumentation/GetMeaning/GetMeaning.csproj";
-    private const string ExternalTicketReservationRoot = "samples/Provided/TicketReservation-Solution";
+    private static string ExternalTicketReservationRoot => Path.Combine(
+        ExternalCorpusResolver.Current.RequireGroup(ExternalCorpusGroup.Provided).Root, "TicketReservation-Solution");
     private const string ExternalTicketReservationTarget = "TicketReservation.Api/TicketReservation.Api.csproj";
 
     private static readonly string[] BannedTerms =
@@ -107,12 +109,7 @@ public sealed class BehaviorDocumentationGetPresentationTests
     public async Task TicketReservationGetFlowProducesReadableEvidenceBackedDocs()
     {
         var target = Path.Combine(ExternalTicketReservationRoot, ExternalTicketReservationTarget.Replace('/', Path.DirectorySeparatorChar));
-        if (!File.Exists(target))
-        {
-            // The external corpus is a separate admission contract; the test soft-skips when the
-            // checkout is absent so the SeqDoc repository never depends on that layout at build time.
-            return;
-        }
+        Assert.True(File.Exists(target), target);
 
         var profile = CompilationProfile.Create(ExternalTicketReservationTarget, "Release", "net10.0");
         var set = await BuildScenarioGraphsAsync(ExternalTicketReservationRoot, target, profile);
@@ -221,10 +218,7 @@ public sealed class BehaviorDocumentationGetPresentationTests
     /// every admitted Get graph through the real planner, renders and validates the complete output
     /// set in memory, activates it into a temporary root by default, and asserts the generated
     /// Markdown satisfies the repository's documentation-lint invariants. Ordinary runs leave the
-    /// repository clean. When the environment variable SEQDOC_TA3_EVIDENCE_ROOT is non-empty, the
-    /// same deterministic output is activated under that repository-relative root and compared
-    /// byte-for-byte against a fresh temporary activation, producing tracked owner evidence without
-    /// changing any production behavior.
+    /// repository clean; all activated output is written beneath a test-owned temporary root.
     /// </summary>
     [Fact]
     public async Task GetMeaningEvidenceLaneRendersAndActivatesReproducibly()
@@ -251,11 +245,7 @@ public sealed class BehaviorDocumentationGetPresentationTests
         Assert.NotEmpty(built.Files);
         AssertDocsLintCompliant(built.Files);
 
-        string? evidenceRoot = Environment.GetEnvironmentVariable("SEQDOC_TA3_EVIDENCE_ROOT");
-        bool evidenceLane = !string.IsNullOrWhiteSpace(evidenceRoot);
-        string outputRoot = evidenceLane
-            ? Path.GetFullPath(evidenceRoot!, root)
-            : Path.Combine(Path.GetTempPath(), $"seqdoc-ta3-evidence-{Guid.NewGuid():N}");
+        string outputRoot = Path.Combine(Path.GetTempPath(), $"seqdoc-ta3-evidence-{Guid.NewGuid():N}");
         try
         {
             var activation = OutputSetActivator.Activate(outputRoot, built.Files);
@@ -269,36 +259,10 @@ public sealed class BehaviorDocumentationGetPresentationTests
 
             Assert.True(File.Exists(Path.Combine(outputRoot, "seqdoc.manifest.json")));
 
-            if (evidenceLane)
-            {
-                // The evidence root must contain the same deterministic bytes as a fresh temporary
-                // activation, proving the lane reproduces exactly what ordinary runs produce.
-                string tempRoot = Path.Combine(Path.GetTempPath(), $"seqdoc-ta3-evidence-{Guid.NewGuid():N}");
-                try
-                {
-                    var tempActivation = OutputSetActivator.Activate(tempRoot, built.Files);
-                    Assert.True(tempActivation.Succeeded, tempActivation.FailureMessage);
-                    foreach (var file in built.Files.Where(file =>
-                                 file.RelativePath.EndsWith(".md", StringComparison.Ordinal)
-                                 || file.RelativePath.EndsWith(".mmd", StringComparison.Ordinal)))
-                    {
-                        Assert.Equal(
-                            File.ReadAllBytes(Path.Combine(tempRoot, file.RelativePath)),
-                            File.ReadAllBytes(Path.Combine(outputRoot, file.RelativePath)));
-                    }
-                }
-                finally
-                {
-                    if (Directory.Exists(tempRoot))
-                    {
-                        Directory.Delete(tempRoot, recursive: true);
-                    }
-                }
-            }
         }
         finally
         {
-            if (!evidenceLane && Directory.Exists(outputRoot))
+            if (Directory.Exists(outputRoot))
             {
                 Directory.Delete(outputRoot, recursive: true);
             }

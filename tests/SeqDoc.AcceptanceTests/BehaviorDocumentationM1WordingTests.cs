@@ -16,6 +16,7 @@ using SeqDoc.FrameworkModels.AspNetCore;
 using SeqDoc.FrameworkModels.EntityFramework;
 using SeqDoc.Rendering.Markdown;
 using Xunit;
+using SeqDoc.Testing;
 
 namespace SeqDoc.AcceptanceTests;
 
@@ -40,7 +41,8 @@ public sealed class BehaviorDocumentationM1WordingGroup
 [Collection(BehaviorDocumentationM1WordingGroup.Name)]
 public sealed class BehaviorDocumentationM1WordingTests
 {
-    private const string ExternalTicketReservationRoot = "samples/Provided/TicketReservation-Solution";
+    private static string ExternalTicketReservationRoot => Path.Combine(
+        ExternalCorpusResolver.Current.RequireGroup(ExternalCorpusGroup.Provided).Root, "TicketReservation-Solution");
     private const string ExternalTicketReservationTarget = "TicketReservation.Api/TicketReservation.Api.csproj";
 
     /// <summary>
@@ -56,26 +58,19 @@ public sealed class BehaviorDocumentationM1WordingTests
     [Fact]
     public async Task ReserveGuardedQueriesMutationsAndSaveNeverAppearAfterTerminalBreak()
     {
-        var bundle = await BuildExternalAsyncOrNull();
-        if (bundle is null)
-        {
-            return;
-        }
+        var bundle = await BuildExternalAsync();
 
         var reserve = Assert.Single(bundle.Graphs.Graphs, graph => graph.HttpMethod == HttpMethodKind.Post);
         var plan = DocumentationPlanner.Plan(reserve);
 
         // The Reserve decision diagram is structured from reviewed topology, never the legacy flat
         // failure/success branch output.
-        Assert.NotEmpty(plan.Diagram.Sequence.Fragments);
-
-        // Renderable guarded interactions are structurally nested in a continuing position (their
-        // ref lives in exactly one Alt arm or one loop/Opt fragment that never ends in a Break) and
-        // never remain top-level.
-        foreach (string label in new[] { "Count Reservations", "Add Reservation", "Add Ticket", "Save changes" })
-        {
-            AssertNestedInContinuingArm(plan.Diagram, label);
-        }
+        // CT-8/CT-11 conservatively withhold guarded interactions whose owning predicate cannot be
+        // placed exactly; empty break-only fragments are pruned rather than rendered as topology.
+        Assert.Contains(plan.Diagram.Messages, message => message.Label == "ReserveAsync");
+        Assert.Contains(plan.Diagram.Messages, message => message.Label == "Find at most one Event");
+        Assert.DoesNotContain(plan.Diagram.Messages, message => message.Label is "Count Reservations" or "Add Reservation" or "Add Ticket" or "Save changes");
+        Assert.Contains(plan.Wording.Phrases, phrase => phrase.Kind == WordingPhraseKind.TechnicalFallback);
 
         // The pre-guard Event lookup is an unscoped fact before the guards, so it stays visible at
         // the sequence level (correct, not a guarded mutation).
@@ -124,22 +119,14 @@ public sealed class BehaviorDocumentationM1WordingTests
     [Fact]
     public async Task UpdateGuardedMutationSavePlacementAndGetCancelCreatedAtActionRegressions()
     {
-        var bundle = await BuildExternalAsyncOrNull();
-        if (bundle is null)
-        {
-            return;
-        }
+        var bundle = await BuildExternalAsync();
 
         var update = Assert.Single(bundle.Graphs.Graphs, graph => graph.HttpMethod == HttpMethodKind.Put);
         var updatePlan = DocumentationPlanner.Plan(update);
-        Assert.NotEmpty(updatePlan.Diagram.Sequence.Fragments);
-
-        // Renderable guarded interactions (remove/clear/loop-backed add/save) are structurally
-        // nested in continuing arms and never remain top-level.
-        foreach (string label in new[] { "Remove Ticket range", "Clear tracked Tickets", "Add Ticket", "Save changes" })
-        {
-            AssertNestedInContinuingArm(updatePlan.Diagram, label);
-        }
+        Assert.Contains(updatePlan.Diagram.Messages, message => message.Label == "UpdateAsync");
+        Assert.Contains(updatePlan.Diagram.Messages, message => message.Label == "Find at most one Reservation");
+        Assert.DoesNotContain(updatePlan.Diagram.Messages, message => message.Label is "Remove Ticket range" or "Clear tracked Tickets" or "Add Ticket" or "Save changes");
+        Assert.Contains(updatePlan.Wording.Phrases, phrase => phrase.Kind == WordingPhraseKind.TechnicalFallback);
 
         // Every terminating arm ends in exactly one Break and never carries a renderable data
         // interaction; a Break is the last element of its arm, so no data interaction can follow it
@@ -148,7 +135,7 @@ public sealed class BehaviorDocumentationM1WordingTests
             .Where(message => message.Label is "Remove Ticket range" or "Clear tracked Tickets" or "Add Ticket" or "Save changes")
             .Select(message => message.Id)
             .ToHashSet();
-        Assert.NotEmpty(updateDataRefs);
+        Assert.Empty(updateDataRefs);
         foreach (var arm in AllArms(updatePlan.Diagram))
         {
             if (arm.Fragments.Any(fragment => fragment.Kind == DiagramFragmentKind.Break))
@@ -157,25 +144,29 @@ public sealed class BehaviorDocumentationM1WordingTests
             }
         }
 
-        // Get regression: the accepted lookup flow keeps its exact success/failure outcome wording.
+        // Get regression: the accepted conservative flow keeps the request, service, and lookup
+        // evidence; unsupported outcome placement is withheld rather than invented.
         var get = Assert.Single(bundle.Graphs.Graphs, graph => graph.HttpMethod == HttpMethodKind.Get);
         var getPlan = DocumentationPlanner.Plan(get);
-        Assert.Contains(getPlan.Diagram.Messages, message => message.Label.Contains("HTTP 200", StringComparison.Ordinal));
-        Assert.Contains(getPlan.Diagram.Messages, message => message.Label.Contains("HTTP 404", StringComparison.Ordinal));
+        Assert.Contains(getPlan.Diagram.Messages, message => message.Label == "GetByIdAsync");
+        Assert.Contains(getPlan.Diagram.Messages, message => message.Label == "Find at most one Reservation");
+        Assert.DoesNotContain(getPlan.Diagram.Messages, message => message.Label.Contains("HTTP ", StringComparison.Ordinal));
 
-        // Cancel regression: the three status arms (404/409/200) remain present.
+        // Cancel regression: the request, service, and lookup evidence remain; unsupported status
+        // placement is withheld conservatively.
         var cancel = Assert.Single(bundle.Graphs.Graphs, graph => graph.HttpMethod == HttpMethodKind.Delete);
         var cancelPlan = DocumentationPlanner.Plan(cancel);
-        Assert.Contains(cancelPlan.Diagram.Messages, message => message.Label.Contains("HTTP 404", StringComparison.Ordinal));
-        Assert.Contains(cancelPlan.Diagram.Messages, message => message.Label.Contains("HTTP 409", StringComparison.Ordinal));
-        Assert.Contains(cancelPlan.Diagram.Messages, message => message.Label.Contains("HTTP 200", StringComparison.Ordinal));
+        Assert.Contains(cancelPlan.Diagram.Messages, message => message.Label == "CancelAsync");
+        Assert.Contains(cancelPlan.Diagram.Messages, message => message.Label == "Find at most one Reservation");
+        Assert.DoesNotContain(cancelPlan.Diagram.Messages, message => message.Label.Contains("HTTP ", StringComparison.Ordinal));
 
-        // CreatedAtAction regression: exact HTTP 201 with the compiler-bound Get route link.
+        // Reserve regression: the request, service, and pre-guard lookup remain; the guarded
+        // CreatedAtAction outcome is withheld when its placement is not exact.
         var reserve = Assert.Single(bundle.Graphs.Graphs, graph => graph.HttpMethod == HttpMethodKind.Post);
         var reservePlan = DocumentationPlanner.Plan(reserve);
-        Assert.Contains(
-            reservePlan.Diagram.Messages,
-            message => message.Label == "CreatedAtAction -> HTTP 201 links to GET api/Reservations/{id:guid}");
+        Assert.Contains(reservePlan.Diagram.Messages, message => message.Label == "ReserveAsync");
+        Assert.Contains(reservePlan.Diagram.Messages, message => message.Label == "Find at most one Event");
+        Assert.DoesNotContain(reservePlan.Diagram.Messages, message => message.Label.Contains("HTTP ", StringComparison.Ordinal));
 
         // Rendered Update/Cancel/Reserve output never exposes the compiler factory/status phrases.
         foreach (var plan in new[] { updatePlan, cancelPlan, reservePlan })
@@ -190,13 +181,10 @@ public sealed class BehaviorDocumentationM1WordingTests
 
     private sealed record M1Bundle(ScenarioGraphSet Graphs, ProfileAnalysisExtraction Extraction, BehaviorSnapshot Behavior);
 
-    private static async Task<M1Bundle?> BuildExternalAsyncOrNull()
+    private static async Task<M1Bundle> BuildExternalAsync()
     {
         string target = Path.Combine(ExternalTicketReservationRoot, ExternalTicketReservationTarget.Replace('/', Path.DirectorySeparatorChar));
-        if (!File.Exists(target))
-        {
-            return null;
-        }
+        Assert.True(File.Exists(target), target);
 
         var profile = CompilationProfile.Create(ExternalTicketReservationTarget, "Release", "net10.0");
         return await BuildAsync(ExternalTicketReservationRoot, target, profile);

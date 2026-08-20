@@ -13,13 +13,15 @@ using SeqDoc.FrameworkModels;
 using SeqDoc.FrameworkModels.AspNetCore;
 using SeqDoc.FrameworkModels.MediatR;
 using SeqDoc.Rendering.Markdown;
+using SeqDoc.Testing;
 using Xunit;
 
 namespace SeqDoc.AcceptanceTests;
 
 public sealed class CorpusMediatRTests
 {
-    private const string SourceRoot = "samples/OpenSource/DotNet-eShop";
+    private static string SourceRoot => ExternalCorpusResolver.Current.RequireGroup(ExternalCorpusGroup.OpenSource).Root +
+        Path.DirectorySeparatorChar + "DotNet-eShop";
 
     [Fact]
     public async Task OrderingDraftRouteReachesExactMediatRHandlerWithoutPipelineClaim()
@@ -86,11 +88,7 @@ public sealed class CorpusMediatRTests
             [new DocumentSetEntry(fileName, plan.Wording, plan.Diagram)]);
         Assert.True(built.Succeeded, string.Join("; ", built.Errors));
 
-        string? configuredOutput = Environment.GetEnvironmentVariable("SEQDOC_CR8_ESHOP_EVIDENCE_ROOT");
-        bool persistentOutput = !string.IsNullOrWhiteSpace(configuredOutput);
-        string outputRoot = persistentOutput
-            ? Path.GetFullPath(configuredOutput!)
-            : Path.Combine(Path.GetTempPath(), $"seqdoc-cr8-eshop-{Guid.NewGuid():N}");
+        string outputRoot = Path.Combine(Path.GetTempPath(), $"seqdoc-cr8-eshop-{Guid.NewGuid():N}");
         try
         {
             var activation = OutputSetActivator.Activate(outputRoot, built.Files);
@@ -131,7 +129,7 @@ public sealed class CorpusMediatRTests
         }
         finally
         {
-            if (!persistentOutput && Directory.Exists(outputRoot))
+            if (Directory.Exists(outputRoot))
             {
                 Directory.Delete(outputRoot, recursive: true);
             }
