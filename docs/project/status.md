@@ -73,6 +73,8 @@ Its first honest full gate exposed referenced-project framework leakage through 
 repaired and regression-tested project-local framework and lock-file identity. The next product milestone removes the
 arbitrary depth cap under cycle and Mermaid-size budgets while three contributor streams develop service-contract,
 persistence/state, and worker/recovery semantics in parallel.
+GitHub parents #1–#4 and sub-issues #5–#23 now encode those workstreams, owners, sub-issue relationships, and blocking
+dependencies. Initial ready issues are #5, #9, #14, #15, and maintainer issue #20.
 
 ## Next execution order
 

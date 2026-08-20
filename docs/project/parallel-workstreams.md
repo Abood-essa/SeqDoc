@@ -14,6 +14,16 @@ Each contributor owns one substantial parent workstream with several sub-issues 
 run in parallel; dependencies are declared between sub-issues. Contributors work from forks. Canonical project docs
 are updated by the maintainer after verified merges.
 
+Public execution graph:
+
+- depthless traversal: parent [#2](https://github.com/Bilaltariq41/SeqDoc/issues/2), sub-issues #19–#23;
+- service contracts: parent [#1](https://github.com/Bilaltariq41/SeqDoc/issues/1), sub-issues #5–#8;
+- persistence/state: parent [#3](https://github.com/Bilaltariq41/SeqDoc/issues/3), sub-issues #9–#13;
+- worker/recovery: parent [#4](https://github.com/Bilaltariq41/SeqDoc/issues/4), sub-issues #14–#18.
+
+Issues #5, #9, #14, #15, and #20 are initially ready. GitHub sub-issue and `blocked by` relationships are authoritative
+for later availability.
+
 ## Maintainer stream — Depthless traversal and large diagrams
 
 **Owner:** maintainer

@@ -21,6 +21,7 @@
     "FraudManagement and SMSGateway were baselined locally before roadmap decomposition; only project names and non-sensitive acceptance requirements may appear publicly.",
     "The documented CreditTransfer command was executed from the repository root with the checked-in configuration and produced all 18 files byte-identical to the accepted hardened suite.",
     "The final Analysis gate exposed a pre-existing deterministic profile-leakage defect: a referenced net10.0 project borrowed an ancestor root project.assets.json and was labeled net10.0-windows. PF-1 repaired and independently reviewed the generic Program Index contract.",
-    "Independent review found and resolved corpus path containment, relative override, and usage-command consistency findings. CT-12 is closed."
+    "Independent review found and resolved corpus path containment, relative override, and usage-command consistency findings. CT-12 is closed.",
+    "GitHub parent issues #1-#4 and linked sub-issues #5-#23 were created with owner/track labels, explicit dependencies, and initial ready labels."
   ]
 }
