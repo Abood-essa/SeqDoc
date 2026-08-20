@@ -28,6 +28,8 @@ The repository requires the .NET SDK declared in `global.json`. All warnings are
 - Semantic changes should add regression tests with realistic fixtures rather than relying on
   implementation details.
 - Acceptance assertions should target observable wording, structure, and determinism.
+- Supplied and open-source acceptance applications live in sibling `../SeqDoc-TestProjects`. See
+  [Using SeqDoc](usage.md); never copy those repositories into SeqDoc.
 
 ## Submitting changes
 
@@ -38,6 +40,10 @@ The repository requires the .NET SDK declared in `global.json`. All warnings are
 5. Open a pull request against SeqDoc's `main` branch describing the problem, change, and
    verification performed.
 
+For assigned team work, the parent issue defines the workstream and sub-issues define mergeable slices. Use
+`Closes #<issue>` in the PR body. Follow the planning, self-review, and repair loop in [`AGENTS.md`](../AGENTS.md)
+whether the change is written manually or with a coding agent.
+
 By submitting a contribution, you represent that you have the right to submit it and agree that it
 is licensed under the [Mozilla Public License 2.0](../LICENSE), the same license as the project.
 
@@ -47,3 +53,5 @@ is licensed under the [Mozilla Public License 2.0](../LICENSE), the same license
 - Behavior changes must be backed by tests and, where relevant, documentation updates.
 - Keep unrelated refactoring out of a single pull request.
 - Direct pushes to `main` are restricted; all external contributions use pull requests.
+- Address review findings on the same PR branch and request review again. The maintainer updates canonical
+  roadmap/status documentation after verified merges.

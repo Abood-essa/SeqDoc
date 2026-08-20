@@ -1,0 +1,14 @@
+schemaVersion: 1
+
+documentation:
+  excludeParticipants:
+    - CreditTransferEngine.BusinessLogic.Logger
+
+selection:
+  roots:
+    - method:v1:49e417050a62f4bfc2ce51a93ad32ba4952055069dae5a170406f4019744cafc
+    - method:v1:66d1e5b94ddd1c7bc641f331513dbf926f0d125fe23910b40430ac4f66e37d36
+    - method:v1:ae8f007e2fcd74ff82783299d75c7b3e7fb816e1e5bcb5f6ff0724c7a7c46cde
+    - method:v1:d672bca6e150238745131194109f5692bb4b87b195b0dd4efa86afa9b0bcb5a7
+    - method:v1:d6a2f45c3976d14fa2db64de94030284a152a6140b891ef547741708aec82cef
+    - method:v1:f2fa1ed30cb45eac8cedcf3bd73688d4088b08cc6f9703adb33dd38b43b2c827

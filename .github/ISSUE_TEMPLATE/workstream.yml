@@ -1,0 +1,44 @@
+name: Workstream
+description: A substantial contributor-owned capability delivered through multiple sub-issues and PRs.
+title: "[Workstream] "
+labels: ["workstream"]
+body:
+  - type: markdown
+    attributes:
+      value: "Workstreams provide meaningful ownership. Implementation is split into linked, reviewable sub-issues."
+  - type: input
+    id: owner
+    attributes:
+      label: Workstream owner
+      description: GitHub username responsible for driving this workstream.
+      placeholder: "@username"
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: User-visible capability and why it matters.
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Scope and non-goals
+      description: Included semantic boundaries, excluded work, and target paths when known.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: Required tests, supplied applications, diagrams, and observable completion criteria.
+    validations:
+      required: true
+  - type: textarea
+    id: subissues
+    attributes:
+      label: Planned sub-issues and dependencies
+      description: Link sub-issues and identify blocked-by relationships.
+    validations:
+      required: true

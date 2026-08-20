@@ -9,10 +9,10 @@ boundaries that drive the approved generic capability sequence.
 ## Target paths
 
 - `docs/work/credit-transfer/CT-0/**`
-- `C:/Users/bilal/Desktop/SeqDoc-CreditTransfer-Current/**` (generated baseline output only)
-- `C:/Users/bilal/AppData/Local/Temp/opencode/seqdoc-credittransfer-ct0/**` (disposable worktree/cache only)
+- `.seqdoc/credit-transfer/output/**` (generated baseline output only)
+- `.seqdoc/credit-transfer/**` (disposable cache only)
 
-The external source under `C:/Code/Training/SeqDoc-TestProjects/Provided/CreditTransfer-om` is read-only evidence.
+The external source under sibling `../SeqDoc-TestProjects/Provided/CreditTransfer-om` is read-only evidence.
 
 ## Deliverables
 
@@ -58,7 +58,7 @@ acceptance lane as the final gate.
 ## Focused verification command
 
 ```powershell
-dotnet run --project src/SeqDoc.Cli -- analyze "C:/Users/bilal/AppData/Local/Temp/opencode/seqdoc-credittransfer-ct0/CreditTransfer.sln" --repository-root "C:/Users/bilal/AppData/Local/Temp/opencode/seqdoc-credittransfer-ct0" --configuration Release --framework net9.0 --cache "C:/Users/bilal/AppData/Local/Temp/opencode/seqdoc-credittransfer-ct0/.seqdoc/cache-v1.db" --output "C:/Users/bilal/Desktop/SeqDoc-CreditTransfer-Current"
+See the portable, verified CreditTransfer command in `docs/usage.md`.
 ```
 
 ## Final gate

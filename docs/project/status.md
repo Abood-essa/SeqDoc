@@ -6,7 +6,7 @@ The clean canonical repository begins at `42f8819` (`Initial public release`) an
 snapshot through selected dispatch handler-flow expansion. The historical repository remains historical evidence;
 new work proceeds only in this repository.
 
-The canonical repository has been published privately to GitHub. The owner approved uninterrupted execution through
+The canonical repository is public on GitHub. The owner approved uninterrupted execution through
 the CreditTransfer-first bounded sequence. CT-0 closed with output correctly withheld: the buildable Web partition
 exposed a generic `LoopNode` persistence deserialization defect during activation. That repair is the immediate
 prerequisite to generating the first CreditTransfer diagrams. CT-1 repaired and regression-tested the defect; the
@@ -66,6 +66,13 @@ participant headers after placeholder removal, and quoted aliases displayed lite
 renderer. Empty fragments are now recursively pruned, sole surviving alt arms become valid `opt` fragments, aliases
 are injection-safe without visible quotes, all 54 Rendering tests pass, and Mermaid CLI rendered all eight fresh
 CreditTransfer diagrams successfully.
+CT-12 completed team onboarding and parallel execution: standard sister-folder corpus resolution, reproducible
+CreditTransfer usage, cross-tool contributor-agent instructions, and an issue-ready workstream graph. FraudManagement
+and SMSGateway now join CreditTransfer, TicketReservation, and the training corpus as supplied acceptance applications.
+Its first honest full gate exposed referenced-project framework leakage through ancestor assets; prerequisite PF-1
+repaired and regression-tested project-local framework and lock-file identity. The next product milestone removes the
+arbitrary depth cap under cycle and Mermaid-size budgets while three contributor streams develop service-contract,
+persistence/state, and worker/recovery semantics in parallel.
 
 ## Next execution order
 
@@ -88,6 +95,5 @@ it is evidence-backed and understandable.
 
 ## Session continuity
 
-OpenCode configuration, role definitions, profile helpers, and raw session exports remain local and uncommitted. The
-current profile uses SOL for the Orchestrator, Luna for implementation/testing/exploration/background roles, and
-Terra for the independent Reviewer. DeepSeek routing is retired.
+Local agent configuration, role definitions, profile helpers, and raw session exports remain uncommitted. Public
+contributors use the shared `AGENTS.md` contract and GitHub issues; local tooling never changes product authority.

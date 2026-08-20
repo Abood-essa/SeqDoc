@@ -1,0 +1,45 @@
+name: Implementation sub-issue
+description: A reviewable slice of an approved workstream.
+title: "[Implementation] "
+labels: ["implementation"]
+body:
+  - type: input
+    id: parent
+    attributes:
+      label: Parent workstream
+      placeholder: "#123"
+    validations:
+      required: true
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Purpose and accepted behavior
+    validations:
+      required: true
+  - type: textarea
+    id: targets
+    attributes:
+      label: Target paths
+      description: Exact production/test paths owned by this issue.
+    validations:
+      required: true
+  - type: textarea
+    id: nongoals
+    attributes:
+      label: Non-goals and dependencies
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risk inventory
+      description: False positives, evidence/certainty, identity, profile, persistence, determinism, or regression risks.
+    validations:
+      required: true
+  - type: textarea
+    id: verify
+    attributes:
+      label: Verification
+      description: Focused command, final gate, and realistic acceptance output.
+    validations:
+      required: true

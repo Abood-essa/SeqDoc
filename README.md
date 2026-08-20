@@ -39,6 +39,9 @@ Run the CLI against a project or solution:
 dotnet run --project src/SeqDoc.Cli -- analyze <target>
 ```
 
+See [Using SeqDoc](docs/usage.md) for complete arguments, exact-root cataloging, troubleshooting, external test-project
+setup, and the reproducible CreditTransfer example.
+
 ## Layout
 
 - `src/` – production projects for analysis, application, CLI, persistence, and rendering.
@@ -52,7 +55,9 @@ dotnet run --project src/SeqDoc.Cli -- analyze <target>
 - [Decisions](docs/decisions.md)
 - [Changelog](docs/changelog.md)
 - [Contributing](docs/contributing.md)
+- [Using SeqDoc](docs/usage.md)
 - [Roadmap](docs/roadmap.md)
+- [Parallel workstreams](docs/project/parallel-workstreams.md)
 
 ## License
 

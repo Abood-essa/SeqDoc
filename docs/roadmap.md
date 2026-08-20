@@ -3,6 +3,10 @@
 SeqDoc's immediate direction is to broaden compiler-evidenced traversal while keeping evidence-backed
 output, explicit certainty, and deterministic results.
 
+Execution is now organized into parallel essential workstreams in
+`docs/project/parallel-workstreams.md`. The roadmap prioritizes functional diagrams over CI, packaging, release
+automation, broad platform matrices, or speculative operational infrastructure.
+
 CreditTransfer is the primary whole-solution acceptance target for this direction. It determines delivery priority,
 while unrelated supplied and open-source applications protect generality and false-positive boundaries. See
 `docs/project/credit-transfer-plan.md` for the bounded delivery sequence and `docs/project/diagram-strategy.md` for
@@ -11,6 +15,11 @@ medium-, long-, and very-long-term order accepted after the first generated suit
 
 ## Planned order
 
+- **Depthless large-diagram traversal.** Remove the arbitrary depth cap while retaining active-path cycle detection,
+  deterministic global budgets, exact truncation diagnostics, and a conservative 45,000-character Mermaid source
+  limit below Mermaid's default 50,000. Prove one large-diagram mode before optional decomposition.
+- **Parallel service, persistence, and worker semantics.** Develop CoreWCF/WCF/outbound boundaries, EF Core/EF6 state,
+  and worker/scheduler/recovery behavior as separate contributor-owned workstreams with shared-contract dependencies.
 - **Presentation hygiene from measured output.** Put diagrams first; remove invented configured-root callers;
   deterministically shorten/deduplicate participants; hide recognized or exactly configured logging noise; eliminate
   generic `Condition`/`Continue`/`Path terminates` presentation; and distinguish repeated calls with exact argument
@@ -43,18 +52,14 @@ medium-, long-, and very-long-term order accepted after the first generated suit
   applications are acceptance evidence and never product vocabulary.
 - **Natural language.** Refine phrasing only after the semantic coverage above is established.
 
-Reliability, packaging, and release hardening continue alongside these increments without weakening
-the evidence and determinism guarantees. Progress is judged by accurate, useful output across varied projects,
-not by one polished application, raw test counts, or corpus-specific hardcoding.
+Progress is judged by accurate, useful output across CreditTransfer, FraudManagement, SMSGateway, TicketReservation,
+and unrelated projects—not by one polished application, raw test counts, or corpus-specific hardcoding.
 
 ## Longer-term horizons
 
-After the ordered foundation above proves broad traversal and composition, continue through reusable compiler-fact
-infrastructure, deeper modern HTTP and dispatch semantics, worker/message and supplied-training flows, broader eShop
-coverage, and progressively larger applications such as modular, commerce, and service-contract systems. Persist
-later graph stages only after their contracts survive varied corpus use, then add incremental invalidation,
-cross-root/state-machine views, explanation/search surfaces, corpus automation, performance/platform evidence, and
-release hardening.
+After the essential foundation proves broad traversal and composition, continue through measured framework gaps,
+cross-root/state-machine views, and optional overview/child decomposition. Persist later graph stages, add incremental
+invalidation, or build explanation/search surfaces only when real repository scale demonstrates the need.
 
 These are capability horizons rather than promises of application-specific adapters. Each horizon is activated from
 measured unsupported boundaries and must preserve profile isolation, deterministic identity, evidence/certainty,

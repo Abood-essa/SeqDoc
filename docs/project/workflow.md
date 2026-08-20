@@ -33,15 +33,15 @@ mark the checkpoint `Blocked`, and stop.
 - Do not repeat a successful command against an unchanged candidate.
 - Full-solution and external-project lanes run only when the checkpoint or milestone risk requires them.
 
-## Model routing
+## Agent routing
 
-The current profile uses SOL for the Orchestrator, Luna for Checkpoint Builder, Test Writer, Explorer, and background
-work, and Terra for the independent Reviewer. DeepSeek is retired. OpenCode configuration changes require explicit
-owner authorization, schema validation, diff inspection, and a restart.
+The maintainer may use local orchestration, implementation, test-writing, exploration, and independent-review roles.
+Local agent/tool configuration is not repository authority and is never committed. Public contributors follow
+`AGENTS.md` and their assigned GitHub issue regardless of the coding tool they use.
 
 ## Repository and session safety
 
-The canonical GitHub repository is private. Before committing or pushing, inspect status, diff, recent commits, and
+The canonical GitHub repository is public. Before committing or pushing, inspect status, diff, recent commits, and
 the exact staged paths. Never upload credentials, raw OpenCode session exports, external-project source, build
 outputs, or machine-local scratch. Keep restart decisions in `docs/project/` so creating a remote or starting a new
-OpenCode session cannot erase execution authority.
+agent session cannot erase execution authority.

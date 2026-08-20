@@ -33,5 +33,9 @@ Routine mechanical and documentation work does not justify a separate Test Write
 - **Corpus/release:** broad applications, performance/resources, platform lanes, and persistence equivalence when
   explicitly required.
 
+Build an affected test project once, then use `--no-build --no-restore` for unchanged reruns. Expensive Roslyn/MSBuild
+classes are selected by fully qualified test filter during checkpoints. A complete Analysis or solution sweep is a
+major compiler/release milestone gate, not a routine PR or documentation gate.
+
 No completion claim may rely on stale evidence. A failed command may be rerun after a relevant repair; do not rerun
 a successful command against an unchanged candidate.

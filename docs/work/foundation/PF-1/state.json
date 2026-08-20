@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "PF-1",
+  "status": "Closed",
+  "baselineRevision": "629d76f",
+  "candidateRevision": null,
+  "review": {
+    "status": "Completed",
+    "findings": [
+      { "id": "PF-1-F1", "severity": "High", "disposition": "Fixed", "summary": "Compiler fallback combines canonical framework and platform attributes, including net48/net472 mappings." },
+      { "id": "PF-1-F2", "severity": "High", "disposition": "Fixed", "summary": "Local lock fallback selects only the referenced project's effective normalized TFM group." }
+    ]
+  },
+  "verification": {
+    "focusedCommand": { "result": "Passed", "summary": "Seven MultiTargetProgramIndex focused tests passed after review resolution, including platform/.NET Framework mappings and project-local lock selection." },
+    "finalGate": { "result": "Passed", "summary": "15 affected MultiTarget/profile resolver/analyzer tests passed in 38 seconds with no build/restore rerun." }
+  },
+  "notes": [
+    "PF-1 is a prerequisite discovered by CT-12's first honest full external-corpus gate.",
+    "Orchestrator inspection confirmed ancestor assets traversal was removed and per-loaded-project compiler/evaluated framework evidence is carried into Program Index extraction.",
+    "Independent review found and resolved canonical platform/.NET Framework mapping and project-local lock selection gaps."
+  ]
+}

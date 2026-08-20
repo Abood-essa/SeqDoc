@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "CT-12",
+  "status": "Closed",
+  "baselineRevision": "629d76f",
+  "candidateRevision": null,
+  "review": {
+    "status": "Completed",
+    "findings": [
+      { "id": "CT-12-F1", "severity": "High", "disposition": "Fixed", "summary": "Rooted, traversal, and canonical group escapes are rejected with separator-aware containment." },
+      { "id": "CT-12-F2", "severity": "Medium", "disposition": "Fixed", "summary": "Relative overrides resolve from the discovered repository root independent of process working directory." },
+      { "id": "CT-12-F3", "severity": "Medium", "disposition": "Fixed", "summary": "The CreditTransfer PowerShell example uses the environment override or sibling default consistently." }
+    ]
+  },
+  "verification": {
+    "focusedCommand": { "result": "Passed", "summary": "After review resolution, 4 focused Analysis resolver/index tests and 24 focused Acceptance corpus/documentation tests passed." },
+    "finalGate": { "result": "Passed", "summary": "12 affected Analysis resolver/index tests passed in 8 seconds and all 29 Acceptance tests passed in 1 minute 31 seconds without rebuild/restore. The override-aware documented CreditTransfer command produced all 18 files byte-identical to the hardened baseline." }
+  },
+  "notes": [
+    "The owner approved a fork-only contributor workflow for AhmadKrarha, Abood-essa, and Qhatahet; no collaborator access is required.",
+    "FraudManagement and SMSGateway were baselined locally before roadmap decomposition; only project names and non-sensitive acceptance requirements may appear publicly.",
+    "The documented CreditTransfer command was executed from the repository root with the checked-in configuration and produced all 18 files byte-identical to the accepted hardened suite.",
+    "The final Analysis gate exposed a pre-existing deterministic profile-leakage defect: a referenced net10.0 project borrowed an ancestor root project.assets.json and was labeled net10.0-windows. PF-1 repaired and independently reviewed the generic Program Index contract.",
+    "Independent review found and resolved corpus path containment, relative override, and usage-command consistency findings. CT-12 is closed."
+  ]
+}
