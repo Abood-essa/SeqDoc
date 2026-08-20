@@ -10,7 +10,8 @@ internal sealed record LoadedProject(
     Project Project,
     Compilation Compilation,
     StableProjectId StableId,
-    string RepositoryRelativePath);
+    string RepositoryRelativePath,
+    string? EvaluatedTargetFramework);
 
 internal sealed class LoadedCompilationProfile : IDisposable
 {

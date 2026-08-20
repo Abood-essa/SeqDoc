@@ -682,6 +682,11 @@ internal static class RoslynProgramIndexExtractor
         var assetsPath = FindAssetsPath(project.Project);
         if (assetsPath is null)
         {
+            foreach (var package in ReadLocalPackageLock(project, GetEffectiveTargetFramework(project, profile)))
+            {
+                yield return package;
+            }
+
             yield break;
         }
 
@@ -756,6 +761,65 @@ internal static class RoslynProgramIndexExtractor
                 version,
                 evidence);
         }
+    }
+
+    private static IEnumerable<ProgramReference> ReadLocalPackageLock(
+        LoadedProject project,
+        string effectiveTargetFramework)
+    {
+        var path = Path.Combine(Path.GetDirectoryName(project.Project.FilePath!)!, "packages.lock.json");
+        if (!File.Exists(path))
+        {
+            yield break;
+        }
+
+        using var stream = File.OpenRead(path);
+        using var lockFile = JsonDocument.Parse(stream);
+        if (!lockFile.RootElement.TryGetProperty("dependencies", out var dependencies))
+        {
+            yield break;
+        }
+
+        var framework = dependencies.EnumerateObject()
+            .Where(item => string.Equals(
+                NormalizeLockFrameworkKey(item.Name),
+                NormalizeLockFrameworkKey(effectiveTargetFramework),
+                StringComparison.OrdinalIgnoreCase))
+            .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(item => item.Value)
+            .FirstOrDefault();
+        if (framework.ValueKind != JsonValueKind.Object)
+        {
+            yield break;
+        }
+
+        var evidence = ImmutableArray.Create(CreateConfigurationEvidence(
+            project.RepositoryRelativePath,
+            project.RepositoryRelativePath));
+        foreach (var dependency in framework.EnumerateObject()
+                     .Where(item => item.Value.TryGetProperty("type", out var type)
+                         && string.Equals(type.GetString(), "Direct", StringComparison.OrdinalIgnoreCase))
+                     .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            var version = dependency.Value.TryGetProperty("resolved", out var resolved)
+                ? resolved.GetString()
+                : null;
+            yield return new ProgramReference(
+                $"reference:v1:{Fingerprinting.Sequence("package", [project.StableId.Value, dependency.Name, version ?? string.Empty])}",
+                project.StableId,
+                ProgramReferenceKind.Package,
+                dependency.Name,
+                version,
+                evidence);
+        }
+    }
+
+    private static string NormalizeLockFrameworkKey(string framework)
+    {
+        var normalized = framework.Trim().ToLowerInvariant();
+        return normalized.EndsWith("-windows", StringComparison.Ordinal)
+            ? normalized + "7.0"
+            : normalized;
     }
 
     private static void AddAttributes(
@@ -1076,24 +1140,6 @@ internal static class RoslynProgramIndexExtractor
         {
             return defaultPath;
         }
-
-        foreach (var generatedDocument in project.Documents
-                     .Where(document => document.FilePath is not null && IsKnownMsBuildGeneratedDocument(document.Name))
-                     .OrderBy(document => document.Name, StringComparer.Ordinal))
-        {
-            var directory = Path.GetDirectoryName(generatedDocument.FilePath);
-            for (var depth = 0; directory is not null && depth < 8; depth++)
-            {
-                var candidate = Path.Combine(directory, "project.assets.json");
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
-
-                directory = Path.GetDirectoryName(directory);
-            }
-        }
-
         return null;
     }
 
@@ -1101,10 +1147,15 @@ internal static class RoslynProgramIndexExtractor
         LoadedProject project,
         CompilationProfile profile)
     {
+        if (project.EvaluatedTargetFramework is { } evaluatedTargetFramework)
+        {
+            return evaluatedTargetFramework;
+        }
+
         var assetsPath = FindAssetsPath(project.Project);
         if (assetsPath is null)
         {
-            return profile.TargetFramework;
+            return "unknown";
         }
 
         using var stream = File.OpenRead(assetsPath);
@@ -1112,15 +1163,15 @@ internal static class RoslynProgramIndexExtractor
         if (!assets.RootElement.TryGetProperty("project", out var projectElement)
             || !projectElement.TryGetProperty("frameworks", out var frameworks))
         {
-            return profile.TargetFramework;
+            return "unknown";
         }
 
         var available = frameworks.EnumerateObject().Select(item => item.Name).ToArray();
         return available.FirstOrDefault(item => string.Equals(
-                   item,
-                   profile.TargetFramework,
-                   StringComparison.OrdinalIgnoreCase))
-               ?? (available.Length == 1 ? available[0] : profile.TargetFramework);
+                    item,
+                    profile.TargetFramework,
+                    StringComparison.OrdinalIgnoreCase))
+               ?? (available.Length == 1 ? available[0] : "unknown");
     }
 
     private static string? GetMethodBodyText(SyntaxNode syntax) => syntax switch

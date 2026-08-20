@@ -67,7 +67,12 @@ internal static class CompilationWorkspaceLoader
                 compilerErrors.AddRange(compilation.GetDiagnostics(cancellationToken)
                     .Where(diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
                     .Select(diagnostic => (diagnostic, stableId)));
-                loadedProjects.Add(new LoadedProject(project, compilation, stableId, relativePath));
+                loadedProjects.Add(new LoadedProject(
+                    project,
+                    compilation,
+                    stableId,
+                    relativePath,
+                    GetEvaluatedTargetFramework(project, compilation, project.Id == rootProjectId)));
             }
 
             var warningPolicy = new MsBuildWarningPolicy(properties);
@@ -144,4 +149,108 @@ internal static class CompilationWorkspaceLoader
 
         return RepositoryRelativePath.Normalize(relativePath);
     }
+
+    private static string? GetEvaluatedTargetFramework(
+        Project project,
+        Compilation compilation,
+        bool isRootProject)
+    {
+        var evaluated = project.AnalyzerOptions.AnalyzerConfigOptionsProvider.GlobalOptions.TryGetValue(
+            "build_property.TargetFramework",
+            out var targetFramework)
+            && !string.IsNullOrWhiteSpace(targetFramework)
+            ? targetFramework
+            : null;
+        if (isRootProject || evaluated is null)
+        {
+            return evaluated;
+        }
+
+        var compilerFramework = compilation.Assembly.GetAttributes()
+            .Where(attribute => attribute.AttributeClass?.ToDisplayString() ==
+                "System.Runtime.Versioning.TargetFrameworkAttribute")
+            .Select(attribute => attribute.ConstructorArguments.FirstOrDefault().Value as string)
+            .Select(moniker => (Moniker: moniker, Framework: ToTargetFramework(moniker)))
+            .FirstOrDefault(item => item.Framework is not null);
+        if (compilerFramework.Framework is null)
+        {
+            return evaluated;
+        }
+
+        var platform = compilation.Assembly.GetAttributes()
+            .Where(attribute => attribute.AttributeClass?.ToDisplayString() ==
+                "System.Runtime.Versioning.TargetPlatformAttribute")
+            .Select(attribute =>
+            {
+                var version = attribute.ConstructorArguments.ElementAtOrDefault(1).Value as string
+                    ?? attribute.NamedArguments
+                        .FirstOrDefault(argument => argument.Key.Equals("Version", StringComparison.OrdinalIgnoreCase))
+                        .Value.Value as string;
+                return (
+                    Name: attribute.ConstructorArguments.ElementAtOrDefault(0).Value as string,
+                    Version: version);
+            })
+            .FirstOrDefault(item => !string.IsNullOrWhiteSpace(item.Name));
+        var localPlatform = evaluated is not null && evaluated.StartsWith(
+            compilerFramework.Framework,
+            StringComparison.OrdinalIgnoreCase)
+            ? GetPlatformSuffix(evaluated)
+            : null;
+        var compilerPlatform = string.IsNullOrWhiteSpace(platform.Name)
+            ? localPlatform
+            : $"-{platform.Name!.ToLowerInvariant()}{(string.IsNullOrWhiteSpace(platform.Version) ? string.Empty : platform.Version)}";
+        return compilerFramework.Framework + compilerPlatform;
+    }
+
+    private static string? ToTargetFramework(string? moniker)
+    {
+        if (moniker is null)
+        {
+            return null;
+        }
+
+        var versionMarker = ",Version=v";
+        var versionIndex = moniker.IndexOf(versionMarker, StringComparison.OrdinalIgnoreCase);
+        if (versionIndex < 0)
+        {
+            return null;
+        }
+
+        var version = moniker[(versionIndex + versionMarker.Length)..];
+        var family = moniker[..versionIndex];
+        if (family.Equals(".NETCoreApp", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"net{version}";
+        }
+
+        if (family.Equals(".NETStandard", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"netstandard{version}";
+        }
+
+        if (family.Equals(".NETFramework", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"net{version.Replace(".", string.Empty, StringComparison.Ordinal)}";
+        }
+
+        return null;
+    }
+
+    private static string? GetPlatformSuffix(string framework) =>
+        framework.IndexOf('-') is var separator && separator >= 0
+            ? framework[separator..].ToLowerInvariant()
+            : null;
+
+    internal static string? CanonicalTargetFramework(
+        string moniker,
+        string? platform,
+        string? platformVersion,
+        string? projectFramework) =>
+        ToTargetFramework(moniker) is { } framework
+            ? framework + (string.IsNullOrWhiteSpace(platform)
+                ? projectFramework is not null && projectFramework.StartsWith(framework, StringComparison.OrdinalIgnoreCase)
+                    ? GetPlatformSuffix(projectFramework)
+                    : null
+                : $"-{platform.ToLowerInvariant()}{platformVersion ?? string.Empty}")
+            : projectFramework;
 }
