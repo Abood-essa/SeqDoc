@@ -3215,6 +3215,17 @@ internal static class RoslynBehaviorExtractor
                         project,
                         projectsByAssembly,
                         semanticFacts);
+                    if (operationById.TryGetValue(operation, out var creationId))
+                    {
+                        frameworkRequest.AddOperation(FrameworkAnalysisRequestProjector.ProjectOperationDescriptor(
+                            creation,
+                            methodId,
+                            creationId,
+                            ResolveEvidence(operation, documents, methodEvidence),
+                            documents,
+                            project,
+                            profileId));
+                    }
                     break;
             }
         }

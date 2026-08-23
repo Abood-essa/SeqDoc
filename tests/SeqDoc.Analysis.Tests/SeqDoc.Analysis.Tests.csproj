@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\SeqDoc.Analysis.Roslyn\SeqDoc.Analysis.Roslyn.csproj" />
     <ProjectReference Include="..\..\src\SeqDoc.Analysis.Behavior\SeqDoc.Analysis.Behavior.csproj" />
+    <ProjectReference Include="..\..\src\SeqDoc.Analysis.Scenarios\SeqDoc.Analysis.Scenarios.csproj" />
     <ProjectReference Include="..\..\src\SeqDoc.Application\SeqDoc.Application.csproj" />
     <ProjectReference Include="..\..\src\SeqDoc.Core\SeqDoc.Core.csproj" />
     <ProjectReference Include="..\..\src\SeqDoc.FrameworkModels\SeqDoc.FrameworkModels.csproj" />

@@ -186,7 +186,9 @@ public sealed record OperationDescriptor(
     ImmutableArray<int> SuppliedParameterOrdinals = default,
     CallbackTargetDescriptor? CallbackTarget = null,
     FrameworkRouteGroupDescriptor? RouteGroup = null,
-    FrameworkDispatchShapeDescriptor? DispatchShape = null);
+    FrameworkDispatchShapeDescriptor? DispatchShape = null,
+    FrameworkTypeIdentity? ConstructedType = null,
+    SymbolId? ConstructedTypeSymbol = null);
 
 /// <summary>
 /// Exact, Roslyn-neutral identity of one named type. The controlled eligibility projector fills this
@@ -209,7 +211,8 @@ public sealed record FrameworkTypeShape(
     bool IsAbstract,
     bool IsStatic,
     int GenericArity,
-    ImmutableArray<FrameworkTypeIdentity> BaseTypeChain);
+    ImmutableArray<FrameworkTypeIdentity> BaseTypeChain,
+    ImmutableArray<FrameworkTypeIdentity> Interfaces = default);
 
 /// <summary>
 /// Compiler-proven shape of one method plus its declaring type, bound to the exact indexed symbols.

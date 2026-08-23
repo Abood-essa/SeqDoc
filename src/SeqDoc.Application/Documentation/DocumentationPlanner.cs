@@ -193,7 +193,7 @@ public static class DocumentationPlanner
             graph.EntryPoint,
             graph.Profile,
             OperationKey(graph),
-            graph.RootKind == ScenarioRootKind.ConfiguredMethod
+            graph.RootKind is ScenarioRootKind.ConfiguredMethod or ScenarioRootKind.HostedWorker
                 ? OperationKey(graph)
                 : $"{HttpMethodCanonicalToken.Get(graph.HttpMethod)} {graph.CanonicalRoute}",
             phrases,
@@ -232,6 +232,8 @@ public static class DocumentationPlanner
                         EntryPhraseKey,
                          graph.RootKind == ScenarioRootKind.ConfiguredMethod
                              ? "Configured method entry point."
+                             : graph.RootKind == ScenarioRootKind.HostedWorker
+                             ? "Hosted worker lifecycle entry point."
                              : $"HTTP {HttpMethodCanonicalToken.Get(graph.HttpMethod)} entry point at route \"{graph.CanonicalRoute}\".",
                         node.Evidence,
                         node.Certainty);
@@ -245,6 +247,8 @@ public static class DocumentationPlanner
                         ActionPhraseKey,
                          graph.RootKind == ScenarioRootKind.ConfiguredMethod
                              ? $"The selected method {node.Presentation?.ConfiguredDisplaySignature ?? graph.OperationKey} executes."
+                            : node.Presentation?.ActionKind == ScenarioActionKind.HostedWorker
+                            ? $"The hosted worker {ShortTypeName(node.Presentation?.HostedWorkerTypeName ?? graph.OperationKey)} lifecycle is analyzed."
                             : node.Presentation?.ActionKind == ScenarioActionKind.MinimalApiHandler
                             ? "The Minimal API handler executes."
                             : "The controller action executes.",
@@ -275,7 +279,7 @@ public static class DocumentationPlanner
                         phrases,
                         WordingPhraseKind.Statement,
                         MethodCallPhraseKey,
-                         BuildMethodCallText(graph, node),
+                        BuildMethodCallText(graph, node),
                         node.Evidence,
                         node.Certainty);
                     break;
@@ -448,7 +452,9 @@ public static class DocumentationPlanner
                 WordingPhraseKind.TechnicalFallback,
                 $"{FallbackPhraseKeyPrefix}:{diagnostic.Code}",
                 BuildFallbackText(diagnostic),
-                closestNode?.Evidence ?? entryEvidence,
+                diagnostic.Evidence.IsDefaultOrEmpty
+                    ? closestNode?.Evidence ?? entryEvidence
+                    : diagnostic.Evidence.Select(ConservativeCopy).ToImmutableArray(),
                 CertaintyLevel.Conservative);
         }
 
@@ -537,7 +543,8 @@ public static class DocumentationPlanner
             node.Kind is ScenarioNodeKind.EntityQuery or ScenarioNodeKind.EntityMutation);
         var methodCallParticipantKeys = BuildMethodCallParticipantKeys(graph, actionNode);
         bool configuredRoot = graph.RootKind == ScenarioRootKind.ConfiguredMethod;
-        string callerKey = configuredRoot ? "caller" : "client";
+        bool hostedWorkerRoot = graph.RootKind == ScenarioRootKind.HostedWorker;
+        string callerKey = configuredRoot || hostedWorkerRoot ? "caller" : "client";
 
         // Participant labels come from typed presentation facts only. The client is a fixed role;
         // the controller, DI-resolved implementation, and DbContext use concise names resolved with
@@ -547,18 +554,27 @@ public static class DocumentationPlanner
         // caller/client participant: the diagram begins at the selected method, so the root
         // participant carries the concise deterministic type.member label while the full signature
         // stays in behavior text and evidence.
-        var participantSources = new (string Key, ScenarioNode? Source, string? FullTypeName, string FallbackLabel, DiagramParticipantKind Kind)[]
+        var participantSources = new List<(string Key, ScenarioNode? Source, string? FullTypeName, string FallbackLabel, DiagramParticipantKind Kind)>();
+        if (!configuredRoot && !hostedWorkerRoot)
         {
-            (callerKey, configuredRoot ? null : entryNode, null, configuredRoot ? "Caller" : "API client", configuredRoot ? DiagramParticipantKind.Unknown : DiagramParticipantKind.Client),
-             ("action", actionNode, actionNode?.Presentation?.ControllerTypeName,
+            participantSources.Add((callerKey, entryNode, null, "API client", DiagramParticipantKind.Client));
+        }
+        participantSources.Add(("action", actionNode, actionNode?.Presentation?.ControllerTypeName ?? actionNode?.Presentation?.HostedWorkerTypeName,
                  configuredRoot
                      ? ConfiguredActionDisplayName(actionNode?.Presentation) ?? "Selected method"
+                     : hostedWorkerRoot
+                     ? "Hosted worker lifecycle"
                      : actionNode?.Presentation?.ActionKind == ScenarioActionKind.MinimalApiHandler
                      ? "Minimal API handler"
                      : "Controller action",
-                  configuredRoot
+                  configuredRoot || hostedWorkerRoot
                      ? DiagramParticipantKind.Unknown
-                     : DiagramParticipantKind.Controller),
+                     : DiagramParticipantKind.Controller));
+        if (hostedWorkerRoot && actionNode?.Presentation?.HostedWorkerTypeName is { Length: > 0 } hostedType)
+        {
+            participantSources.Add(("worker", actionNode, hostedType, ShortTypeName(hostedType), DiagramParticipantKind.Service));
+        }
+        participantSources.AddRange([
             ("dispatch", graph.Nodes.FirstOrDefault(node => node.Kind == ScenarioNodeKind.Dispatch), null,
                 "Dispatcher", DiagramParticipantKind.Service),
             ("handler", graph.Nodes.FirstOrDefault(node => node.Kind == ScenarioNodeKind.Handler),
@@ -566,7 +582,7 @@ public static class DocumentationPlanner
                 "Handler", DiagramParticipantKind.Service),
             ("service", serviceNode, serviceNode?.Presentation?.ImplementationTypeName, "Service", DiagramParticipantKind.Service),
             ("data", dataNode, dataNode?.Presentation?.DbContextTypeName, "Data store", DiagramParticipantKind.Data),
-        }.ToList();
+        ]);
         foreach (var group in graph.Nodes
                      .Where(node => node.Kind == ScenarioNodeKind.MethodCall
                          && !string.IsNullOrWhiteSpace(node.Presentation?.TargetContainingTypeName)
@@ -613,6 +629,14 @@ public static class DocumentationPlanner
             participantLabels["action"] = ConfiguredActionDisplayName(actionNode?.Presentation)
                 ?? actionNode?.Presentation?.ConfiguredDisplaySignature
                 ?? "Selected method";
+        }
+        else if (hostedWorkerRoot)
+        {
+            participantLabels["action"] = "Hosted worker lifecycle";
+            if (actionNode?.Presentation?.HostedWorkerTypeName is { Length: > 0 } hostedWorkerType)
+            {
+                participantLabels["worker"] = ShortTypeName(hostedWorkerType);
+            }
         }
         // A typed composition owns the service participant's role: the contract type (for example
         // ICustomerService) humanized to its namespace-free role ("Customer service"), never the
@@ -669,7 +693,7 @@ public static class DocumentationPlanner
             switch (edge.Kind)
             {
                 case ScenarioEdgeKind.Entry:
-                    if (configuredRoot)
+                    if (configuredRoot || hostedWorkerRoot)
                     {
                         // A configured root begins at the selected method: no invented caller
                         // participant or entry request message is planned.
@@ -696,7 +720,9 @@ public static class DocumentationPlanner
                         && methodCallParticipantKeys.TryGetValue(sourceType, out var sourceParticipantKey)
                         ? sourceParticipantKey
                         : "action";
-                    var targetKey = callTarget?.Kind == ScenarioNodeKind.MethodCall
+                    var targetKey = callTarget?.Presentation?.ActionKind == ScenarioActionKind.HostedWorker
+                        ? "worker"
+                        : callTarget?.Kind == ScenarioNodeKind.MethodCall
                         && callTarget.Presentation?.TargetContainingTypeName is { Length: > 0 } targetType
                         && methodCallParticipantKeys.TryGetValue(targetType, out var targetParticipantKey)
                         ? targetParticipantKey
@@ -798,7 +824,7 @@ public static class DocumentationPlanner
                     failureEvidence.AddRange(edge.Evidence);
                     break;
                 case ScenarioEdgeKind.OutcomeSuccess:
-                    if (configuredRoot)
+                    if (configuredRoot || hostedWorkerRoot)
                     {
                         break;
                     }
@@ -814,7 +840,7 @@ public static class DocumentationPlanner
                     successEvidence.AddRange(edge.Evidence);
                     break;
                 case ScenarioEdgeKind.OutcomeFailure:
-                    if (configuredRoot)
+                    if (configuredRoot || hostedWorkerRoot)
                     {
                         break;
                     }
@@ -3252,6 +3278,24 @@ public static class DocumentationPlanner
     private static string BuildMethodCallText(ScenarioGraph graph, ScenarioNode node)
     {
         var presentation = node.Presentation;
+        if (presentation?.ActionKind == ScenarioActionKind.HostedWorker)
+        {
+            return presentation.HostedWorkerLifecycleStep switch
+            {
+                HostedWorkerLifecycleStep.Start => presentation.HostedWorkerCancellationParameterName is { Length: > 0 } startParameter
+                    ? $"The registered hosted-worker lifecycle includes StartAsync with cancellation parameter evidence: {startParameter}."
+                    : "The registered hosted-worker lifecycle includes StartAsync.",
+                HostedWorkerLifecycleStep.Execute => presentation.HostedWorkerCancellationParameterName is { Length: > 0 } parameter
+                    ? $"The registered hosted-worker lifecycle includes ExecuteAsync with cancellation parameter evidence: {parameter}."
+                    : "The registered hosted-worker lifecycle includes ExecuteAsync.",
+                HostedWorkerLifecycleStep.Stop => presentation.HostedWorkerCancellationParameterName is { Length: > 0 } stopParameter
+                    ? $"The registered hosted-worker lifecycle includes StopAsync with cancellation parameter evidence: {stopParameter}."
+                    : "The registered hosted-worker lifecycle includes StopAsync.",
+                _ => presentation.HostedWorkerSchedulerRegistration
+                    ? "The hosted worker registers a timer callback."
+                    : "The hosted worker has an unsupported lifecycle slot.",
+            };
+        }
         if (presentation is not null
             && !string.IsNullOrWhiteSpace(presentation.TargetContainingTypeName)
             && !string.IsNullOrWhiteSpace(presentation.TargetMemberName))

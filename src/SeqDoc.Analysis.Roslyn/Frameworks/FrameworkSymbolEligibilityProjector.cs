@@ -55,7 +55,13 @@ internal static class FrameworkSymbolEligibilityProjector
             IsAbstract: type.IsAbstract,
             IsStatic: type.IsStatic,
             GenericArity: type.Arity,
-            BaseTypeChain: ProjectBaseTypeChain(type));
+            BaseTypeChain: ProjectBaseTypeChain(type),
+            Interfaces: type.AllInterfaces
+                .Select(ProjectTypeIdentity)
+                .OrderBy(identity => identity.AssemblyIdentity, StringComparer.Ordinal)
+                .ThenBy(identity => identity.MetadataName, StringComparer.Ordinal)
+                .ThenBy(identity => identity.AssemblyVersion, StringComparer.Ordinal)
+                .ToImmutableArray());
     }
 
     /// <summary>

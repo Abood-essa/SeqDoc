@@ -251,6 +251,12 @@
           "SeqDoc.Core": "[1.0.0, )"
         }
       },
+      "seqdoc.analysis.scenarios": {
+        "type": "Project",
+        "dependencies": {
+          "SeqDoc.Core": "[1.0.0, )"
+        }
+      },
       "seqdoc.application": {
         "type": "Project",
         "dependencies": {

@@ -102,6 +102,11 @@ internal static class FrameworkAnalysisRequestProjector
         ArgumentNullException.ThrowIfNull(call);
         var target = call.TargetMethod;
         var anchor = ProjectSourceAnchor(call.Syntax, documents);
+        var constructedTypeArgument = target.TypeArguments.Length == 1
+            && target.TypeArguments[0] is INamedTypeSymbol namedTypeArgument
+            && IsCanonicalConstructedTypeArgument(namedTypeArgument)
+            ? namedTypeArgument
+            : null;
         return new OperationDescriptor(
             operationId,
             methodId,
@@ -112,13 +117,67 @@ internal static class FrameworkAnalysisRequestProjector
             evidence,
             CertaintyLevel.Exact,
             ProjectTargetIdentity(target),
-            ProjectConstantArguments(call),
+            ProjectConstantArguments(call.Arguments),
             ProjectQueryChain(call, operationById, models),
             ProjectPredicateShape(call, methodId, operationById, documents, models),
             ProjectSuppliedParameterOrdinals(call),
             ProjectCallbackTarget(call, methodId, operationId, operationById, ProjectSuppliedParameterOrdinals(call), documents, project, profile, callbackFacts),
             ProjectRouteGroup(call, operationById, models, localInitializers),
-            project is null ? null : ProjectDispatchShape(call, project.Value, evidence, documents, models, dispatchCancellationToken));
+            project is null ? null : ProjectDispatchShape(call, project.Value, evidence, documents, models, dispatchCancellationToken),
+            ConstructedType: constructedTypeArgument is null
+                ? null
+                : FrameworkSymbolEligibilityProjector.ProjectTypeIdentity(constructedTypeArgument),
+            ConstructedTypeSymbol: project is { } projectId
+                && constructedTypeArgument is not null
+                ? RoslynProgramIndexExtractor.CreateSymbolId(constructedTypeArgument, projectId)
+                : null);
+    }
+
+    /// <summary>
+    /// Projects one compiler-proven object creation into the same framework-operation stream as
+    /// invocations. Constructor identity and callback binding remain compiler-owned; framework
+    /// models decide whether the exact shape is supported.
+    /// </summary>
+    public static OperationDescriptor ProjectOperationDescriptor(
+        IObjectCreationOperation creation,
+        MethodId methodId,
+        OperationId operationId,
+        ImmutableArray<EvidenceRef> evidence,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents,
+        StableProjectId? project = null,
+        CompilationProfileId? profile = null)
+    {
+        ArgumentNullException.ThrowIfNull(creation);
+        if (creation.Constructor is null)
+        {
+            throw new ArgumentException("Object creation must have an exact constructor.", nameof(creation));
+        }
+
+        var anchor = ProjectSourceAnchor(creation.Syntax, documents);
+        return new OperationDescriptor(
+            operationId,
+            methodId,
+            "ObjectCreation",
+            anchor.Document,
+            anchor.SourceStart,
+            anchor.SourceLength,
+            evidence,
+            CertaintyLevel.Exact,
+            ProjectTargetIdentity(creation.Constructor),
+            ConstantArguments: ProjectConstantArguments(creation.Arguments),
+            CallbackTarget: ProjectCallbackTarget(
+                creation.Arguments,
+                methodId,
+                operationId,
+                project,
+                profile,
+                documents),
+            ConstructedType: creation.Type is INamedTypeSymbol constructed
+                ? FrameworkSymbolEligibilityProjector.ProjectTypeIdentity(constructed)
+                : null,
+            ConstructedTypeSymbol: project is { } projectId && creation.Type is INamedTypeSymbol constructedType
+                ? RoslynProgramIndexExtractor.CreateSymbolId(constructedType, projectId)
+                : null);
     }
 
     private static FrameworkDispatchShapeDescriptor? ProjectDispatchShape(
@@ -421,11 +480,22 @@ internal static class FrameworkAnalysisRequestProjector
             }
         }
 
-        foreach (var argument in call.Arguments)
+        return ProjectCallbackTarget(call.Arguments, methodId, operationId, project, profile, documents);
+    }
+
+    private static CallbackTargetDescriptor? ProjectCallbackTarget(
+        IEnumerable<IArgumentOperation> arguments,
+        MethodId methodId,
+        OperationId operationId,
+        StableProjectId? project,
+        CompilationProfileId? profile,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents)
+    {
+        foreach (var argument in arguments)
         {
             if (argument.Parameter is null || argument.ArgumentKind == ArgumentKind.DefaultValue
                 || argument.Parameter.Type is not INamedTypeSymbol parameterType
-                || !IsExactSystemDelegate(parameterType))
+                || (!IsExactSystemDelegate(parameterType) && !IsExactTimerCallback(parameterType)))
             {
                 continue;
             }
@@ -463,6 +533,11 @@ internal static class FrameworkAnalysisRequestProjector
                 && string.Equals(type.MetadataName, "Delegate", StringComparison.Ordinal)
                 && string.Equals(type.ContainingNamespace?.ToDisplayString(), "System", StringComparison.Ordinal);
         }
+
+        static bool IsExactTimerCallback(INamedTypeSymbol type)
+            => type.MetadataName == "TimerCallback"
+                && type.ContainingNamespace?.ToDisplayString() == "System.Threading"
+                && type.ContainingAssembly?.Identity.Name is "System.Runtime" or "System.Private.CoreLib";
 
         return null;
 
@@ -946,15 +1021,35 @@ internal static class FrameworkAnalysisRequestProjector
             assembly?.Identity.Version?.ToString());
     }
 
-    private static ImmutableArray<CompilerProvenArgument> ProjectConstantArguments(IInvocationOperation call)
+    private static bool IsCanonicalConstructedTypeArgument(INamedTypeSymbol type)
     {
-        if (call.Arguments.IsDefaultOrEmpty)
+        if (type.TypeKind == TypeKind.Error
+            || type.IsAnonymousType
+            || type.IsTupleType
+            || type.IsImplicitlyDeclared
+            || type.IsUnboundGenericType
+            || ContainsTypeParameter(type)
+            || type.ContainingAssembly?.Identity is not { Name.Length: > 0, Version: not null })
+        {
+            return false;
+        }
+
+        var metadataName = RoslynProgramIndexExtractor.GetMetadataName(type);
+        return !string.IsNullOrWhiteSpace(metadataName)
+            && !metadataName.Any(char.IsWhiteSpace)
+            && !metadataName.Contains('<')
+            && !metadataName.Contains('>');
+    }
+
+    private static ImmutableArray<CompilerProvenArgument> ProjectConstantArguments(ImmutableArray<IArgumentOperation> arguments)
+    {
+        if (arguments.IsDefaultOrEmpty)
         {
             return [];
         }
 
         var builder = ImmutableArray.CreateBuilder<CompilerProvenArgument>();
-        foreach (var argument in call.Arguments)
+        foreach (var argument in arguments)
         {
             if (argument.Parameter is null
                 || argument.Value is null

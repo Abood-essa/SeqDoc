@@ -15,6 +15,7 @@ using SeqDoc.FrameworkModels.AspNetCore;
 using SeqDoc.FrameworkModels.EntityFramework;
 using SeqDoc.FrameworkModels.FusionCache;
 using SeqDoc.FrameworkModels.MediatR;
+using SeqDoc.FrameworkModels.Workers;
 
 namespace SeqDoc.Cli;
 
@@ -52,6 +53,8 @@ internal sealed class AggregateAnalysisBuilder : IAnalysisBuilder
             new EntityFrameworkQueryModel(),
             new FusionCacheGetOrSetModel(),
             new MediatRDispatchModel(),
+            new HostedWorkerModel(),
+            new SchedulerModel(),
         ]);
     }
 

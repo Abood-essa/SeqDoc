@@ -77,7 +77,26 @@ public static class ScenarioGraphBuilder
                 ? new NormalizedEntry(minimal.EntryPointId, minimal.HandlerRoot, minimal.HttpMethod, minimal.CanonicalRoute, minimal.OperationKey, ScenarioActionKind.MinimalApiHandler, minimal.Evidence)
                 : new NormalizedEntry(((HttpEntryPointFact)fact).EntryPointId, ((HttpEntryPointFact)fact).RootMethod, ((HttpEntryPointFact)fact).HttpMethod, ((HttpEntryPointFact)fact).CanonicalRoute, ((HttpEntryPointFact)fact).OperationKey, ScenarioActionKind.ControllerAction, fact.Evidence))
             .ToArray();
-        var admittedMethods = frameworkEntries.Select(entry => entry.RootMethod).ToHashSet();
+        var workerEntries = request.FrameworkFacts.Facts
+            .OfType<HostedWorkerLifecycleFact>()
+            .Where(fact => FrameworkFactsBound(request))
+            .Join(
+                request.FrameworkFacts.Facts.OfType<HostedWorkerRegistrationFact>(),
+                fact => fact.HostedType,
+                registration => registration.HostedType,
+                (fact, registration) => new NormalizedEntry(
+                    fact.EntryPointId,
+                    fact.RootMethod,
+                    HttpMethodKind.Unknown,
+                    string.Empty,
+                    $"Hosted worker {fact.HostedTypeName}",
+                    ScenarioActionKind.HostedWorker,
+                    Combine(fact.Evidence, registration.Evidence),
+                    fact))
+            .ToArray();
+        var admittedMethods = frameworkEntries.Select(entry => entry.RootMethod)
+            .Concat(workerEntries.Select(entry => entry.RootMethod))
+            .ToHashSet();
         var configuredEntries = (request.ConfiguredRoots.IsDefault ? [] : request.ConfiguredRoots)
             .Where(method => !admittedMethods.Contains(method))
             .OrderBy(method => method.Value, StringComparer.Ordinal)
@@ -85,12 +104,16 @@ public static class ScenarioGraphBuilder
                 StableIdentity.CreateConfiguredMethodEntryPointId(new ConfiguredMethodEntryPointIdentityDescriptor(request.Profile.Id, method)),
                  method, HttpMethodKind.Unknown, string.Empty,
                  ConfiguredDisplaySignature(request.ProgramIndex, method),
-                 ScenarioActionKind.ConfiguredMethod,
-                 request.ProgramIndex.Methods.First(item => item.Id == method).Evidence))
+                ScenarioActionKind.ConfiguredMethod,
+                 request.ProgramIndex.Methods.First(item => item.Id == method).Evidence,
+                 null))
             .ToArray();
         var graphs = frameworkEntries
             .OrderBy(fact => fact.EntryPointId.Value, StringComparer.Ordinal)
             .Select(fact => BuildGraph(request, fact))
+            .Concat(workerEntries
+                .OrderBy(fact => fact.EntryPointId.Value, StringComparer.Ordinal)
+                .Select(fact => BuildGraph(request, fact)))
             .Concat(configuredEntries.Select(entry => BuildGraph(request, entry)))
             .OrderBy(graph => graph.EntryPoint.Value, StringComparer.Ordinal)
             .ToImmutableArray();
@@ -105,10 +128,31 @@ public static class ScenarioGraphBuilder
             debugProjection);
     }
 
-    private sealed record NormalizedEntry(EntryPointId EntryPointId, MethodId RootMethod, HttpMethodKind HttpMethod, string CanonicalRoute, string OperationKey, ScenarioActionKind ActionKind, ImmutableArray<EvidenceRef> Evidence)
+    private sealed record NormalizedEntry(
+        EntryPointId EntryPointId,
+        MethodId RootMethod,
+        HttpMethodKind HttpMethod,
+        string CanonicalRoute,
+        string OperationKey,
+        ScenarioActionKind ActionKind,
+        ImmutableArray<EvidenceRef> Evidence,
+        HostedWorkerLifecycleFact? HostedWorker = null)
     {
-        public ScenarioRootKind RootKind => ActionKind == ScenarioActionKind.ConfiguredMethod ? ScenarioRootKind.ConfiguredMethod : ScenarioRootKind.HttpEntryPoint;
+        public ScenarioRootKind RootKind => ActionKind switch
+        {
+            ScenarioActionKind.ConfiguredMethod => ScenarioRootKind.ConfiguredMethod,
+            ScenarioActionKind.HostedWorker => ScenarioRootKind.HostedWorker,
+            _ => ScenarioRootKind.HttpEntryPoint,
+        };
     }
+
+    private static bool FrameworkFactsBound(ScenarioAnalysisRequest request)
+        => request.FrameworkFacts.ProfileId == request.Profile.Id
+            && !string.IsNullOrWhiteSpace(request.FrameworkFacts.ProgramIndexFingerprint)
+            && string.Equals(
+                request.FrameworkFacts.ProgramIndexFingerprint,
+                request.ProgramIndex.IndexFingerprint,
+                StringComparison.Ordinal);
 
     private static ScenarioGraph BuildGraph(ScenarioAnalysisRequest request, NormalizedEntry entryPoint)
     {
@@ -131,6 +175,8 @@ public static class ScenarioGraphBuilder
 
         var actionPresentation = entryPoint.ActionKind == ScenarioActionKind.ConfiguredMethod
             ? ConfiguredMethodPresentation(request.ProgramIndex, entryPoint.RootMethod)
+            : entryPoint.ActionKind == ScenarioActionKind.HostedWorker
+            ? HostedWorkerPresentation(request.ProgramIndex, entryPoint.HostedWorker!)
             : entryPoint.ActionKind == ScenarioActionKind.MinimalApiHandler
             ? MinimalApiActionPresentation(request.ProgramIndex, entryPoint.RootMethod)
             : ControllerActionPresentation(request.ProgramIndex, entryPoint.RootMethod);
@@ -141,9 +187,9 @@ public static class ScenarioGraphBuilder
             $"action:{entryPoint.RootMethod.Value}",
             entryPoint.RootMethod,
             null,
-                 entryPoint.ActionKind == ScenarioActionKind.ConfiguredMethod ? "configured method" : entryPoint.ActionKind == ScenarioActionKind.MinimalApiHandler ? "minimal API handler" : "controller action",
+                 entryPoint.ActionKind == ScenarioActionKind.ConfiguredMethod ? "configured method" : entryPoint.ActionKind == ScenarioActionKind.HostedWorker ? "hosted worker lifecycle" : entryPoint.ActionKind == ScenarioActionKind.MinimalApiHandler ? "minimal API handler" : "controller action",
              actionPresentation with { ActionKind = entryPoint.ActionKind },
-            entryPoint.Evidence);
+             entryPoint.Evidence);
         nodes.Add(actionNode);
         edges.Add(CreateEdge(
             profileId,
@@ -153,6 +199,12 @@ public static class ScenarioGraphBuilder
             ScenarioEdgeKind.Entry,
             string.Empty,
             entryPoint.Evidence));
+
+        if (entryPoint.ActionKind == ScenarioActionKind.HostedWorker)
+        {
+            AddHostedWorkerLifecycle(request, entryPoint, actionNode, nodes, edges, diagnostics);
+            return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, ScenarioTopology.Empty);
+        }
 
         if (entryPoint.ActionKind == ScenarioActionKind.ConfiguredMethod)
         {
@@ -2395,6 +2447,212 @@ public static class ScenarioGraphBuilder
             ActionKind: ScenarioActionKind.ConfiguredMethod);
     }
 
+    private static ScenarioNodePresentation HostedWorkerPresentation(
+        ProgramIndexSnapshot index,
+        HostedWorkerLifecycleFact fact)
+        => new(
+            HostedWorkerTypeName: fact.HostedTypeName,
+            HostedWorkerStartMethodName: fact.StartMethod is { } start ? MethodConciseName(index, start) : null,
+            HostedWorkerExecuteMethodName: fact.ExecuteMethod is { } execute ? MethodConciseName(index, execute) : null,
+            HostedWorkerStopMethodName: fact.StopMethod is { } stop ? MethodConciseName(index, stop) : null,
+            ActionKind: ScenarioActionKind.HostedWorker);
+
+    private static void AddHostedWorkerLifecycle(
+        ScenarioAnalysisRequest request,
+        NormalizedEntry entry,
+        ScenarioNode actionNode,
+        List<ScenarioNode> nodes,
+        List<ScenarioEdge> edges,
+        List<ScenarioGraphDiagnostic> diagnostics)
+    {
+        var fact = entry.HostedWorker!;
+        var cancellationSourceMethod = fact.ExecuteMethod ?? fact.StartMethod ?? fact.StopMethod;
+        var lifecycle = new[]
+        {
+            (Step: HostedWorkerLifecycleStep.Start, Method: fact.StartMethod),
+            (Step: HostedWorkerLifecycleStep.Execute, Method: fact.ExecuteMethod),
+            (Step: HostedWorkerLifecycleStep.Stop, Method: fact.StopMethod),
+        };
+        var ordinal = 0;
+        foreach (var item in lifecycle)
+        {
+            if (item.Method is not { } method)
+            {
+                continue;
+            }
+
+            var memberName = item.Step switch
+            {
+                HostedWorkerLifecycleStep.Start => "StartAsync",
+                HostedWorkerLifecycleStep.Execute => "ExecuteAsync",
+                HostedWorkerLifecycleStep.Stop => "StopAsync",
+                _ => throw new InvalidOperationException("An impossible hosted-worker lifecycle step was encountered."),
+            };
+            var node = CreateNodeWithPresentation(
+                request.Profile.Id,
+                entry.EntryPointId,
+                ScenarioNodeKind.MethodCall,
+                $"hosted-worker:{ordinal:000}:{item.Step}:{method.Value}",
+                method,
+                null,
+                memberName,
+                new ScenarioNodePresentation(
+                    TargetContainingTypeName: fact.HostedTypeName,
+                    TargetMemberName: memberName,
+                    HostedWorkerTypeName: fact.HostedTypeName,
+                    HostedWorkerLifecycleStep: item.Step,
+                    HostedWorkerCancellationParameterName: item.Method == cancellationSourceMethod
+                        ? fact.CancellationParameterName
+                        : null,
+                    ActionKind: ScenarioActionKind.HostedWorker),
+                entry.Evidence,
+                entry.Evidence.Max(item => item.Certainty),
+                ordinal++);
+            nodes.Add(node);
+            edges.Add(CreateEdge(
+                request.Profile.Id,
+                entry.EntryPointId,
+                actionNode,
+                node,
+                ScenarioEdgeKind.Call,
+                memberName,
+                ordinal,
+                entry.Evidence));
+        }
+
+        foreach (var scheduler in request.FrameworkFacts.Facts
+                     .OfType<SchedulerJobFact>()
+                     .Where(_ => FrameworkFactsBound(request))
+                     .Where(item => lifecycle.Any(lifecycleItem => lifecycleItem.Method == item.RegistrationMethod))
+                     .OrderBy(item => item.SourceStart)
+                     .ThenBy(item => item.Id.Value, StringComparer.Ordinal))
+        {
+            var placement = ClassifySchedulerPlacement(request, scheduler);
+            if (placement.Kind != SchedulerPlacementKind.Admitted)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    request.Profile.Id,
+                    entry.EntryPointId,
+                    "SC-WORKER-UNSUPPORTED-PLACEMENT",
+                    $"The scheduler registration was withheld at the {placement.Description} boundary.",
+                    $"boundary={placement.Token} ({placement.Description}); registrationOperation={scheduler.RegistrationOperation.Value}",
+                    placement.Evidence,
+                    CertaintyLevel.Conservative));
+                continue;
+            }
+            var callback = request.ProgramIndex.Methods.FirstOrDefault(method => method.Id == scheduler.JobMethod);
+            if (callback is null)
+            {
+                continue;
+            }
+
+            var callbackType = request.ProgramIndex.Types.FirstOrDefault(type => type.Id == callback.ContainingType);
+            var node = CreateNodeWithPresentation(
+                request.Profile.Id,
+                entry.EntryPointId,
+                ScenarioNodeKind.MethodCall,
+                $"timer-job:{scheduler.Id.Value}",
+                scheduler.JobMethod,
+                scheduler.RegistrationOperation,
+                "timer registration",
+                new ScenarioNodePresentation(
+                    TargetContainingTypeName: callbackType?.MetadataName,
+                    TargetMemberName: "Timer registration",
+                    HostedWorkerTypeName: fact.HostedTypeName,
+                    ActionKind: ScenarioActionKind.HostedWorker,
+                    HostedWorkerSchedulerRegistration: true),
+                Combine(entry.Evidence, scheduler.Evidence),
+                Combine(entry.Evidence, scheduler.Evidence).Max(item => item.Certainty),
+                ordinal++);
+            var source = nodes.LastOrDefault(item => item.Method == scheduler.RegistrationMethod) ?? actionNode;
+            nodes.Add(node);
+            edges.Add(CreateEdge(
+                request.Profile.Id,
+                entry.EntryPointId,
+                source,
+                node,
+                ScenarioEdgeKind.Call,
+                "timer registration",
+                ordinal,
+                Combine(entry.Evidence, scheduler.Evidence)));
+        }
+    }
+
+    private enum SchedulerPlacementKind
+    {
+        Admitted,
+        BehaviorIdentityMismatch,
+        MissingFlow,
+        AmbiguousFlow,
+        MissingAnchor,
+        AmbiguousAnchor,
+        DirectControlDependence,
+        NonRootRegion,
+    }
+
+    private sealed record SchedulerPlacement(
+        SchedulerPlacementKind Kind,
+        string Token,
+        string Description,
+        ImmutableArray<EvidenceRef> Evidence);
+
+    private static SchedulerPlacement ClassifySchedulerPlacement(
+        ScenarioAnalysisRequest request,
+        SchedulerJobFact scheduler)
+    {
+        if (request.Behavior.Profile is null
+            || request.Behavior.Profile.Id != request.Profile.Id
+            || string.IsNullOrWhiteSpace(request.Behavior.ProgramIndexFingerprint)
+            || !string.Equals(request.Behavior.ProgramIndexFingerprint, request.ProgramIndex.IndexFingerprint, StringComparison.Ordinal))
+        {
+            return Placement(SchedulerPlacementKind.BehaviorIdentityMismatch, "behavior-identity", "behavior identity mismatch", scheduler.Evidence);
+        }
+
+        var flows = request.Behavior.MethodFlows
+            .Where(candidate => candidate.Method == scheduler.RegistrationMethod)
+            .OrderBy(candidate => candidate.FlowFingerprint, StringComparer.Ordinal)
+            .ToArray();
+        if (flows.Length == 0)
+        {
+            return Placement(SchedulerPlacementKind.MissingFlow, "missing-flow", "missing flow", scheduler.Evidence);
+        }
+        if (flows.Length > 1)
+        {
+            return Placement(SchedulerPlacementKind.AmbiguousFlow, "ambiguous-flow", "ambiguous flow", Combine(scheduler.Evidence, flows.SelectMany(flow => FlowEvidence(flow)).ToImmutableArray()));
+        }
+        var flow = flows[0];
+        var anchors = BuildOperationAnchors(flow);
+        if (!anchors.TryGetValue(scheduler.RegistrationOperation.Value, out var anchorIds) || anchorIds.Length == 0)
+        {
+            return Placement(SchedulerPlacementKind.MissingAnchor, "missing-anchor", "missing anchor", Combine(scheduler.Evidence, FlowEvidence(flow)));
+        }
+        if (anchorIds.Length > 1)
+        {
+            return Placement(SchedulerPlacementKind.AmbiguousAnchor, "ambiguous-anchor", "ambiguous anchor", Combine(scheduler.Evidence, FlowEvidence(flow), flow.Nodes.Where(node => anchorIds.Contains(node.Id)).SelectMany(node => node.Evidence).ToImmutableArray()));
+        }
+
+        var anchor = anchorIds[0];
+        var dependences = flow.ControlDependences.Where(dependence => dependence.ControlledNode == anchor).ToArray();
+        if (dependences.Length > 0)
+        {
+            return Placement(SchedulerPlacementKind.DirectControlDependence, "direct-control-dependence", "direct control dependence", Combine(scheduler.Evidence, FlowEvidence(flow), dependences.SelectMany(dependence => dependence.Evidence).ToImmutableArray()));
+        }
+
+        var regions = flow.Regions.Where(region => region.Kind is not FlowRegionKind.Root && region.Nodes.Contains(anchor)).ToArray();
+        return regions.Length > 0
+            ? Placement(SchedulerPlacementKind.NonRootRegion, "non-root-region", "non-root region", Combine(scheduler.Evidence, FlowEvidence(flow), regions.SelectMany(region => region.Evidence).ToImmutableArray()))
+            : Placement(SchedulerPlacementKind.Admitted, "admitted", "admitted", Combine(scheduler.Evidence, FlowEvidence(flow), flow.Nodes.Where(node => node.Id == anchor).SelectMany(node => node.Evidence).ToImmutableArray()));
+
+        static SchedulerPlacement Placement(SchedulerPlacementKind kind, string token, string description, IEnumerable<EvidenceRef> evidence)
+            => new(kind, token, description, Combine(evidence.ToImmutableArray()));
+
+        static ImmutableArray<EvidenceRef> FlowEvidence(MethodFlowSnapshot flow)
+            => flow.Nodes.SelectMany(node => node.Evidence)
+                .Concat(flow.Regions.SelectMany(region => region.Evidence))
+                .Concat(flow.ControlDependences.SelectMany(dependence => dependence.Evidence))
+                .ToImmutableArray();
+    }
+
     private static string ConfiguredDisplaySignature(ProgramIndexSnapshot index, MethodId methodId)
     {
         var method = index.Methods.Single(item => item.Id == methodId);
@@ -3125,7 +3383,13 @@ public static class ScenarioGraphBuilder
         ScenarioDispatchHandlerExpansion? dispatchHandlerExpansion = null,
         ScenarioDirectCallExpansion? directCallExpansion = null)
     {
-        var orderedNodes = nodes.OrderBy(node => node.Id.Value, StringComparer.Ordinal).ToImmutableArray();
+        // Hosted-worker lifecycle nodes carry an explicit compiler-backed chronology. Stable IDs
+        // remain the identity source, but their hash ordering cannot represent start/execute/stop
+        // order, so worker graphs preserve the assigned sequence ordinal first.
+        var orderedNodes = (entryPoint.RootKind == ScenarioRootKind.HostedWorker
+                ? nodes.OrderBy(node => node.SequenceOrdinal).ThenBy(node => node.Id.Value, StringComparer.Ordinal)
+                : nodes.OrderBy(node => node.Id.Value, StringComparer.Ordinal))
+            .ToImmutableArray();
         var orderedEdges = edges.OrderBy(edge => edge.Id.Value, StringComparer.Ordinal).ToImmutableArray();
 
         // Callback processing runs before diagnostics are finalized so the SC014 unsupported-cache
@@ -3659,7 +3923,8 @@ public static class ScenarioGraphBuilder
         string code,
         string summary,
         string detail,
-        ImmutableArray<EvidenceRef> evidence = default)
+        ImmutableArray<EvidenceRef> evidence = default,
+        CertaintyLevel? certaintyOverride = null)
     {
         var id = StableIdentity.CreateDiagnosticId(new DiagnosticIdentityDescriptor(
             code,
@@ -3670,7 +3935,7 @@ public static class ScenarioGraphBuilder
         return new ScenarioGraphDiagnostic(id, code, summary, detail)
         {
             Evidence = evidence.IsDefault ? [] : evidence,
-            Certainty = evidence.IsDefaultOrEmpty ? CertaintyLevel.Conservative : evidence.Max(item => item.Certainty),
+            Certainty = certaintyOverride ?? (evidence.IsDefaultOrEmpty ? CertaintyLevel.Conservative : evidence.Max(item => item.Certainty)),
         };
     }
 
