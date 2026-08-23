@@ -86,8 +86,14 @@ internal static class DirectExactTraversalFixture
                 calls[child] = [new("mutual.back", root)];
                 break;
             case "shared-callee":
+            case "shared-guarded-occurrences":
+            case "shared-guarded-occurrences-reversed":
                 calls[root] = [new("root.first", shared), new("root.second", shared)];
                 calls[shared] = [new("shared.first", leaf)];
+                break;
+            case "nested-local-guards":
+            case "conservative-nested-local-guards":
+                calls[grandchild] = [new("grandchild.first", leaf)];
                 break;
             case "duplicate-agreeing":
             case "duplicate-disagreeing":
@@ -132,12 +138,16 @@ internal static class DirectExactTraversalFixture
         var sites = flows.SelectMany(flow => flow.Nodes.OfType<InvocationFlowNode>().Select(invocation =>
         {
             var target = invocation.Target!.Value;
+            var resolutionEvidence = partition == "conservative-guarded"
+                ? ImmutableArray.Create(ScenarioTestFactory.ConservativeEvidence("call-resolution"))
+                : ImmutableArray.Create(evidence);
             var resolution = new CallTargetResolution(
                 rejected.Contains(invocation.Operation.Value) ? CallResolutionKind.Cha : CallResolutionKind.DirectExact,
                 [target], "source", IsComplete: partition != "incomplete",
-                [], [evidence], CertaintyLevel.Exact);
+                [], resolutionEvidence, partition == "conservative-guarded" ? CertaintyLevel.Conservative : CertaintyLevel.Exact);
             return new CallSite(new($"call-site:v1:{invocation.Method.Value}:{invocation.Operation.Value}"),
-                invocation.Method, invocation.Operation, CallKind.Instance, target, resolution, [evidence], CertaintyLevel.Exact);
+                invocation.Method, invocation.Operation, CallKind.Instance, target, resolution,
+                [SourceEvidence("call-site")], CertaintyLevel.Exact);
         })).GroupBy(site => (site.ContainingMethod, site.InvocationOperation))
             .Select(group => group.OrderBy(site => site.Id.Value, StringComparer.Ordinal).First())
             .ToImmutableArray();
@@ -197,6 +207,21 @@ internal static class DirectExactTraversalFixture
         {
             decision = new DecisionFlowNode(new($"flow-node:v1:{method.Id.Value}:decision"), method.Id,
                 new("operation:v1:fixture.guard"), [evidence], CertaintyLevel.Exact);
+            nodes.Add(decision);
+            edges.Add(Edge(method.Id, entry, decision, FlowEdgeKind.Normal, evidence));
+        }
+
+        var localGuard = (method.Id == Method("Child")
+                && partition is ("inherited-arm-and-guarded-child" or "nested-local-guards" or "conservative-nested-local-guards"))
+            || (method.Id == Method("Shared")
+                && partition is ("shared-guarded-occurrences" or "shared-guarded-occurrences-reversed"))
+            || (method.Id == Method("Grandchild")
+                && partition is ("nested-local-guards" or "conservative-nested-local-guards"));
+        if (localGuard)
+        {
+            var condition = new OperationId($"operation:v1:{method.Id.Value.Split('.').Last()}.local-guard");
+            decision = new DecisionFlowNode(new($"flow-node:v1:{method.Id.Value}:local-decision"), method.Id,
+                condition, [evidence], CertaintyLevel.Exact);
             nodes.Add(decision);
             edges.Add(Edge(method.Id, entry, decision, FlowEdgeKind.Normal, evidence));
         }

@@ -84,7 +84,11 @@ passed focused verification plus the four-project final gate; Issue #19 is merge
 preserved while the maintainer completes a bounded integration repair on contributor PR #26 after two repair rounds.
 The integration repair found and resolved snapshot, placement-boundary, observable-evidence, cancellation-wording, and
 generic constructed-type projection regressions. Focused verification and the complete FrameworkModels, Analysis,
-Scenario, Wording, and Rendering gate pass; the original contributor PR remains the publication vehicle.
+Scenario, Wording, and Rendering gate passed; the original contributor PR merged with contributor attribution intact.
+The compact semantic-delivery sequence is recorded in contributor instructions. Issue #22 is paused by owner direction
+after rebasing its preserved local Test Writer candidate onto current `main`. Contributor PR #27 was reviewed again;
+changes were requested for exact overload identity, profile/snapshot confinement, non-persistent assignment claims,
+guard and terminal placement, observable source proof, raw-SQL boundaries, and realistic multi-entity coverage.
 
 ## Next execution order
 

@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using SeqDoc.Analysis.Scenarios;
 using SeqDoc.Application.Documentation;
 using SeqDoc.Core.Configuration;
+using SeqDoc.Core.DiagramPlan;
 using SeqDoc.Core.Identity;
 using SeqDoc.Core.ScenarioGraph;
 using Xunit;
@@ -289,25 +290,147 @@ public sealed class DirectExactTraversalTests
     }
 
     [Fact]
-    public void DescendantsInheritRootArmAndGuardedCalleeCallsFailClosed()
+    public void ExactGuardedChildIsAdmittedOnceUnderItsLocalTrueArmAndNotFlat()
     {
         var graph = DirectExactTraversalFixture.BuildGraph("inherited-arm-and-guarded-child");
         var expansion = graph.DirectCallExpansion;
 
         var rootGuarded = Assert.Single(expansion.Steps, step => step.Operation.Value == "operation:v1:root.first");
         Assert.NotEmpty(rootGuarded.RootArmIds);
-        Assert.All(expansion.Steps.Where(step => step.Operation.Value != "operation:v1:root.second"), step =>
-            Assert.Equal(rootGuarded.RootArmIds, step.RootArmIds));
-        Assert.DoesNotContain(expansion.Steps, step => step.Operation.Value == "child.guarded");
-        Assert.DoesNotContain(graph.Diagnostics, diagnostic => diagnostic.Code == "SC011");
-        Assert.DoesNotContain(
-            DocumentationPlanner.Plan(ScenarioTestFactory.WithExactOwnerWording(graph)).Diagram.Diagnostics,
-            diagnostic => diagnostic.Code == "DP002");
-        foreach (var descendant in expansion.Steps.Where(step => step.Depth > 1))
+        var child = Assert.Single(expansion.Steps, step => step.Operation.Value == "operation:v1:child.first");
+        Assert.DoesNotContain(expansion.Diagnostics, diagnostic => diagnostic.Code == "SC-DIRECT-GUARDED");
+        Assert.Single(expansion.Steps, step => step.Operation.Value == "operation:v1:child.first");
+        Assert.Contains(graph.Topology.Memberships, membership => membership.ScenarioNode == child.ScenarioNodeId
+            && rootGuarded.RootArmIds.Contains(membership.Arm));
+        Assert.Contains(graph.Topology.Memberships, membership => membership.ScenarioNode == child.ScenarioNodeId
+            && !rootGuarded.RootArmIds.Contains(membership.Arm));
+        var childDecision = Assert.Single(graph.Topology.Decisions,
+            decision => decision.Condition.Value == "operation:v1:Child.local-guard");
+        var localTrue = Assert.Single(graph.Topology.Arms,
+            arm => arm.Decision == childDecision.Id && arm.IsTrue);
+        var localFalse = Assert.Single(graph.Topology.Arms,
+            arm => arm.Decision == childDecision.Id && !arm.IsTrue);
+        Assert.Contains(graph.Topology.Memberships,
+            membership => membership.Arm == localTrue.Id && membership.ScenarioNode == child.ScenarioNodeId);
+        Assert.DoesNotContain(graph.Topology.Memberships,
+            membership => membership.Arm == localFalse.Id && membership.ScenarioNode == child.ScenarioNodeId);
+        Assert.DoesNotContain(graph.Nodes.Where(node => node.Kind == ScenarioNodeKind.MethodCall), node =>
+            node.Id != child.ScenarioNodeId && node.Operation == child.Operation);
+    }
+
+    [Fact]
+    public void NestedLocalGuardsPreserveParentagePolarityAndWeakestOccurrenceEvidence()
+    {
+        var graph = DirectExactTraversalFixture.BuildGraph("conservative-nested-local-guards");
+        var expansion = graph.DirectCallExpansion!;
+        var child = Assert.Single(expansion.Steps, step => step.Operation.Value == "operation:v1:child.first");
+        var grandchild = Assert.Single(expansion.Steps, step => step.Operation.Value == "operation:v1:grandchild.first");
+
+        Assert.Equal(child.Id, grandchild.ParentStepId);
+        Assert.Equal(3, grandchild.Depth);
+        var grandchildMemberships = graph.Topology.Memberships
+            .Where(item => item.ScenarioNode == grandchild.ScenarioNodeId).ToArray();
+        Assert.NotEmpty(grandchildMemberships);
+        Assert.All(grandchildMemberships, item =>
+            Assert.Equal(SeqDoc.Core.Evidence.CertaintyLevel.Conservative, item.Certainty));
+        Assert.All(grandchildMemberships, item =>
+            Assert.Contains(item.Evidence, evidence => evidence.Id.Value == "evidence:v1:ct6-fixture"));
+        Assert.All(grandchildMemberships, item =>
+            Assert.Contains(item.Evidence, evidence => evidence.Id.Value == "evidence:v1:call-resolution"));
+        var grandchildDecision = Assert.Single(graph.Topology.Decisions,
+            decision => decision.Condition.Value == "operation:v1:Grandchild.local-guard");
+        Assert.Contains(graph.Topology.Arms, arm => arm.Decision == grandchildDecision.Id && arm.IsTrue);
+        Assert.Contains(graph.Topology.Arms, arm => arm.Decision == grandchildDecision.Id && !arm.IsTrue);
+        Assert.DoesNotContain(graph.Diagnostics, diagnostic => diagnostic.Code == "SC-DIRECT-GUARDED");
+    }
+
+    [Fact]
+    public void SharedGuardedOccurrencesHaveDistinctTopologyAndChronologicalChildren()
+    {
+        var graph = DirectExactTraversalFixture.BuildGraph("shared-guarded-occurrences");
+        var expansion = graph.DirectCallExpansion!;
+        var shared = expansion.Steps.Where(step => step.TargetMethod == DirectExactTraversalFixture.SharedCallee).ToArray();
+        var children = expansion.Steps.Where(step => step.Operation.Value == "operation:v1:shared.first").ToArray();
+
+        Assert.Equal(2, shared.Length);
+        Assert.Equal(2, children.Length);
+        Assert.Equal(2, children.Select(step => step.Id).Distinct().Count());
+        Assert.Equal([shared[0].Id, shared[1].Id], children.Select(step => step.ParentStepId));
+        Assert.Equal(["operation:v1:root.first", "operation:v1:shared.first", "operation:v1:root.second", "operation:v1:shared.first"],
+            expansion.Steps.Select(step => step.Operation.Value));
+        Assert.DoesNotContain(expansion.Diagnostics, diagnostic => diagnostic.Code == "SC-DIRECT-GUARDED");
+    }
+
+    [Fact]
+    public void GuardedExpansionRemainsDeterministicAcrossEveryReversedFactCollection()
+    {
+        var normal = DirectExactTraversalFixture.BuildGraph("shared-guarded-occurrences");
+        var reversed = DirectExactTraversalFixture.BuildGraph("shared-guarded-occurrences-reversed");
+
+        Assert.Equal(normal.DebugProjection, reversed.DebugProjection);
+        Assert.Equal(normal.DirectCallExpansion!.Steps.Select(step => step.Id), reversed.DirectCallExpansion!.Steps.Select(step => step.Id));
+        Assert.Equal(DirectExactTraversalFixture.Plan(normal), DirectExactTraversalFixture.Plan(reversed));
+        Assert.Equal(normal.Diagnostics.Select(item => item.Code), reversed.Diagnostics.Select(item => item.Code));
+    }
+
+    [Fact]
+    public void NestedGuardedCallsHaveOneValidPlanReferenceEach()
+    {
+        var graph = DirectExactTraversalFixture.BuildGraph("nested-local-guards");
+        var plan = DocumentationPlanner.Plan(graph).Diagram;
+
+        var references = plan.Sequence.Elements.SelectMany(CollectReferences).ToArray();
+        Assert.NotEmpty(plan.Sequence.Fragments);
+        Assert.Equal(plan.Messages.Select(message => message.Id).OrderBy(id => id.Value, StringComparer.Ordinal),
+            references.OrderBy(id => id.Value, StringComparer.Ordinal));
+        Assert.Equal(references.Length, references.Distinct().Count());
+        Assert.Contains(plan.Sequence.Fragments.SelectMany(fragment => fragment.Arms),
+            arm => arm.Fragments.Length > 0);
+    }
+
+    private static IEnumerable<DiagramPlanElementId> CollectReferences(DiagramSequenceElement element)
+    {
+        if (element.IsMessageRef)
         {
-            Assert.Contains(graph.Topology.Memberships, membership => membership.ScenarioNode == descendant.ScenarioNodeId
-                && rootGuarded.RootArmIds.Contains(membership.Arm));
+            yield return element.MessageRefId!.Value;
+            yield break;
         }
-        Assert.Contains(expansion.Diagnostics, diagnostic => diagnostic.Code == "SC-DIRECT-GUARDED");
+
+        foreach (var reference in CollectReferences(element.NestedFragment!))
+        {
+            yield return reference;
+        }
+    }
+
+    private static IEnumerable<DiagramPlanElementId> CollectReferences(DiagramFragment fragment)
+    {
+        foreach (var reference in fragment.MessageRefs)
+        {
+            yield return reference;
+        }
+
+        foreach (var arm in fragment.Arms)
+        {
+            foreach (var reference in arm.MessageRefs)
+            {
+                yield return reference;
+            }
+
+            foreach (var nested in arm.Fragments)
+            {
+                foreach (var reference in CollectReferences(nested))
+                {
+                    yield return reference;
+                }
+            }
+        }
+
+        foreach (var nested in fragment.Fragments)
+        {
+            foreach (var reference in CollectReferences(nested))
+            {
+                yield return reference;
+            }
+        }
     }
 }

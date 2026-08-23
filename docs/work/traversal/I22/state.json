@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "I22",
+  "status": "Building",
+  "baselineRevision": "68928142b70a9105a6a022789c1053a5ea1bc773",
+  "candidateRevision": null,
+  "review": {
+    "status": "NotStarted",
+    "findings": []
+  },
+  "verification": {
+    "focusedCommand": { "result": "NotRun", "summary": "" },
+    "finalGate": { "result": "NotRun", "summary": "" },
+    "mermaidRender": { "result": "NotRun", "summary": "" }
+  },
+  "notes": [
+    "GitHub Issue #22 is the execution authority; closed Issues #19 and #20 supply depthless traversal and finite budgets.",
+    "PR #26 merged and the preserved candidate was rebased onto current main.",
+    "Owner authorized an uninterrupted local maintenance wave (Issues #22, #21, #23, then parent #2 closeout); nothing is pushed to GitHub during this wave.",
+    "Focused red baseline verified: Scenarios filter 75 total, 70 passed, 5 failed; four failures are intended reds and DeepChainReversedFactsProduceIdenticalExpansionAndPlan fails on three misplaced chronology lines that must be removed before the baseline commit."
+  ]
+}
