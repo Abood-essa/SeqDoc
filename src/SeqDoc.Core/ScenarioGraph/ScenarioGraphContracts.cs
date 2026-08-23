@@ -189,7 +189,8 @@ public sealed record ScenarioNodePresentation(
     string? HostedWorkerExecuteMethodName = null,
     string? HostedWorkerStopMethodName = null,
     HostedWorkerLifecycleStep? HostedWorkerLifecycleStep = null,
-    string? HostedWorkerCancellationParameterName = null);
+    string? HostedWorkerCancellationParameterName = null,
+    bool HostedWorkerSchedulerRegistration = false);
 
 /// <summary>
 /// One evidence-backed scenario-graph edge connecting two nodes. Every edge carries non-empty

@@ -3285,7 +3285,7 @@ public static class DocumentationPlanner
                     ? $"The hosted worker executes with cancellation token {parameter}."
                     : "The hosted worker executes.",
                 HostedWorkerLifecycleStep.Stop => "The hosted worker stops.",
-                _ => presentation.TargetMemberName == "Timer callback"
+                _ => presentation.HostedWorkerSchedulerRegistration
                     ? "The hosted worker registers a timer callback."
                     : "The hosted worker invokes an exact scheduled callback.",
             };

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using SeqDoc.Core.Behavior;
 using SeqDoc.Analysis.Scenarios;
 using SeqDoc.Core.Frameworks;
 using SeqDoc.Core.Identity;
@@ -50,6 +51,39 @@ public sealed class HostedWorkerScenarioTests
         Assert.DoesNotContain(
             ScenarioGraphBuilder.Build(request).Graphs,
             graph => graph.RootKind == ScenarioRootKind.HostedWorker);
+    }
+
+    [Fact]
+    public void MissingFrameworkSnapshotIdentityCannotAdmitHostedWorkerRoot()
+    {
+        var current = CreateRequest();
+        var request = current with
+        {
+            FrameworkFacts = current.FrameworkFacts with
+            {
+                ProfileId = null,
+                ProgramIndexFingerprint = null,
+            },
+        };
+
+        Assert.DoesNotContain(
+            ScenarioGraphBuilder.Build(request).Graphs,
+            graph => graph.RootKind == ScenarioRootKind.HostedWorker);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TimerRegistrationRequiresAnUnconditionalFlowAnchor(bool guarded)
+    {
+        var request = CreateSchedulerRequest(guarded);
+        var graph = Assert.Single(
+            ScenarioGraphBuilder.Build(request).Graphs,
+            item => item.RootKind == ScenarioRootKind.HostedWorker);
+
+        Assert.Equal(
+            !guarded,
+            graph.Nodes.Any(node => node.Presentation?.HostedWorkerSchedulerRegistration == true));
     }
 
     private static ScenarioAnalysisRequest CreateRequest()
@@ -116,7 +150,60 @@ public sealed class HostedWorkerScenarioTests
             FrameworkFacts = baseRequest.FrameworkFacts with
             {
                 Facts = baseRequest.FrameworkFacts.Facts.Add(fact).Add(registration),
+                ProfileId = baseRequest.Profile.Id,
+                ProgramIndexFingerprint = index.IndexFingerprint,
             },
+        };
+    }
+
+    private static ScenarioAnalysisRequest CreateSchedulerRequest(bool guarded)
+    {
+        var request = CreateRequest();
+        var worker = request.FrameworkFacts.Facts.OfType<HostedWorkerLifecycleFact>().Single();
+        var registrationMethod = worker.RootMethod;
+        var registrationOperation = new OperationId("operation:v1:hosted-worker-timer-registration");
+        var evidence = ScenarioTestFactory.SourceEvidence("hosted-worker-timer-registration");
+        var anchor = new OperationFlowNode(
+            new FlowNodeId("flow-node:v1:hosted-worker-timer-registration"),
+            registrationMethod,
+            registrationOperation,
+            ExtractedOperationKind.ObjectCreation,
+            [evidence],
+            SeqDoc.Core.Evidence.CertaintyLevel.Exact);
+        var decision = new DecisionFlowNode(
+            new FlowNodeId("flow-node:v1:hosted-worker-timer-guard"),
+            registrationMethod,
+            new OperationId("operation:v1:hosted-worker-timer-condition"),
+            [evidence],
+            SeqDoc.Core.Evidence.CertaintyLevel.Exact);
+        var flow = new MethodFlowSnapshot(
+            registrationMethod,
+            "hosted-worker-timer-body",
+            guarded ? [decision, anchor] : [anchor],
+            [],
+            [],
+            [],
+            new LocalValueGraph([], []),
+            guarded ? [new ControlDependence(decision.Id, anchor.Id, true, [evidence], SeqDoc.Core.Evidence.CertaintyLevel.Exact)] : [],
+            null,
+            [],
+            "hosted-worker-timer-flow");
+        var scheduler = new SchedulerJobFact
+        {
+            Id = new BehaviorFactId("behavior-fact:v1:hosted-worker-timer"),
+            Scheduler = SchedulerKind.Timer,
+            RegistrationMethod = registrationMethod,
+            RegistrationOperation = registrationOperation,
+            JobMethod = registrationMethod,
+            SourceStart = 1,
+            CallbackTypeName = "System.Threading.TimerCallback",
+            Evidence = [evidence],
+            Certainty = SeqDoc.Core.Evidence.CertaintyLevel.Exact,
+        };
+        return request with
+        {
+            Behavior = request.Behavior with { MethodFlows = request.Behavior.MethodFlows.Add(flow) },
+            FrameworkFacts = request.FrameworkFacts with { Facts = request.FrameworkFacts.Facts.Add(scheduler) },
         };
     }
 }

@@ -147,13 +147,12 @@ public static class ScenarioGraphBuilder
     }
 
     private static bool FrameworkFactsBound(ScenarioAnalysisRequest request)
-        => (request.FrameworkFacts.ProfileId is null
-            || request.FrameworkFacts.ProfileId == request.Profile.Id)
-            && (request.FrameworkFacts.ProgramIndexFingerprint is null
-                || string.Equals(
-                    request.FrameworkFacts.ProgramIndexFingerprint,
-                    request.ProgramIndex.IndexFingerprint,
-                    StringComparison.Ordinal));
+        => request.FrameworkFacts.ProfileId == request.Profile.Id
+            && !string.IsNullOrWhiteSpace(request.FrameworkFacts.ProgramIndexFingerprint)
+            && string.Equals(
+                request.FrameworkFacts.ProgramIndexFingerprint,
+                request.ProgramIndex.IndexFingerprint,
+                StringComparison.Ordinal);
 
     private static ScenarioGraph BuildGraph(ScenarioAnalysisRequest request, NormalizedEntry entryPoint)
     {
@@ -2522,6 +2521,7 @@ public static class ScenarioGraphBuilder
                      .OfType<SchedulerJobFact>()
                      .Where(_ => FrameworkFactsBound(request))
                      .Where(item => lifecycle.Any(lifecycleItem => lifecycleItem.Method == item.RegistrationMethod))
+                     .Where(item => HasUnconditionalRegistrationAnchor(request, item))
                      .OrderBy(item => item.SourceStart)
                      .ThenBy(item => item.Id.Value, StringComparer.Ordinal))
         {
@@ -2539,12 +2539,13 @@ public static class ScenarioGraphBuilder
                 $"timer-job:{scheduler.Id.Value}",
                 scheduler.JobMethod,
                 scheduler.RegistrationOperation,
-                "Timer callback",
+                "timer registration",
                 new ScenarioNodePresentation(
                     TargetContainingTypeName: callbackType?.MetadataName,
-                    TargetMemberName: callback.Name,
+                    TargetMemberName: "Timer registration",
                     HostedWorkerTypeName: fact.HostedTypeName,
-                    ActionKind: ScenarioActionKind.HostedWorker),
+                    ActionKind: ScenarioActionKind.HostedWorker,
+                    HostedWorkerSchedulerRegistration: true),
                 Combine(entry.Evidence, scheduler.Evidence),
                 Combine(entry.Evidence, scheduler.Evidence).Max(item => item.Certainty),
                 ordinal++);
@@ -2556,10 +2557,37 @@ public static class ScenarioGraphBuilder
                 source,
                 node,
                 ScenarioEdgeKind.Call,
-                "timer callback",
+                "timer registration",
                 ordinal,
                 Combine(entry.Evidence, scheduler.Evidence)));
         }
+    }
+
+    private static bool HasUnconditionalRegistrationAnchor(
+        ScenarioAnalysisRequest request,
+        SchedulerJobFact scheduler)
+    {
+        var flow = request.Behavior.MethodFlows
+            .SingleOrDefault(candidate => candidate.Method == scheduler.RegistrationMethod);
+        if (flow is null)
+        {
+            return false;
+        }
+
+        var anchors = BuildOperationAnchors(flow);
+        if (!anchors.TryGetValue(scheduler.RegistrationOperation.Value, out var anchorIds)
+            || anchorIds.Length != 1)
+        {
+            return false;
+        }
+
+        var anchor = anchorIds[0];
+        if (flow.ControlDependences.Any(dependence => dependence.ControlledNode == anchor))
+        {
+            return false;
+        }
+
+        return !flow.Regions.Any(region => region.Kind is not FlowRegionKind.Root && region.Nodes.Contains(anchor));
     }
 
     private static string ConfiguredDisplaySignature(ProgramIndexSnapshot index, MethodId methodId)

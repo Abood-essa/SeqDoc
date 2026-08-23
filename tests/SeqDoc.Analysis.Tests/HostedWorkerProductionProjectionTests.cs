@@ -1,5 +1,8 @@
 using SeqDoc.Analysis.Roslyn;
+using SeqDoc.Analysis.Behavior;
+using SeqDoc.Analysis.Scenarios;
 using SeqDoc.Application.Analysis;
+using SeqDoc.Application.Documentation;
 using SeqDoc.Core.Frameworks;
 using SeqDoc.Core.Identity;
 using SeqDoc.Core.Semantics;
@@ -72,6 +75,33 @@ public sealed class HostedWorkerProductionProjectionTests
             result.Facts.OfType<SchedulerJobFact>(),
             fact => fact.JobMethod == timer.CallbackTarget.TargetMethod);
         Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "SEQWRK001");
+
+        var behavior = await new BehaviorAnalyzer().AnalyzeAsync(
+            new BehaviorAnalysisRequest(value.ProgramIndex, value.BehaviorInput),
+            CancellationToken.None);
+        Assert.True(behavior.IsSuccess, string.Join(Environment.NewLine, behavior.Diagnostics.Select(item => item.TechnicalCause)));
+        var graphs = ScenarioGraphBuilder.Build(new ScenarioAnalysisRequest(
+            profile,
+            value.ProgramIndex,
+            behavior.Value!,
+            result,
+            value.SemanticFacts,
+            value.DependencyInjectionFacts,
+            value.StructuralResultFacts,
+            value.NonGetSemanticFacts,
+            value.ConditionalDependencyInjectionFacts,
+            value.ConfigurationSemanticFacts,
+            value.CallbackBoundaryFacts,
+            value.PredicateSemanticFacts,
+            value.MinimalApiHandlerFacts));
+        var graph = Assert.Single(
+            graphs.Graphs,
+            item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker
+                && item.OperationKey.Contains("ExactWorker", StringComparison.Ordinal));
+        var documentation = DocumentationPlanner.Plan(graph);
+        var wording = documentation.Wording.Phrases.Select(phrase => phrase.Text).ToArray();
+        Assert.Contains(wording, phrase => phrase.Contains("registers a timer callback", StringComparison.Ordinal));
+        Assert.DoesNotContain(wording, phrase => phrase.Contains("invokes an exact scheduled callback", StringComparison.Ordinal));
     }
 
     private static string FindRepositoryRoot()
