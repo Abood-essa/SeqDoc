@@ -120,6 +120,15 @@ public static class StableIdentity
         return new EntryPointId(Hash("entry-point:v1:", CanonicalIdentityJson.WriteConfiguredMethodEntryPoint(descriptor)));
     }
 
+    public static EntryPointId CreateHostedWorkerEntryPointId(HostedWorkerEntryPointIdentityDescriptor descriptor)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.Profile.Value, nameof(descriptor));
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.HostedType.Value, nameof(descriptor));
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.RootMethod.Value, nameof(descriptor));
+        return new EntryPointId(Hash("entry-point:v1:", CanonicalIdentityJson.WriteHostedWorkerEntryPoint(descriptor)));
+    }
+
     public static string CreateScenarioDirectCallExpansionId(ScenarioDirectCallExpansionIdentityDescriptor descriptor)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
@@ -665,6 +674,18 @@ internal static class CanonicalIdentityJson
             writer.WriteString("profileId", descriptor.Profile.Value);
             writer.WriteString("rootMethodId", descriptor.RootMethod.Value);
             writer.WriteString("kind", "ConfiguredMethod");
+        });
+    }
+
+    public static string WriteHostedWorkerEntryPoint(HostedWorkerEntryPointIdentityDescriptor descriptor)
+    {
+        return Write(writer =>
+        {
+            writer.WriteNumber("schemaVersion", 1);
+            writer.WriteString("profileId", descriptor.Profile.Value);
+            writer.WriteString("hostedTypeId", descriptor.HostedType.Value);
+            writer.WriteString("rootMethodId", descriptor.RootMethod.Value);
+            writer.WriteString("kind", "HostedWorker");
         });
     }
 

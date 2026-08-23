@@ -82,6 +82,11 @@ public sealed record ConfiguredMethodEntryPointIdentityDescriptor(
     CompilationProfileId Profile,
     MethodId RootMethod);
 
+public sealed record HostedWorkerEntryPointIdentityDescriptor(
+    CompilationProfileId Profile,
+    SymbolId HostedType,
+    MethodId RootMethod);
+
 public sealed record ScenarioDirectCallExpansionIdentityDescriptor(
     CompilationProfileId Profile,
     EntryPointId EntryPoint,

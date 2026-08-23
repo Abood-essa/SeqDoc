@@ -58,6 +58,7 @@ public enum ScenarioActionKind
     ControllerAction,
     MinimalApiHandler,
     ConfiguredMethod,
+    HostedWorker,
 }
 
 /// <summary>Typed discriminator for the source of a scenario root.</summary>
@@ -65,6 +66,7 @@ public enum ScenarioRootKind
 {
     HttpEntryPoint,
     ConfiguredMethod,
+    HostedWorker,
 }
 
 /// <summary>
@@ -181,7 +183,13 @@ public sealed record ScenarioNodePresentation(
     string? TargetMemberName = null,
     string? ConfiguredContainingTypeName = null,
     string? ConfiguredMethodName = null,
-    string? ConfiguredDisplaySignature = null);
+    string? ConfiguredDisplaySignature = null,
+    string? HostedWorkerTypeName = null,
+    string? HostedWorkerStartMethodName = null,
+    string? HostedWorkerExecuteMethodName = null,
+    string? HostedWorkerStopMethodName = null,
+    HostedWorkerLifecycleStep? HostedWorkerLifecycleStep = null,
+    string? HostedWorkerCancellationParameterName = null);
 
 /// <summary>
 /// One evidence-backed scenario-graph edge connecting two nodes. Every edge carries non-empty

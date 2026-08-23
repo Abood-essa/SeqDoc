@@ -209,7 +209,8 @@ public sealed record FrameworkTypeShape(
     bool IsAbstract,
     bool IsStatic,
     int GenericArity,
-    ImmutableArray<FrameworkTypeIdentity> BaseTypeChain);
+    ImmutableArray<FrameworkTypeIdentity> BaseTypeChain,
+    ImmutableArray<FrameworkTypeIdentity> Interfaces = default);
 
 /// <summary>
 /// Compiler-proven shape of one method plus its declaring type, bound to the exact indexed symbols.
