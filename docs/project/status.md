@@ -80,7 +80,11 @@ and 45,000-character Mermaid budgets with provenance and CLI visibility, while p
 the public configuration ABI. Issue #19 is the next maintainer implementation boundary. Its independent review found
 legacy-branch, irreducible Mermaid-size, diagnostic-visibility, chronological participant-budget, and deep-stack gaps.
 Owner-authorized repairs resolved those findings, replaced recursive traversal with deterministic work frames, and
-passed focused verification plus the four-project final gate. The local candidate remains uncommitted and unpushed.
+passed focused verification plus the four-project final gate; Issue #19 is merged. Issue #22 began locally and is
+preserved while the maintainer completes a bounded integration repair on contributor PR #26 after two repair rounds.
+The integration repair found and resolved snapshot, placement-boundary, observable-evidence, cancellation-wording, and
+generic constructed-type projection regressions. Focused verification and the complete FrameworkModels, Analysis,
+Scenario, Wording, and Rendering gate pass; the original contributor PR remains the publication vehicle.
 
 ## Next execution order
 

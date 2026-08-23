@@ -36,6 +36,13 @@ public sealed class BackgroundWorker : BackgroundService
         => Task.CompletedTask;
 }
 
+// This type proves that framework capability extraction is not registration admission.
+public sealed class UnregisteredWorker : IHostedService
+{
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
 public static class UnsupportedTimerShapes
 {
     public static void RegisterLambda()

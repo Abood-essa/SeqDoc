@@ -12,6 +12,7 @@ public sealed class HostedWorkerAndSchedulerModelTests
 {
     private static readonly CompilationProfile Profile =
         CompilationProfile.Create("tests/fixtures/PassC/HostedWorkers/HostedWorkers.csproj", "Release", "net10.0");
+    private static readonly string[] WorkerMethodNames = ["StartAsync", "ExecuteAsync", "StopAsync", "RunJob"];
 
     [Fact]
     public async Task HostedWorkerRequiresExactContractAndEmitsChronologyAndCancellation()
@@ -160,7 +161,7 @@ public sealed class HostedWorkerAndSchedulerModelTests
                 : [new SymbolId("symbol:Other.Hosting.IHostedService")],
             "worker-type",
             [SourceEvidence("worker-type")]);
-        var methods = new[] { "StartAsync", "ExecuteAsync", "StopAsync", "RunJob" }
+        var methods = WorkerMethodNames
             .Select(name => new ProgramMethod(
                 Method(name),
                 new SymbolId($"symbol:HostedWorkers.SampleWorker.{name}"),

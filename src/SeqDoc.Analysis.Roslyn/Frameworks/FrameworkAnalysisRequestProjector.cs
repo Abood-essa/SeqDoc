@@ -102,6 +102,11 @@ internal static class FrameworkAnalysisRequestProjector
         ArgumentNullException.ThrowIfNull(call);
         var target = call.TargetMethod;
         var anchor = ProjectSourceAnchor(call.Syntax, documents);
+        var constructedTypeArgument = target.TypeArguments.Length == 1
+            && target.TypeArguments[0] is INamedTypeSymbol namedTypeArgument
+            && IsCanonicalConstructedTypeArgument(namedTypeArgument)
+            ? namedTypeArgument
+            : null;
         return new OperationDescriptor(
             operationId,
             methodId,
@@ -112,21 +117,19 @@ internal static class FrameworkAnalysisRequestProjector
             evidence,
             CertaintyLevel.Exact,
             ProjectTargetIdentity(target),
-            ProjectConstantArguments(call),
+            ProjectConstantArguments(call.Arguments),
             ProjectQueryChain(call, operationById, models),
             ProjectPredicateShape(call, methodId, operationById, documents, models),
             ProjectSuppliedParameterOrdinals(call),
             ProjectCallbackTarget(call, methodId, operationId, operationById, ProjectSuppliedParameterOrdinals(call), documents, project, profile, callbackFacts),
             ProjectRouteGroup(call, operationById, models, localInitializers),
             project is null ? null : ProjectDispatchShape(call, project.Value, evidence, documents, models, dispatchCancellationToken),
-            ConstructedType: call.TargetMethod.TypeArguments.Length == 1
-                && call.TargetMethod.TypeArguments[0] is INamedTypeSymbol constructedArgument
-                ? FrameworkSymbolEligibilityProjector.ProjectTypeIdentity(constructedArgument)
-                : null,
+            ConstructedType: constructedTypeArgument is null
+                ? null
+                : FrameworkSymbolEligibilityProjector.ProjectTypeIdentity(constructedTypeArgument),
             ConstructedTypeSymbol: project is { } projectId
-                && call.TargetMethod.TypeArguments.Length == 1
-                && call.TargetMethod.TypeArguments[0] is INamedTypeSymbol constructedSymbol
-                ? RoslynProgramIndexExtractor.CreateSymbolId(constructedSymbol, projectId)
+                && constructedTypeArgument is not null
+                ? RoslynProgramIndexExtractor.CreateSymbolId(constructedTypeArgument, projectId)
                 : null);
     }
 
@@ -161,6 +164,7 @@ internal static class FrameworkAnalysisRequestProjector
             evidence,
             CertaintyLevel.Exact,
             ProjectTargetIdentity(creation.Constructor),
+            ConstantArguments: ProjectConstantArguments(creation.Arguments),
             CallbackTarget: ProjectCallbackTarget(
                 creation.Arguments,
                 methodId,
@@ -1017,15 +1021,35 @@ internal static class FrameworkAnalysisRequestProjector
             assembly?.Identity.Version?.ToString());
     }
 
-    private static ImmutableArray<CompilerProvenArgument> ProjectConstantArguments(IInvocationOperation call)
+    private static bool IsCanonicalConstructedTypeArgument(INamedTypeSymbol type)
     {
-        if (call.Arguments.IsDefaultOrEmpty)
+        if (type.TypeKind == TypeKind.Error
+            || type.IsAnonymousType
+            || type.IsTupleType
+            || type.IsImplicitlyDeclared
+            || type.IsUnboundGenericType
+            || ContainsTypeParameter(type)
+            || type.ContainingAssembly?.Identity is not { Name.Length: > 0, Version: not null })
+        {
+            return false;
+        }
+
+        var metadataName = RoslynProgramIndexExtractor.GetMetadataName(type);
+        return !string.IsNullOrWhiteSpace(metadataName)
+            && !metadataName.Any(char.IsWhiteSpace)
+            && !metadataName.Contains('<')
+            && !metadataName.Contains('>');
+    }
+
+    private static ImmutableArray<CompilerProvenArgument> ProjectConstantArguments(ImmutableArray<IArgumentOperation> arguments)
+    {
+        if (arguments.IsDefaultOrEmpty)
         {
             return [];
         }
 
         var builder = ImmutableArray.CreateBuilder<CompilerProvenArgument>();
-        foreach (var argument in call.Arguments)
+        foreach (var argument in arguments)
         {
             if (argument.Parameter is null
                 || argument.Value is null

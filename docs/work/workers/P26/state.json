@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "P26",
+  "status": "Closed",
+  "baselineRevision": "ad6a27eb23d62654446ef46ae71539741d90fd3b",
+  "candidateRevision": null,
+  "review": {
+    "status": "Completed",
+    "findings": [
+      { "id": "P26-F1", "severity": "High", "disposition": "Fixed", "summary": "Cancellation evidence now appears only on the exact Execute, Start, or Stop slot selected by the compiler-backed lifecycle fact, with direct and background production assertions." },
+      { "id": "P26-F2", "severity": "High", "disposition": "Fixed", "summary": "Scenario diagnostic fallback phrases now retain conservative copies of non-empty diagnostic evidence; a withheld Timer placement is asserted through Documentation." },
+      { "id": "P26-F3", "severity": "Medium", "disposition": "Fixed", "summary": "Missing, empty, null, and foreign Behavior profile/fingerprint partitions fail closed with one conservative scheduler-placement diagnostic." },
+      { "id": "P26-F4", "severity": "Medium", "disposition": "Fixed", "summary": "Two distinct unsupported Scheduler facts retain distinct stable diagnostics and byte-stable Scenario/Documentation projections under reversed facts, flows, nodes, and evidence." },
+      { "id": "P26-F5", "severity": "Medium", "disposition": "Fixed", "summary": "The repeated lifecycle method-name test input now uses one static readonly collection; all five final-gate projects build with zero warnings or errors." },
+      { "id": "P26-F6", "severity": "High", "disposition": "Fixed", "summary": "Generic constructed-type projection now fails closed for non-canonical type arguments, and production object-creation descriptors initialize compiler-proven constant arguments; all 10 Minimal API and the hosted-worker production regression pass." }
+    ]
+  },
+  "verification": {
+    "focusedCommand": { "result": "Passed", "summary": "Release builds passed; after review repairs, focused verification passed 1 hosted-worker production Analysis test and 13 hosted-worker Scenario tests. Observable wording and diagnostic evidence are asserted in the production and Scenario-to-Documentation tests." },
+    "finalGate": { "result": "Passed", "summary": "After the generic projection repair, the complete gate passed: 231 FrameworkModels, 198 Analysis, 165 Scenarios, 112 Wording, and 57 Rendering tests." }
+  },
+  "notes": [
+    "Owner explicitly approved a bounded maintainer integration repair after two contributor repair rounds.",
+    "Preserve the original PR, contributor authorship, and accepted implementation; push only the final verified repair commit to the maintainer-editable contributor branch.",
+    "Issue #22 and its partial local tests are stashed and paused until PR #26 merge resolution.",
+    "Two repair reruns failed while resolving the final-gate generic projection regression. Per checkpoint protocol, P26 was Blocked with the worktree preserved; no repair commit was pushed and no final gate rerun or merge occurred.",
+    "Owner explicitly authorized resuming the blocked checkpoint for focused generic-projection diagnosis and completion.",
+    "The original contributor PR remains the publication vehicle. The maintainer repair retains the contributor's accepted implementation and adds only bounded integration fixes and regression coverage."
+  ]
+}

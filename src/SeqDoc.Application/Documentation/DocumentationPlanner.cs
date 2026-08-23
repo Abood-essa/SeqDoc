@@ -452,7 +452,9 @@ public static class DocumentationPlanner
                 WordingPhraseKind.TechnicalFallback,
                 $"{FallbackPhraseKeyPrefix}:{diagnostic.Code}",
                 BuildFallbackText(diagnostic),
-                closestNode?.Evidence ?? entryEvidence,
+                diagnostic.Evidence.IsDefaultOrEmpty
+                    ? closestNode?.Evidence ?? entryEvidence
+                    : diagnostic.Evidence.Select(ConservativeCopy).ToImmutableArray(),
                 CertaintyLevel.Conservative);
         }
 
@@ -3280,14 +3282,18 @@ public static class DocumentationPlanner
         {
             return presentation.HostedWorkerLifecycleStep switch
             {
-                HostedWorkerLifecycleStep.Start => "The hosted worker starts.",
+                HostedWorkerLifecycleStep.Start => presentation.HostedWorkerCancellationParameterName is { Length: > 0 } startParameter
+                    ? $"The registered hosted-worker lifecycle includes StartAsync with cancellation parameter evidence: {startParameter}."
+                    : "The registered hosted-worker lifecycle includes StartAsync.",
                 HostedWorkerLifecycleStep.Execute => presentation.HostedWorkerCancellationParameterName is { Length: > 0 } parameter
-                    ? $"The hosted worker executes with cancellation token {parameter}."
-                    : "The hosted worker executes.",
-                HostedWorkerLifecycleStep.Stop => "The hosted worker stops.",
+                    ? $"The registered hosted-worker lifecycle includes ExecuteAsync with cancellation parameter evidence: {parameter}."
+                    : "The registered hosted-worker lifecycle includes ExecuteAsync.",
+                HostedWorkerLifecycleStep.Stop => presentation.HostedWorkerCancellationParameterName is { Length: > 0 } stopParameter
+                    ? $"The registered hosted-worker lifecycle includes StopAsync with cancellation parameter evidence: {stopParameter}."
+                    : "The registered hosted-worker lifecycle includes StopAsync.",
                 _ => presentation.HostedWorkerSchedulerRegistration
                     ? "The hosted worker registers a timer callback."
-                    : "The hosted worker invokes an exact scheduled callback.",
+                    : "The hosted worker has an unsupported lifecycle slot.",
             };
         }
         if (presentation is not null

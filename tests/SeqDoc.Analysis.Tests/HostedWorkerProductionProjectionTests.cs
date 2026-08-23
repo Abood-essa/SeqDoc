@@ -76,6 +76,9 @@ public sealed class HostedWorkerProductionProjectionTests
             fact => fact.JobMethod == timer.CallbackTarget.TargetMethod);
         Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "SEQWRK001");
 
+        var unregistered = Assert.Single(workers, worker => worker.HostedTypeName == "HostedWorkers.UnregisteredWorker");
+        Assert.NotEqual(exact.HostedType, unregistered.HostedType);
+
         var behavior = await new BehaviorAnalyzer().AnalyzeAsync(
             new BehaviorAnalysisRequest(value.ProgramIndex, value.BehaviorInput),
             CancellationToken.None);
@@ -98,10 +101,35 @@ public sealed class HostedWorkerProductionProjectionTests
             graphs.Graphs,
             item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker
                 && item.OperationKey.Contains("ExactWorker", StringComparison.Ordinal));
+        var exactLifecycle = graph.Nodes
+            .Where(node => node.Presentation?.HostedWorkerLifecycleStep is not null)
+            .ToArray();
+        Assert.Equal("cancellationToken", exactLifecycle.Single(node => node.Presentation!.TargetMemberName == "StartAsync")
+            .Presentation!.HostedWorkerCancellationParameterName);
+        Assert.Null(exactLifecycle.Single(node => node.Presentation!.TargetMemberName == "StopAsync")
+            .Presentation!.HostedWorkerCancellationParameterName);
+        var backgroundGraph = Assert.Single(
+            graphs.Graphs,
+            item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker
+                && item.OperationKey.Contains("BackgroundWorker", StringComparison.Ordinal));
+        var backgroundExecute = backgroundGraph.Nodes.Single(node => node.Presentation?.TargetMemberName == "ExecuteAsync");
+        Assert.Equal("stoppingToken", backgroundExecute.Presentation!.HostedWorkerCancellationParameterName);
+        Assert.Contains(
+            DocumentationPlanner.Plan(backgroundGraph).Wording.Phrases,
+            phrase => phrase.Text.Contains("ExecuteAsync with cancellation parameter evidence: stoppingToken", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            graphs.Graphs,
+            item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker
+                && item.OperationKey.Contains("UnregisteredWorker", StringComparison.Ordinal));
         var documentation = DocumentationPlanner.Plan(graph);
         var wording = documentation.Wording.Phrases.Select(phrase => phrase.Text).ToArray();
         Assert.Contains(wording, phrase => phrase.Contains("registers a timer callback", StringComparison.Ordinal));
-        Assert.DoesNotContain(wording, phrase => phrase.Contains("invokes an exact scheduled callback", StringComparison.Ordinal));
+        Assert.Contains(wording, phrase => phrase.Contains("registered hosted-worker lifecycle includes StartAsync", StringComparison.Ordinal));
+        Assert.Contains(wording, phrase => phrase.Contains("StartAsync with cancellation parameter evidence: cancellationToken", StringComparison.Ordinal));
+        Assert.Contains(wording, phrase => phrase.Contains("registered hosted-worker lifecycle includes StopAsync", StringComparison.Ordinal));
+        Assert.DoesNotContain(wording, phrase => phrase.Contains("invokes", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(wording, phrase => phrase.Contains("completed", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(wording, phrase => phrase.Contains("success", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string FindRepositoryRoot()

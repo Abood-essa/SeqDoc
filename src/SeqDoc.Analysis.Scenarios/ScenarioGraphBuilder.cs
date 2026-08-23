@@ -202,7 +202,7 @@ public static class ScenarioGraphBuilder
 
         if (entryPoint.ActionKind == ScenarioActionKind.HostedWorker)
         {
-            AddHostedWorkerLifecycle(request, entryPoint, actionNode, nodes, edges);
+            AddHostedWorkerLifecycle(request, entryPoint, actionNode, nodes, edges, diagnostics);
             return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, ScenarioTopology.Empty);
         }
 
@@ -2455,7 +2455,6 @@ public static class ScenarioGraphBuilder
             HostedWorkerStartMethodName: fact.StartMethod is { } start ? MethodConciseName(index, start) : null,
             HostedWorkerExecuteMethodName: fact.ExecuteMethod is { } execute ? MethodConciseName(index, execute) : null,
             HostedWorkerStopMethodName: fact.StopMethod is { } stop ? MethodConciseName(index, stop) : null,
-            HostedWorkerCancellationParameterName: fact.CancellationParameterName,
             ActionKind: ScenarioActionKind.HostedWorker);
 
     private static void AddHostedWorkerLifecycle(
@@ -2463,9 +2462,11 @@ public static class ScenarioGraphBuilder
         NormalizedEntry entry,
         ScenarioNode actionNode,
         List<ScenarioNode> nodes,
-        List<ScenarioEdge> edges)
+        List<ScenarioEdge> edges,
+        List<ScenarioGraphDiagnostic> diagnostics)
     {
         var fact = entry.HostedWorker!;
+        var cancellationSourceMethod = fact.ExecuteMethod ?? fact.StartMethod ?? fact.StopMethod;
         var lifecycle = new[]
         {
             (Step: HostedWorkerLifecycleStep.Start, Method: fact.StartMethod),
@@ -2485,7 +2486,7 @@ public static class ScenarioGraphBuilder
                 HostedWorkerLifecycleStep.Start => "StartAsync",
                 HostedWorkerLifecycleStep.Execute => "ExecuteAsync",
                 HostedWorkerLifecycleStep.Stop => "StopAsync",
-                _ => throw new ArgumentOutOfRangeException(),
+                _ => throw new InvalidOperationException("An impossible hosted-worker lifecycle step was encountered."),
             };
             var node = CreateNodeWithPresentation(
                 request.Profile.Id,
@@ -2500,7 +2501,9 @@ public static class ScenarioGraphBuilder
                     TargetMemberName: memberName,
                     HostedWorkerTypeName: fact.HostedTypeName,
                     HostedWorkerLifecycleStep: item.Step,
-                    HostedWorkerCancellationParameterName: fact.CancellationParameterName,
+                    HostedWorkerCancellationParameterName: item.Method == cancellationSourceMethod
+                        ? fact.CancellationParameterName
+                        : null,
                     ActionKind: ScenarioActionKind.HostedWorker),
                 entry.Evidence,
                 entry.Evidence.Max(item => item.Certainty),
@@ -2521,10 +2524,22 @@ public static class ScenarioGraphBuilder
                      .OfType<SchedulerJobFact>()
                      .Where(_ => FrameworkFactsBound(request))
                      .Where(item => lifecycle.Any(lifecycleItem => lifecycleItem.Method == item.RegistrationMethod))
-                     .Where(item => HasUnconditionalRegistrationAnchor(request, item))
                      .OrderBy(item => item.SourceStart)
                      .ThenBy(item => item.Id.Value, StringComparer.Ordinal))
         {
+            var placement = ClassifySchedulerPlacement(request, scheduler);
+            if (placement.Kind != SchedulerPlacementKind.Admitted)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    request.Profile.Id,
+                    entry.EntryPointId,
+                    "SC-WORKER-UNSUPPORTED-PLACEMENT",
+                    $"The scheduler registration was withheld at the {placement.Description} boundary.",
+                    $"boundary={placement.Token} ({placement.Description}); registrationOperation={scheduler.RegistrationOperation.Value}",
+                    placement.Evidence,
+                    CertaintyLevel.Conservative));
+                continue;
+            }
             var callback = request.ProgramIndex.Methods.FirstOrDefault(method => method.Id == scheduler.JobMethod);
             if (callback is null)
             {
@@ -2563,31 +2578,79 @@ public static class ScenarioGraphBuilder
         }
     }
 
-    private static bool HasUnconditionalRegistrationAnchor(
+    private enum SchedulerPlacementKind
+    {
+        Admitted,
+        BehaviorIdentityMismatch,
+        MissingFlow,
+        AmbiguousFlow,
+        MissingAnchor,
+        AmbiguousAnchor,
+        DirectControlDependence,
+        NonRootRegion,
+    }
+
+    private sealed record SchedulerPlacement(
+        SchedulerPlacementKind Kind,
+        string Token,
+        string Description,
+        ImmutableArray<EvidenceRef> Evidence);
+
+    private static SchedulerPlacement ClassifySchedulerPlacement(
         ScenarioAnalysisRequest request,
         SchedulerJobFact scheduler)
     {
-        var flow = request.Behavior.MethodFlows
-            .SingleOrDefault(candidate => candidate.Method == scheduler.RegistrationMethod);
-        if (flow is null)
+        if (request.Behavior.Profile is null
+            || request.Behavior.Profile.Id != request.Profile.Id
+            || string.IsNullOrWhiteSpace(request.Behavior.ProgramIndexFingerprint)
+            || !string.Equals(request.Behavior.ProgramIndexFingerprint, request.ProgramIndex.IndexFingerprint, StringComparison.Ordinal))
         {
-            return false;
+            return Placement(SchedulerPlacementKind.BehaviorIdentityMismatch, "behavior-identity", "behavior identity mismatch", scheduler.Evidence);
         }
 
-        var anchors = BuildOperationAnchors(flow);
-        if (!anchors.TryGetValue(scheduler.RegistrationOperation.Value, out var anchorIds)
-            || anchorIds.Length != 1)
+        var flows = request.Behavior.MethodFlows
+            .Where(candidate => candidate.Method == scheduler.RegistrationMethod)
+            .OrderBy(candidate => candidate.FlowFingerprint, StringComparer.Ordinal)
+            .ToArray();
+        if (flows.Length == 0)
         {
-            return false;
+            return Placement(SchedulerPlacementKind.MissingFlow, "missing-flow", "missing flow", scheduler.Evidence);
+        }
+        if (flows.Length > 1)
+        {
+            return Placement(SchedulerPlacementKind.AmbiguousFlow, "ambiguous-flow", "ambiguous flow", Combine(scheduler.Evidence, flows.SelectMany(flow => FlowEvidence(flow)).ToImmutableArray()));
+        }
+        var flow = flows[0];
+        var anchors = BuildOperationAnchors(flow);
+        if (!anchors.TryGetValue(scheduler.RegistrationOperation.Value, out var anchorIds) || anchorIds.Length == 0)
+        {
+            return Placement(SchedulerPlacementKind.MissingAnchor, "missing-anchor", "missing anchor", Combine(scheduler.Evidence, FlowEvidence(flow)));
+        }
+        if (anchorIds.Length > 1)
+        {
+            return Placement(SchedulerPlacementKind.AmbiguousAnchor, "ambiguous-anchor", "ambiguous anchor", Combine(scheduler.Evidence, FlowEvidence(flow), flow.Nodes.Where(node => anchorIds.Contains(node.Id)).SelectMany(node => node.Evidence).ToImmutableArray()));
         }
 
         var anchor = anchorIds[0];
-        if (flow.ControlDependences.Any(dependence => dependence.ControlledNode == anchor))
+        var dependences = flow.ControlDependences.Where(dependence => dependence.ControlledNode == anchor).ToArray();
+        if (dependences.Length > 0)
         {
-            return false;
+            return Placement(SchedulerPlacementKind.DirectControlDependence, "direct-control-dependence", "direct control dependence", Combine(scheduler.Evidence, FlowEvidence(flow), dependences.SelectMany(dependence => dependence.Evidence).ToImmutableArray()));
         }
 
-        return !flow.Regions.Any(region => region.Kind is not FlowRegionKind.Root && region.Nodes.Contains(anchor));
+        var regions = flow.Regions.Where(region => region.Kind is not FlowRegionKind.Root && region.Nodes.Contains(anchor)).ToArray();
+        return regions.Length > 0
+            ? Placement(SchedulerPlacementKind.NonRootRegion, "non-root-region", "non-root region", Combine(scheduler.Evidence, FlowEvidence(flow), regions.SelectMany(region => region.Evidence).ToImmutableArray()))
+            : Placement(SchedulerPlacementKind.Admitted, "admitted", "admitted", Combine(scheduler.Evidence, FlowEvidence(flow), flow.Nodes.Where(node => node.Id == anchor).SelectMany(node => node.Evidence).ToImmutableArray()));
+
+        static SchedulerPlacement Placement(SchedulerPlacementKind kind, string token, string description, IEnumerable<EvidenceRef> evidence)
+            => new(kind, token, description, Combine(evidence.ToImmutableArray()));
+
+        static ImmutableArray<EvidenceRef> FlowEvidence(MethodFlowSnapshot flow)
+            => flow.Nodes.SelectMany(node => node.Evidence)
+                .Concat(flow.Regions.SelectMany(region => region.Evidence))
+                .Concat(flow.ControlDependences.SelectMany(dependence => dependence.Evidence))
+                .ToImmutableArray();
     }
 
     private static string ConfiguredDisplaySignature(ProgramIndexSnapshot index, MethodId methodId)
@@ -3860,7 +3923,8 @@ public static class ScenarioGraphBuilder
         string code,
         string summary,
         string detail,
-        ImmutableArray<EvidenceRef> evidence = default)
+        ImmutableArray<EvidenceRef> evidence = default,
+        CertaintyLevel? certaintyOverride = null)
     {
         var id = StableIdentity.CreateDiagnosticId(new DiagnosticIdentityDescriptor(
             code,
@@ -3871,7 +3935,7 @@ public static class ScenarioGraphBuilder
         return new ScenarioGraphDiagnostic(id, code, summary, detail)
         {
             Evidence = evidence.IsDefault ? [] : evidence,
-            Certainty = evidence.IsDefaultOrEmpty ? CertaintyLevel.Conservative : evidence.Max(item => item.Certainty),
+            Certainty = certaintyOverride ?? (evidence.IsDefaultOrEmpty ? CertaintyLevel.Conservative : evidence.Max(item => item.Certainty)),
         };
     }
 
