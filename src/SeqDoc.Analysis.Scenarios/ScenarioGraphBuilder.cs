@@ -797,6 +797,19 @@ public static class ScenarioGraphBuilder
         // Locally proven placements of one occurrence's own call node; they become the inherited
         // caller-local arms for that occurrence's children in DFS chronology order.
         var localPlacementsByNode = new Dictionary<string, List<ScenarioMembership>>(StringComparer.Ordinal);
+        // Occurrence diagnostics carry no per-occurrence discriminator, so N occurrences reaching
+        // the same unsupported shape must report one deterministic first-occurrence boundary
+        // instead of N byte-identical diagnostics. Composition itself is never deduped.
+        var emittedDiagnosticKeys = new HashSet<string>(StringComparer.Ordinal);
+        void EmitOnce(string code, string summary, string detail)
+        {
+            if (!emittedDiagnosticKeys.Add(code + "\u001f" + detail))
+            {
+                return;
+            }
+
+            diagnostics.Add(CreateDiagnostic(profileId, entryPointId, code, summary, detail));
+        }
 
         foreach (var step in expansion.Steps)
         {
@@ -876,12 +889,10 @@ public static class ScenarioGraphBuilder
                 var falseClassification = ClassifyArmTerminal(flow, flowNodesById, decision, isTrue: false);
                 if (trueClassification.UnsupportedReason is not null || falseClassification.UnsupportedReason is not null)
                 {
-                    diagnostics.Add(CreateDiagnostic(
-                        profileId,
-                        entryPointId,
+                    EmitOnce(
                         "SC013",
                         "The decision has unsupported or incomplete terminal/rejoin topology; exact arm classification is withheld.",
-                        $"{flow.Method.Value}\u001f{decision.Id.Value}\u001f{trueClassification.UnsupportedReason ?? falseClassification.UnsupportedReason}"));
+                        $"{flow.Method.Value}\u001f{decision.Id.Value}\u001f{trueClassification.UnsupportedReason ?? falseClassification.UnsupportedReason}");
                 }
 
                 terminals.Add(BuildArmTerminal(trueArm.Id, trueClassification, decision));
@@ -909,12 +920,10 @@ public static class ScenarioGraphBuilder
 
                 if (!anchorsByOperation.TryGetValue(child.Operation.Value, out var anchorIds))
                 {
-                    diagnostics.Add(CreateDiagnostic(
-                        profileId,
-                        entryPointId,
+                    EmitOnce(
                         "SC011",
                         "The scenario node has no exact eligible Method Flow operation anchor; arm membership is withheld.",
-                        $"{flow.Method.Value}\u001f{child.Operation.Value}\u001f{child.ScenarioNodeId.Value}"));
+                        $"{flow.Method.Value}\u001f{child.Operation.Value}\u001f{child.ScenarioNodeId.Value}");
                     continue;
                 }
 
@@ -926,12 +935,10 @@ public static class ScenarioGraphBuilder
                 var firstSet = membershipSets[0];
                 if (membershipSets.Skip(1).Any(candidate => !MembershipSetsEqual(firstSet, candidate)))
                 {
-                    diagnostics.Add(CreateDiagnostic(
-                        profileId,
-                        entryPointId,
+                    EmitOnce(
                         "SC011",
                         "The scenario node's operation anchors disagree on control membership; arm membership is withheld.",
-                        $"{flow.Method.Value}\u001f{child.Operation.Value}\u001f{child.ScenarioNodeId.Value}"));
+                        $"{flow.Method.Value}\u001f{child.Operation.Value}\u001f{child.ScenarioNodeId.Value}");
                     continue;
                 }
 
@@ -946,12 +953,10 @@ public static class ScenarioGraphBuilder
                     .ToArray();
                 foreach (var conflict in conflictDecisions)
                 {
-                    diagnostics.Add(CreateDiagnostic(
-                        profileId,
-                        entryPointId,
+                    EmitOnce(
                         "SC012",
                         "The scenario node is directly controlled by both semantic arms of the same decision; arm membership is withheld.",
-                        $"{flow.Method.Value}\u001f{child.Operation.Value}\u001f{conflict}"));
+                        $"{flow.Method.Value}\u001f{child.Operation.Value}\u001f{conflict}");
                 }
 
                 var withheld = conflictDecisions.ToHashSet(StringComparer.Ordinal);

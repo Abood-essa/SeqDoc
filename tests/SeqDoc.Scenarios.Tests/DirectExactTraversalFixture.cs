@@ -139,13 +139,10 @@ internal static class DirectExactTraversalFixture
         var sites = flows.SelectMany(flow => flow.Nodes.OfType<InvocationFlowNode>().Select(invocation =>
         {
             var target = invocation.Target!.Value;
-            var resolutionEvidence = partition == "conservative-guarded"
-                ? ImmutableArray.Create(ScenarioTestFactory.ConservativeEvidence("call-resolution"))
-                : ImmutableArray.Create(evidence);
             var resolution = new CallTargetResolution(
                 rejected.Contains(invocation.Operation.Value) ? CallResolutionKind.Cha : CallResolutionKind.DirectExact,
                 [target], "source", IsComplete: partition != "incomplete",
-                [], resolutionEvidence, partition == "conservative-guarded" ? CertaintyLevel.Conservative : CertaintyLevel.Exact);
+                [], ImmutableArray.Create(evidence), CertaintyLevel.Exact);
             return new CallSite(new($"call-site:v1:{invocation.Method.Value}:{invocation.Operation.Value}"),
                 invocation.Method, invocation.Operation, CallKind.Instance, target, resolution,
                 [SourceEvidence("call-site")], CertaintyLevel.Exact);
@@ -331,7 +328,9 @@ internal static class DirectExactTraversalFixture
             if (decision is not null && ordinal == 0)
             {
                 // The conservative partition proves its guarded membership with conservative
-                // call-resolution evidence so weakest-contributor certainty is observable end to end.
+                // CONTROL DEPENDENCE evidence: the dependence injected here carries conservative
+                // certainty, so composed membership claims inherit weakest-contributor certainty
+                // end to end while call resolution stays exact.
                 var conservativeDependence = partition == "conservative-nested-local-guards";
                 dependences.Add(new ControlDependence(decision.Id, invocation.Id, true,
                     conservativeDependence
