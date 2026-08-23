@@ -247,6 +247,8 @@ public static class ScenarioGraphBuilder
                 topologyNodes, diagnostics);
             directExpansion = InheritDirectCallMembership(configuredTopology, directExpansion);
             configuredTopology = AddDirectCallMemberships(configuredTopology, directExpansion, entryPoint.RootMethod, profileId);
+            configuredTopology = ComposeCalleeOccurrenceTopology(
+                request, profileId, entryPointId, entryPoint, directExpansion, configuredTopology, diagnostics);
             return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, configuredTopology,
                 directCallExpansion: directExpansion);
         }
@@ -573,7 +575,6 @@ public static class ScenarioGraphBuilder
                 "SC-DIRECT-CROSS-PROJECT" => "cross-project",
                 "SC-DIRECT-MISMATCH" => "method-flow mismatch",
                 "SC-DIRECT-DUPLICATE" => "duplicate anchor",
-                "SC-DIRECT-GUARDED" => "guarded nested call",
                 _ => "incomplete",
             };
             var diagnostic = CreateDiagnostic(profileId, entryPoint.EntryPointId, code,
@@ -684,12 +685,10 @@ public static class ScenarioGraphBuilder
             var children = new List<(InvocationFlowNode Invocation, CallSite Site)>();
             foreach (var child in DirectCalls(request, target))
             {
-                if (HasLocalGuard(request, target, child.Invocation))
-                {
-                    Boundary("SC-DIRECT-GUARDED", child.Invocation.Operation.Value,
-                        Combine(child.Invocation.Evidence, child.Site.Evidence), target.Value);
-                    continue;
-                }
+                // A locally guarded child is admitted like every other DirectExact child; its
+                // callee-local guard topology is composed later from the target Method Flow so the
+                // call renders inside exact nested fragments instead of being withheld or becoming
+                // unconditional (guarded callee topology contract).
                 children.Add(child);
             }
             work.Push((target, default, 0, null, true, target));
@@ -708,12 +707,15 @@ public static class ScenarioGraphBuilder
     {
         var memberships = topology.Memberships.GroupBy(item => item.ScenarioNode)
             .ToDictionary(group => group.Key, group => group.Select(item => item.Arm).Distinct().OrderBy(item => item.Value, StringComparer.Ordinal).ToImmutableArray());
-        var byId = expansion.Steps.ToDictionary(item => item.Id, StringComparer.Ordinal);
+        // Parents precede children by contract, so each step inherits the ALREADY-inherited parent
+        // arms; a snapshot of the untouched input steps would lose every arm beyond the first level.
+        var inheritedById = new Dictionary<string, ImmutableArray<ScenarioArmId>>(StringComparer.Ordinal);
         var steps = expansion.Steps.Select(step =>
         {
-            var inherited = step.ParentStepId is { } parent && byId.TryGetValue(parent, out var parentStep)
-                ? parentStep.RootArmIds
+            var inherited = step.ParentStepId is { } parent && inheritedById.TryGetValue(parent, out var parentStepArms)
+                ? parentStepArms
                 : memberships.GetValueOrDefault(step.ScenarioNodeId, []);
+            inheritedById[step.Id] = inherited;
             return step with { RootArmIds = inherited };
         }).ToImmutableArray();
         return expansion with { Steps = steps };
@@ -751,6 +753,297 @@ public static class ScenarioGraphBuilder
                 .ThenBy(item => item.ScenarioNode.Value, StringComparer.Ordinal)
                 .ToImmutableArray()
         };
+    }
+
+    /// <summary>
+    /// Composes exact callee-local decision topology for every complete direct-call expansion
+    /// occurrence. Each complete step whose target resolves to the unique loaded Method Flow gains
+    /// decisions and true/false arms scoped to that occurrence (<c>OccurrenceScope</c> = the expansion
+    /// step identity), so repeated and diamond-shaped calls compose distinct occurrence topology while
+    /// root identities stay unchanged. Child-call scenario nodes created inside the occurrence join
+    /// arms through the target flow's own operation anchors and control dependences with the same
+    /// duplicate-anchor agreement and dual-polarity conflict rules as the root join; a child call not
+    /// controlled by any callee-local decision keeps its flat/inherited behavior. A child node also
+    /// inherits the caller occurrence's locally proven arms so guarded nesting stays provable by
+    /// proper membership containment. Terminal classification reuses the exact arm classifier;
+    /// unsupported loop/switch/exception/mixed shapes fail closed with SC013. Unsupported or
+    /// ambiguous membership never invents placement: SC011/SC012 withhold it exactly like the root
+    /// join. Evidence is the canonical union of the call and control-dependence contributors each
+    /// claim uses; certainty is the least confident contributor everywhere.
+    /// </summary>
+    private static ScenarioTopology ComposeCalleeOccurrenceTopology(
+        ScenarioAnalysisRequest request,
+        CompilationProfileId profileId,
+        EntryPointId entryPointId,
+        NormalizedEntry entryPoint,
+        ScenarioDirectCallExpansion expansion,
+        ScenarioTopology topology,
+        List<ScenarioGraphDiagnostic> diagnostics)
+    {
+        if (!expansion.Steps.Any(step => step.IsComplete))
+        {
+            return topology;
+        }
+
+        var decisions = topology.Decisions.ToList();
+        var arms = topology.Arms.ToList();
+        var memberships = topology.Memberships.ToList();
+        var terminals = topology.Terminals.ToList();
+        // Membership pairs already claimed before this pass (root join plus inherited caller/root
+        // propagation) are never duplicated by the occurrence join.
+        var claimedPairs = memberships
+            .Select(item => (item.Arm.Value, item.ScenarioNode.Value))
+            .ToHashSet();
+        // Locally proven placements of one occurrence's own call node; they become the inherited
+        // caller-local arms for that occurrence's children in DFS chronology order.
+        var localPlacementsByNode = new Dictionary<string, List<ScenarioMembership>>(StringComparer.Ordinal);
+
+        foreach (var step in expansion.Steps)
+        {
+            if (!step.IsComplete || step.IsCycleBoundary)
+            {
+                continue;
+            }
+
+            var targetFlows = request.Behavior.MethodFlows.Where(flow => flow.Method == step.TargetMethod).Take(2).ToArray();
+            if (targetFlows.Length != 1)
+            {
+                continue;
+            }
+
+            var flow = targetFlows[0];
+            var flowDecisions = flow.Nodes
+                .OfType<DecisionFlowNode>()
+                .OrderBy(node => node.Id.Value, StringComparer.Ordinal)
+                .ToArray();
+            if (flowDecisions.Length == 0)
+            {
+                continue;
+            }
+
+            var flowNodesById = flow.Nodes
+                .GroupBy(node => node.Id)
+                .ToDictionary(group => group.Key, group => group.First());
+            var anchorsByOperation = BuildOperationAnchors(flow);
+            var dependencesByControlled = flow.ControlDependences
+                .GroupBy(dependence => dependence.ControlledNode)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group
+                        .OrderBy(dependence => dependence.ControllingDecision.Value, StringComparer.Ordinal)
+                        .ThenBy(dependence => dependence.ControlledOnTrue)
+                        .ToImmutableArray());
+
+            // One occurrence-scoped decision per controlling flow node, with the same evidence,
+            // certainty, predicate wording, arm polarity, and terminal classification conventions
+            // as the root/service topology composition.
+            var occurrenceArmsByDecision = new Dictionary<FlowNodeId, (ScenarioArm TrueArm, ScenarioArm FalseArm)>();
+            foreach (var decision in flowDecisions)
+            {
+                var decisionId = StableIdentity.CreateScenarioDecisionId(new ScenarioDecisionIdentityDescriptor(
+                    profileId, entryPoint.RootMethod, flow.Method, decision.Id, step.Id));
+                decisions.Add(new ScenarioDecision(
+                    decisionId,
+                    flow.Method,
+                    decision.Id,
+                    decision.Condition,
+                    decision.Evidence,
+                    decision.Certainty,
+                    PredicateWording(request, flow.Method, decision.Condition)));
+                var trueArm = new ScenarioArm(
+                    StableIdentity.CreateScenarioArmId(new ScenarioArmIdentityDescriptor(
+                        profileId, entryPoint.RootMethod, decisionId, IsTrue: true)),
+                    decisionId,
+                    IsTrue: true,
+                    decision.Evidence,
+                    decision.Certainty);
+                var falseArm = new ScenarioArm(
+                    StableIdentity.CreateScenarioArmId(new ScenarioArmIdentityDescriptor(
+                        profileId, entryPoint.RootMethod, decisionId, IsTrue: false)),
+                    decisionId,
+                    IsTrue: false,
+                    decision.Evidence,
+                    decision.Certainty);
+                arms.Add(trueArm);
+                arms.Add(falseArm);
+                occurrenceArmsByDecision[decision.Id] = (trueArm, falseArm);
+            }
+
+            foreach (var decision in flowDecisions)
+            {
+                var (trueArm, falseArm) = occurrenceArmsByDecision[decision.Id];
+                var trueClassification = ClassifyArmTerminal(flow, flowNodesById, decision, isTrue: true);
+                var falseClassification = ClassifyArmTerminal(flow, flowNodesById, decision, isTrue: false);
+                if (trueClassification.UnsupportedReason is not null || falseClassification.UnsupportedReason is not null)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        profileId,
+                        entryPointId,
+                        "SC013",
+                        "The decision has unsupported or incomplete terminal/rejoin topology; exact arm classification is withheld.",
+                        $"{flow.Method.Value}\u001f{decision.Id.Value}\u001f{trueClassification.UnsupportedReason ?? falseClassification.UnsupportedReason}"));
+                }
+
+                terminals.Add(BuildArmTerminal(trueArm.Id, trueClassification, decision));
+                terminals.Add(BuildArmTerminal(falseArm.Id, falseClassification, decision));
+            }
+
+            // Child-call placement inside this occurrence, in DFS expansion chronology.
+            var callerLocalMemberships = localPlacementsByNode.TryGetValue(step.ScenarioNodeId.Value, out var placed)
+                ? placed
+                : [];
+            foreach (var child in expansion.Steps.Where(item => item.ParentStepId == step.Id))
+            {
+                // Inherited caller-local arms: the whole occurrence executes under these locally
+                // proven arms, so its child calls inherit them alongside their own local guards.
+                foreach (var callerMembership in callerLocalMemberships)
+                {
+                    if (claimedPairs.Add((callerMembership.Arm.Value, child.ScenarioNodeId.Value)))
+                    {
+                        AddOccurrenceMembership(memberships, callerMembership.Arm, child,
+                            Combine(callerMembership.Evidence, child.Evidence),
+                            LeastConfident(callerMembership.Certainty, child.Evidence, child.Certainty),
+                            profileId, entryPoint.RootMethod);
+                    }
+                }
+
+                if (!anchorsByOperation.TryGetValue(child.Operation.Value, out var anchorIds))
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        profileId,
+                        entryPointId,
+                        "SC011",
+                        "The scenario node has no exact eligible Method Flow operation anchor; arm membership is withheld.",
+                        $"{flow.Method.Value}\u001f{child.Operation.Value}\u001f{child.ScenarioNodeId.Value}"));
+                    continue;
+                }
+
+                // Every eligible anchor must agree on control memberships; disagreement never
+                // silently prefers one anchor (same rule as the root join).
+                var membershipSets = anchorIds
+                    .Select(anchorId => AnchorMembershipSet(anchorId, dependencesByControlled))
+                    .ToArray();
+                var firstSet = membershipSets[0];
+                if (membershipSets.Skip(1).Any(candidate => !MembershipSetsEqual(firstSet, candidate)))
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        profileId,
+                        entryPointId,
+                        "SC011",
+                        "The scenario node's operation anchors disagree on control membership; arm membership is withheld.",
+                        $"{flow.Method.Value}\u001f{child.Operation.Value}\u001f{child.ScenarioNodeId.Value}"));
+                    continue;
+                }
+
+                // Same-decision dual-polarity conflicts are reported deterministically and only
+                // their memberships are withheld (same rule as the root join).
+                var conflictDecisions = firstSet
+                    .GroupBy(membership => membership.ControllingDecision.Value, StringComparer.Ordinal)
+                    .Where(group => group.Any(membership => membership.ControlledOnTrue)
+                        && group.Any(membership => !membership.ControlledOnTrue))
+                    .Select(group => group.Key)
+                    .OrderBy(value => value, StringComparer.Ordinal)
+                    .ToArray();
+                foreach (var conflict in conflictDecisions)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        profileId,
+                        entryPointId,
+                        "SC012",
+                        "The scenario node is directly controlled by both semantic arms of the same decision; arm membership is withheld.",
+                        $"{flow.Method.Value}\u001f{child.Operation.Value}\u001f{conflict}"));
+                }
+
+                var withheld = conflictDecisions.ToHashSet(StringComparer.Ordinal);
+                foreach (var dependenceGroup in firstSet
+                             .GroupBy(membership => (membership.ControllingDecision.Value, membership.ControlledOnTrue))
+                             .OrderBy(group => group.Key.Item1, StringComparer.Ordinal)
+                             .ThenBy(group => group.Key.Item2))
+                {
+                    if (withheld.Contains(dependenceGroup.Key.Item1)
+                        || !occurrenceArmsByDecision.TryGetValue(dependenceGroup.First().ControllingDecision, out var armPair))
+                    {
+                        continue;
+                    }
+
+                    var arm = dependenceGroup.Key.Item2 ? armPair.TrueArm.Id : armPair.FalseArm.Id;
+                    if (!claimedPairs.Add((arm.Value, child.ScenarioNodeId.Value)))
+                    {
+                        continue;
+                    }
+
+                    var dependenceEvidence = Combine(dependenceGroup.Select(item => item.Evidence).ToArray());
+                    var membership = AddOccurrenceMembership(memberships, arm, child,
+                        Combine(child.Evidence, dependenceEvidence),
+                        LeastConfident(child.Certainty, dependenceEvidence),
+                        profileId, entryPoint.RootMethod);
+                    // Record this locally proven placement so the child's own occurrence (if any,
+                    // later in DFS chronology) inherits it as a caller-local arm.
+                    if (!localPlacementsByNode.TryGetValue(child.ScenarioNodeId.Value, out var placements))
+                    {
+                        placements = [];
+                        localPlacementsByNode.Add(child.ScenarioNodeId.Value, placements);
+                    }
+
+                    placements.Add(membership);
+                }
+            }
+        }
+
+        return CanonicalizeTopology(decisions, arms, memberships, terminals);
+    }
+
+    /// <summary>Creates one evidence-backed occurrence membership and records it.</summary>
+    private static ScenarioMembership AddOccurrenceMembership(
+        List<ScenarioMembership> memberships,
+        ScenarioArmId arm,
+        ScenarioDirectCallExpansionStep childStep,
+        ImmutableArray<EvidenceRef> evidence,
+        CertaintyLevel certainty,
+        CompilationProfileId profileId,
+        MethodId rootMethod)
+    {
+        var membership = new ScenarioMembership(
+            StableIdentity.CreateScenarioMembershipId(new ScenarioMembershipIdentityDescriptor(
+                profileId, rootMethod, arm, childStep.ScenarioNodeId)),
+            arm,
+            childStep.ScenarioNodeId,
+            evidence,
+            certainty);
+        memberships.Add(membership);
+        return membership;
+    }
+
+    /// <summary>Applies the canonical semantic ordering shared by every topology composition.</summary>
+    private static ScenarioTopology CanonicalizeTopology(
+        List<ScenarioDecision> decisions,
+        List<ScenarioArm> arms,
+        List<ScenarioMembership> memberships,
+        List<ScenarioArmTerminal> terminals)
+    {
+        var decisionById = decisions.GroupBy(decision => decision.Id).ToDictionary(group => group.Key, group => group.First());
+        var armById = arms.GroupBy(arm => arm.Id).ToDictionary(group => group.Key, group => group.First());
+        return new ScenarioTopology(
+            decisions
+                .GroupBy(decision => decision.Id).Select(group => group.First())
+                .OrderBy(decision => decision.ControllingFlowNode.Value, StringComparer.Ordinal)
+                .ToImmutableArray(),
+            arms
+                .GroupBy(arm => arm.Id).Select(group => group.First())
+                .OrderBy(arm => decisionById[arm.Decision].ControllingFlowNode.Value, StringComparer.Ordinal)
+                .ThenBy(arm => arm.IsTrue)
+                .ToImmutableArray(),
+            memberships
+                .GroupBy(item => (item.Arm.Value, item.ScenarioNode.Value)).Select(group => group.First())
+                .OrderBy(item => decisionById[armById[item.Arm].Decision].ControllingFlowNode.Value, StringComparer.Ordinal)
+                .ThenBy(item => armById[item.Arm].IsTrue)
+                .ThenBy(item => item.ScenarioNode.Value, StringComparer.Ordinal)
+                .ToImmutableArray(),
+            terminals
+                .GroupBy(terminal => terminal.Arm).Select(group => group.First())
+                .OrderBy(terminal => decisionById[armById[terminal.Arm].Decision].ControllingFlowNode.Value, StringComparer.Ordinal)
+                .ThenBy(terminal => armById[terminal.Arm].IsTrue)
+                .ToImmutableArray());
     }
 
     private static (InvocationFlowNode Invocation, CallSite Site)[] DirectCalls(ScenarioAnalysisRequest request, MethodId method)
@@ -824,14 +1117,6 @@ public static class ScenarioGraphBuilder
         var sites = request.Behavior.CallGraph.CallSites.Where(site => site.ContainingMethod == flow.Method
                 && site.InvocationOperation == invocation.Operation).ToArray();
         return sites.Length == 1 ? sites[0] : null;
-    }
-
-    private static bool HasLocalGuard(ScenarioAnalysisRequest request, MethodId method, InvocationFlowNode invocation)
-    {
-        var flow = request.Behavior.MethodFlows.Single(item => item.Method == method);
-        var anchors = BuildOperationAnchors(flow);
-        return anchors.TryGetValue(invocation.Operation.Value, out var ids)
-            && ids.Any(id => flow.ControlDependences.Any(dependence => dependence.ControlledNode == id));
     }
 
     private static int SourceOrdinal(InvocationFlowNode invocation)

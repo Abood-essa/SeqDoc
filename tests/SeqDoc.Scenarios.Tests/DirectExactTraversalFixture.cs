@@ -8,6 +8,7 @@ using SeqDoc.Core.Frameworks;
 using SeqDoc.Core.Identity;
 using SeqDoc.Core.ProgramIndex;
 using SeqDoc.Core.ScenarioGraph;
+using SeqDoc.Core.Semantics;
 using Xunit;
 
 namespace SeqDoc.Scenarios.Tests;
@@ -168,6 +169,7 @@ internal static class DirectExactTraversalFixture
             FrameworkFacts = new FrameworkAnalysisResult(true, [], [], [], [], [], []),
             ConfiguredRoots = [root],
             DiagramBudget = budget,
+            PredicateSemanticFacts = GuardedPredicateFacts(partition, profile, index.IndexFingerprint),
         };
         if (partition.EndsWith("-reversed", StringComparison.Ordinal))
         {
@@ -192,6 +194,82 @@ internal static class DirectExactTraversalFixture
             };
         }
         return result;
+    }
+
+    /// <summary>
+    /// Gives every guarded partition's decisions exact Owner predicate wording so the planner
+    /// renders their fragments instead of withholding them; partitions without decisions keep the
+    /// legacy null predicate set. Each guard condition maps to one predicate as its first lowered
+    /// operation so the owner role and support gates behave exactly like root decisions.
+    /// </summary>
+    private static PredicateSemanticFactSet? GuardedPredicateFacts(
+        string partition, CompilationProfile profile, string fingerprint)
+    {
+        var guardedMethods = new List<MethodId>();
+        if (partition == "inherited-arm-and-guarded-child")
+        {
+            guardedMethods.Add(Method("Root"));
+            guardedMethods.Add(Method("Child"));
+        }
+        else if (partition is "nested-local-guards" or "conservative-nested-local-guards")
+        {
+            guardedMethods.Add(Method("Child"));
+            guardedMethods.Add(Method("Grandchild"));
+        }
+        else if (partition is "shared-guarded-occurrences" or "shared-guarded-occurrences-reversed")
+        {
+            guardedMethods.Add(SharedCallee);
+        }
+        else
+        {
+            return null;
+        }
+
+        var predicates = new List<PredicateSemanticFact>();
+        var mappings = new List<PredicateDecisionMappingFact>();
+        foreach (var method in guardedMethods)
+        {
+            var name = method.Value.Split('.').Last();
+            var condition = method == Method("Root")
+                ? new OperationId("operation:v1:fixture.guard")
+                : new OperationId($"operation:v1:{name}.local-guard");
+            var predicateId = new SemanticFactId($"semantic-fact:v1:predicate:{name}");
+            predicates.Add(new PredicateSemanticFact(
+                predicateId,
+                method,
+                new OperationId($"operation:v1:predicate:source.{name}"),
+                new PredicateExpression(
+                    PredicateExpressionKind.Comparison,
+                    [
+                        new PredicateExpression(PredicateExpressionKind.SymbolValue, [], "System.Object", displayName: "reservation"),
+                        new PredicateExpression(PredicateExpressionKind.NullConstant, [], "System.Object"),
+                    ],
+                    "System.Boolean",
+                    PredicateComparisonOperatorKind.Equal),
+                profile.Id,
+                fingerprint,
+                [ScenarioTestFactory.SourceEvidence("predicate")],
+                CertaintyLevel.Exact));
+            mappings.Add(new PredicateDecisionMappingFact(
+                new SemanticFactId($"semantic-fact:v1:predicate-mapping:{name}"),
+                predicateId,
+                method,
+                [condition],
+                profile.Id,
+                fingerprint,
+                [ScenarioTestFactory.SourceEvidence("predicate-mapping")],
+                CertaintyLevel.Exact));
+        }
+
+        return new PredicateSemanticFactSet(
+            1,
+            "ct6-test",
+            profile,
+            fingerprint,
+            predicates.OrderBy(item => item.Id.Value, StringComparer.Ordinal).ToImmutableArray(),
+            mappings.OrderBy(item => item.Id.Value, StringComparer.Ordinal).ToImmutableArray(),
+            [],
+            "ct6-predicates");
     }
 
     private static MethodFlowSnapshot CreateFlow(MethodSpec method, List<CallSpec> calls,
@@ -252,7 +330,14 @@ internal static class DirectExactTraversalFixture
             nodes.Add(invocation);
             if (decision is not null && ordinal == 0)
             {
-                dependences.Add(new ControlDependence(decision.Id, invocation.Id, true, [evidence], CertaintyLevel.Exact));
+                // The conservative partition proves its guarded membership with conservative
+                // call-resolution evidence so weakest-contributor certainty is observable end to end.
+                var conservativeDependence = partition == "conservative-nested-local-guards";
+                dependences.Add(new ControlDependence(decision.Id, invocation.Id, true,
+                    conservativeDependence
+                        ? ImmutableArray.Create(ScenarioTestFactory.ConservativeEvidence("call-resolution"))
+                        : [evidence],
+                    conservativeDependence ? CertaintyLevel.Conservative : CertaintyLevel.Exact));
                 edges.Add(Edge(method.Id, decision, invocation, FlowEdgeKind.True, evidence));
                 edges.Add(Edge(method.Id, invocation, exit, FlowEdgeKind.Normal, evidence));
             }
@@ -273,6 +358,16 @@ internal static class DirectExactTraversalFixture
                 original.Operation, [evidence], CertaintyLevel.Exact));
         }
         edges.Add(Edge(method.Id, nodes[^1], exit, FlowEdgeKind.Normal, evidence));
+        // A single-call guarded method has an empty false arm; represent it with one exact sink
+        // throw boundary after the final continuation edge so both arms classify as represented
+        // terminal shapes instead of failing closed on a missing arm edge.
+        if (decision is not null && calls.Count == 1)
+        {
+            var falseThrow = new ThrowFlowNode(
+                new($"flow-node:v1:{method.Id.Value}:false-throw"), method.Id, null, false, [evidence], CertaintyLevel.Exact);
+            nodes.Add(falseThrow);
+            edges.Add(Edge(method.Id, decision, falseThrow, FlowEdgeKind.False, evidence));
+        }
         if (method.Id == Method("Child") && partition == "inherited-arm-and-guarded-child" && nodes.OfType<InvocationFlowNode>().SingleOrDefault() is { } guarded)
         {
             dependences.Add(new ControlDependence(new($"flow-node:v1:{method.Id.Value}:local-decision"), guarded.Id, true, [evidence], CertaintyLevel.Exact));
