@@ -186,7 +186,9 @@ public sealed record OperationDescriptor(
     ImmutableArray<int> SuppliedParameterOrdinals = default,
     CallbackTargetDescriptor? CallbackTarget = null,
     FrameworkRouteGroupDescriptor? RouteGroup = null,
-    FrameworkDispatchShapeDescriptor? DispatchShape = null);
+    FrameworkDispatchShapeDescriptor? DispatchShape = null,
+    FrameworkTypeIdentity? ConstructedType = null,
+    SymbolId? ConstructedTypeSymbol = null);
 
 /// <summary>
 /// Exact, Roslyn-neutral identity of one named type. The controlled eligibility projector fills this

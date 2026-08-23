@@ -29,6 +29,20 @@ public sealed class LookalikeWorker : FakeHosting.IHostedService
     public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
+
+public sealed class BackgroundWorker : BackgroundService
+{
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+        => Task.CompletedTask;
+}
+
+public static class UnsupportedTimerShapes
+{
+    public static void RegisterLambda()
+    {
+        _ = new Timer(_ => { }, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+    }
+}
 }
 
 namespace FakeHosting

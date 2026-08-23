@@ -78,11 +78,16 @@ public sealed class FrameworkModelHost
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        return Aggregate(request.AnalysisContext.Profile.Id, applicable, executions);
+        return Aggregate(
+            request.AnalysisContext.Profile.Id,
+            request.AnalysisContext.ProgramIndex.IndexFingerprint,
+            applicable,
+            executions);
     }
 
     private static FrameworkAnalysisResult Aggregate(
         CompilationProfileId profileId,
+        string programIndexFingerprint,
         ImmutableArray<IFrameworkBehaviorModel> applicable,
         List<ModelExecution> executions)
     {
@@ -287,7 +292,9 @@ public sealed class FrameworkModelHost
                 .DistinctBy(diagnostic => diagnostic.Id.Value)
                 .OrderBy(diagnostic => diagnostic.Id.Value, StringComparer.Ordinal)
                 .ToImmutableArray(),
-            applicable.Select(model => model.Descriptor).ToImmutableArray());
+            applicable.Select(model => model.Descriptor).ToImmutableArray(),
+            profileId,
+            programIndexFingerprint);
     }
 
     private static bool HasEvidence(ImmutableArray<EvidenceRef> evidence) => !evidence.IsDefaultOrEmpty;

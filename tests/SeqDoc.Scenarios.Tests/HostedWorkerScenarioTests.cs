@@ -34,6 +34,24 @@ public sealed class HostedWorkerScenarioTests
             Assert.Single(second.Graphs, item => item.RootKind == ScenarioRootKind.HostedWorker).Nodes.Select(node => node.Id.Value));
     }
 
+    [Fact]
+    public void ForeignFrameworkSnapshotCannotAdmitHostedWorkerRoot()
+    {
+        var current = CreateRequest();
+        var request = current with
+        {
+            FrameworkFacts = current.FrameworkFacts with
+            {
+                ProfileId = ScenarioTestFactory.ForeignProfile.Id,
+                ProgramIndexFingerprint = "foreign-index",
+            },
+        };
+
+        Assert.DoesNotContain(
+            ScenarioGraphBuilder.Build(request).Graphs,
+            graph => graph.RootKind == ScenarioRootKind.HostedWorker);
+    }
+
     private static ScenarioAnalysisRequest CreateRequest()
     {
         var baseRequest = ScenarioTestFactory.CreateGetRequest();
@@ -83,12 +101,21 @@ public sealed class HostedWorkerScenarioTests
             Evidence = [ScenarioTestFactory.SourceEvidence("hosted-worker")],
             Certainty = SeqDoc.Core.Evidence.CertaintyLevel.Exact,
         };
+        var registration = new HostedWorkerRegistrationFact
+        {
+            Id = new BehaviorFactId("behavior-fact:v1:hosted-worker-registration"),
+            HostedType = workerType,
+            RegistrationMethod = start,
+            RegistrationOperation = new OperationId("operation:v1:hosted-worker-registration"),
+            Evidence = [ScenarioTestFactory.SourceEvidence("hosted-worker-registration")],
+            Certainty = SeqDoc.Core.Evidence.CertaintyLevel.Exact,
+        };
         return baseRequest with
         {
             ProgramIndex = index,
             FrameworkFacts = baseRequest.FrameworkFacts with
             {
-                Facts = baseRequest.FrameworkFacts.Facts.Add(fact),
+                Facts = baseRequest.FrameworkFacts.Facts.Add(fact).Add(registration),
             },
         };
     }

@@ -79,15 +79,20 @@ public static class ScenarioGraphBuilder
             .ToArray();
         var workerEntries = request.FrameworkFacts.Facts
             .OfType<HostedWorkerLifecycleFact>()
-            .Select(fact => new NormalizedEntry(
-                fact.EntryPointId,
-                fact.RootMethod,
-                HttpMethodKind.Unknown,
-                string.Empty,
-                $"Hosted worker {fact.HostedTypeName}",
-                ScenarioActionKind.HostedWorker,
-                fact.Evidence,
-                fact))
+            .Where(fact => FrameworkFactsBound(request))
+            .Join(
+                request.FrameworkFacts.Facts.OfType<HostedWorkerRegistrationFact>(),
+                fact => fact.HostedType,
+                registration => registration.HostedType,
+                (fact, registration) => new NormalizedEntry(
+                    fact.EntryPointId,
+                    fact.RootMethod,
+                    HttpMethodKind.Unknown,
+                    string.Empty,
+                    $"Hosted worker {fact.HostedTypeName}",
+                    ScenarioActionKind.HostedWorker,
+                    Combine(fact.Evidence, registration.Evidence),
+                    fact))
             .ToArray();
         var admittedMethods = frameworkEntries.Select(entry => entry.RootMethod)
             .Concat(workerEntries.Select(entry => entry.RootMethod))
@@ -140,6 +145,15 @@ public static class ScenarioGraphBuilder
             _ => ScenarioRootKind.HttpEntryPoint,
         };
     }
+
+    private static bool FrameworkFactsBound(ScenarioAnalysisRequest request)
+        => (request.FrameworkFacts.ProfileId is null
+            || request.FrameworkFacts.ProfileId == request.Profile.Id)
+            && (request.FrameworkFacts.ProgramIndexFingerprint is null
+                || string.Equals(
+                    request.FrameworkFacts.ProgramIndexFingerprint,
+                    request.ProgramIndex.IndexFingerprint,
+                    StringComparison.Ordinal));
 
     private static ScenarioGraph BuildGraph(ScenarioAnalysisRequest request, NormalizedEntry entryPoint)
     {
@@ -2489,8 +2503,8 @@ public static class ScenarioGraphBuilder
                     HostedWorkerLifecycleStep: item.Step,
                     HostedWorkerCancellationParameterName: fact.CancellationParameterName,
                     ActionKind: ScenarioActionKind.HostedWorker),
-                fact.Evidence,
-                fact.Certainty,
+                entry.Evidence,
+                entry.Evidence.Max(item => item.Certainty),
                 ordinal++);
             nodes.Add(node);
             edges.Add(CreateEdge(
@@ -2501,11 +2515,12 @@ public static class ScenarioGraphBuilder
                 ScenarioEdgeKind.Call,
                 memberName,
                 ordinal,
-                fact.Evidence));
+                entry.Evidence));
         }
 
         foreach (var scheduler in request.FrameworkFacts.Facts
                      .OfType<SchedulerJobFact>()
+                     .Where(_ => FrameworkFactsBound(request))
                      .Where(item => lifecycle.Any(lifecycleItem => lifecycleItem.Method == item.RegistrationMethod))
                      .OrderBy(item => item.SourceStart)
                      .ThenBy(item => item.Id.Value, StringComparer.Ordinal))
@@ -2530,8 +2545,8 @@ public static class ScenarioGraphBuilder
                     TargetMemberName: callback.Name,
                     HostedWorkerTypeName: fact.HostedTypeName,
                     ActionKind: ScenarioActionKind.HostedWorker),
-                scheduler.Evidence,
-                scheduler.Certainty,
+                Combine(entry.Evidence, scheduler.Evidence),
+                Combine(entry.Evidence, scheduler.Evidence).Max(item => item.Certainty),
                 ordinal++);
             var source = nodes.LastOrDefault(item => item.Method == scheduler.RegistrationMethod) ?? actionNode;
             nodes.Add(node);
@@ -2543,7 +2558,7 @@ public static class ScenarioGraphBuilder
                 ScenarioEdgeKind.Call,
                 "timer callback",
                 ordinal,
-                scheduler.Evidence));
+                Combine(entry.Evidence, scheduler.Evidence)));
         }
     }
 

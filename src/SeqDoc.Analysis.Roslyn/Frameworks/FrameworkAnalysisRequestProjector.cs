@@ -118,7 +118,62 @@ internal static class FrameworkAnalysisRequestProjector
             ProjectSuppliedParameterOrdinals(call),
             ProjectCallbackTarget(call, methodId, operationId, operationById, ProjectSuppliedParameterOrdinals(call), documents, project, profile, callbackFacts),
             ProjectRouteGroup(call, operationById, models, localInitializers),
-            project is null ? null : ProjectDispatchShape(call, project.Value, evidence, documents, models, dispatchCancellationToken));
+            project is null ? null : ProjectDispatchShape(call, project.Value, evidence, documents, models, dispatchCancellationToken),
+            ConstructedType: call.TargetMethod.TypeArguments.Length == 1
+                && call.TargetMethod.TypeArguments[0] is INamedTypeSymbol constructedArgument
+                ? FrameworkSymbolEligibilityProjector.ProjectTypeIdentity(constructedArgument)
+                : null,
+            ConstructedTypeSymbol: project is { } projectId
+                && call.TargetMethod.TypeArguments.Length == 1
+                && call.TargetMethod.TypeArguments[0] is INamedTypeSymbol constructedSymbol
+                ? RoslynProgramIndexExtractor.CreateSymbolId(constructedSymbol, projectId)
+                : null);
+    }
+
+    /// <summary>
+    /// Projects one compiler-proven object creation into the same framework-operation stream as
+    /// invocations. Constructor identity and callback binding remain compiler-owned; framework
+    /// models decide whether the exact shape is supported.
+    /// </summary>
+    public static OperationDescriptor ProjectOperationDescriptor(
+        IObjectCreationOperation creation,
+        MethodId methodId,
+        OperationId operationId,
+        ImmutableArray<EvidenceRef> evidence,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents,
+        StableProjectId? project = null,
+        CompilationProfileId? profile = null)
+    {
+        ArgumentNullException.ThrowIfNull(creation);
+        if (creation.Constructor is null)
+        {
+            throw new ArgumentException("Object creation must have an exact constructor.", nameof(creation));
+        }
+
+        var anchor = ProjectSourceAnchor(creation.Syntax, documents);
+        return new OperationDescriptor(
+            operationId,
+            methodId,
+            "ObjectCreation",
+            anchor.Document,
+            anchor.SourceStart,
+            anchor.SourceLength,
+            evidence,
+            CertaintyLevel.Exact,
+            ProjectTargetIdentity(creation.Constructor),
+            CallbackTarget: ProjectCallbackTarget(
+                creation.Arguments,
+                methodId,
+                operationId,
+                project,
+                profile,
+                documents),
+            ConstructedType: creation.Type is INamedTypeSymbol constructed
+                ? FrameworkSymbolEligibilityProjector.ProjectTypeIdentity(constructed)
+                : null,
+            ConstructedTypeSymbol: project is { } projectId && creation.Type is INamedTypeSymbol constructedType
+                ? RoslynProgramIndexExtractor.CreateSymbolId(constructedType, projectId)
+                : null);
     }
 
     private static FrameworkDispatchShapeDescriptor? ProjectDispatchShape(
@@ -421,11 +476,22 @@ internal static class FrameworkAnalysisRequestProjector
             }
         }
 
-        foreach (var argument in call.Arguments)
+        return ProjectCallbackTarget(call.Arguments, methodId, operationId, project, profile, documents);
+    }
+
+    private static CallbackTargetDescriptor? ProjectCallbackTarget(
+        IEnumerable<IArgumentOperation> arguments,
+        MethodId methodId,
+        OperationId operationId,
+        StableProjectId? project,
+        CompilationProfileId? profile,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents)
+    {
+        foreach (var argument in arguments)
         {
             if (argument.Parameter is null || argument.ArgumentKind == ArgumentKind.DefaultValue
                 || argument.Parameter.Type is not INamedTypeSymbol parameterType
-                || !IsExactSystemDelegate(parameterType))
+                || (!IsExactSystemDelegate(parameterType) && !IsExactTimerCallback(parameterType)))
             {
                 continue;
             }
@@ -463,6 +529,11 @@ internal static class FrameworkAnalysisRequestProjector
                 && string.Equals(type.MetadataName, "Delegate", StringComparison.Ordinal)
                 && string.Equals(type.ContainingNamespace?.ToDisplayString(), "System", StringComparison.Ordinal);
         }
+
+        static bool IsExactTimerCallback(INamedTypeSymbol type)
+            => type.MetadataName == "TimerCallback"
+                && type.ContainingNamespace?.ToDisplayString() == "System.Threading"
+                && type.ContainingAssembly?.Identity.Name is "System.Runtime" or "System.Private.CoreLib";
 
         return null;
 

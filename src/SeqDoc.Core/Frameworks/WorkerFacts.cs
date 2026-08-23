@@ -34,6 +34,14 @@ public sealed record HostedWorkerLifecycleFact : BehaviorFact
     public string? CancellationParameterName { get; init; }
 }
 
+/// <summary>Exact compiler-backed AddHostedService registration that admits one worker type.</summary>
+public sealed record HostedWorkerRegistrationFact : BehaviorFact
+{
+    public required SymbolId HostedType { get; init; }
+    public required MethodId RegistrationMethod { get; init; }
+    public required OperationId RegistrationOperation { get; init; }
+}
+
 /// <summary>
 /// Exact source callback registration for a supported timer constructor. The callback target is
 /// retained as a method identity; runtime timing and callback order remain outside static evidence.

@@ -17,6 +17,8 @@ public sealed class HostedWorkerModel : IFrameworkBehaviorModel
     public const string ModelVersionValue = "1.0.0";
 
     private const string HostingAssembly = "Microsoft.Extensions.Hosting.Abstractions";
+    private const string HostingRegistrationType = "Microsoft.Extensions.DependencyInjection.ServiceCollectionHostedServiceExtensions";
+    private const string ServiceCollectionType = "Microsoft.Extensions.DependencyInjection.IServiceCollection";
     private const string HostedServiceType = "Microsoft.Extensions.Hosting.IHostedService";
     private const string BackgroundServiceType = "Microsoft.Extensions.Hosting.BackgroundService";
     private const string CancellationTokenType = "System.Threading.CancellationToken";
@@ -38,7 +40,36 @@ public sealed class HostedWorkerModel : IFrameworkBehaviorModel
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return ValueTask.FromResult(ModelResult.Unrecognized);
+        ArgumentNullException.ThrowIfNull(operation);
+        ArgumentNullException.ThrowIfNull(context);
+        if (!IsHostedServiceRegistration(operation.TargetIdentity)
+            || operation.ConstructedType is not { } hostedType
+            || operation.ConstructedTypeSymbol is not { } hostedTypeSymbol)
+        {
+            return ValueTask.FromResult(ModelResult.Unrecognized);
+        }
+
+        var certainty = operation.Evidence.Max(evidence => evidence.Certainty);
+        var evidence = CreateModelEvidence(
+            $"hosted-registration:{operation.Id.Value}",
+            operation.Evidence,
+            certainty);
+        var fact = new HostedWorkerRegistrationFact
+        {
+            Id = StableIdentity.CreateBehaviorFactId(new BehaviorFactIdentityDescriptor(
+                context.Profile.Id,
+                Descriptor.ModelId,
+                Descriptor.Version,
+                "hosted-worker-registration",
+                new OperationBehaviorFactAnchor(operation.Method, operation.Id),
+                0)),
+            HostedType = hostedTypeSymbol,
+            RegistrationMethod = operation.Method,
+            RegistrationOperation = operation.Id,
+            Evidence = evidence,
+            Certainty = certainty,
+        };
+        return ValueTask.FromResult(new ModelResult(true, facts: [fact]));
     }
 
     public ValueTask<ModelResult> AnalyzeSymbolAsync(
@@ -60,9 +91,10 @@ public sealed class HostedWorkerModel : IFrameworkBehaviorModel
         var methods = context.ProgramIndex.Methods
             .Where(method => method.ContainingType == shape.DeclaringTypeSymbol)
             .ToImmutableArray();
-        var start = methods.FirstOrDefault(IsStartMethod);
-        var execute = methods.FirstOrDefault(IsExecuteMethod);
-        var stop = methods.FirstOrDefault(IsStopMethod);
+        var isBackgroundService = HasBaseType(shape.DeclaringType, BackgroundServiceType);
+        var start = isBackgroundService ? null : methods.FirstOrDefault(IsStartMethod);
+        var execute = isBackgroundService ? methods.FirstOrDefault(IsExecuteMethod) : null;
+        var stop = isBackgroundService ? null : methods.FirstOrDefault(IsStopMethod);
         var root = start ?? execute ?? stop;
         if (root is null || root.Id != current.Id)
         {
@@ -82,7 +114,7 @@ public sealed class HostedWorkerModel : IFrameworkBehaviorModel
             return ValueTask.FromResult(ModelResult.Unrecognized);
         }
 
-        var certainty = underlying.Min(evidence => evidence.Certainty);
+        var certainty = underlying.Max(evidence => evidence.Certainty);
         var hostedType = context.ProgramIndex.Types.FirstOrDefault(type => type.Id == shape.DeclaringTypeSymbol);
         if (hostedType is null || string.IsNullOrWhiteSpace(hostedType.MetadataName))
         {
@@ -109,7 +141,7 @@ public sealed class HostedWorkerModel : IFrameworkBehaviorModel
             StartMethod = start?.Id,
             ExecuteMethod = execute?.Id,
             StopMethod = stop?.Id,
-            IsBackgroundService = HasBaseType(shape.DeclaringType, BackgroundServiceType),
+            IsBackgroundService = isBackgroundService,
             CancellationParameterName = (execute ?? start ?? stop)?.Parameters
                 .FirstOrDefault(parameter => parameter.FullyQualifiedType == CancellationTokenType)?.Name,
             Evidence = evidence,
@@ -119,8 +151,7 @@ public sealed class HostedWorkerModel : IFrameworkBehaviorModel
     }
 
     private static bool IsHostedType(FrameworkTypeShape type)
-        => type.Interfaces.Any(IsHostedService)
-            || HasBaseType(type, BackgroundServiceType);
+        => type.Interfaces.Any(IsHostedService) || HasBaseType(type, BackgroundServiceType);
 
     private static bool IsHostedService(FrameworkTypeIdentity type)
         => type.AssemblyIdentity == HostingAssembly
@@ -134,6 +165,16 @@ public sealed class HostedWorkerModel : IFrameworkBehaviorModel
     private static bool IsStartMethod(ProgramMethod method) => IsLifecycleMethod(method, "StartAsync");
     private static bool IsExecuteMethod(ProgramMethod method) => IsLifecycleMethod(method, "ExecuteAsync");
     private static bool IsStopMethod(ProgramMethod method) => IsLifecycleMethod(method, "StopAsync");
+
+    private static bool IsHostedServiceRegistration(FrameworkMethodIdentity? identity)
+        => identity is not null
+            && identity.AssemblyIdentity == HostingAssembly
+            && identity.ContainingMetadataType == HostingRegistrationType
+            && identity.MethodMetadataName == "AddHostedService"
+            && identity.GenericArity == 1
+            && identity.Parameters.Length == 1
+            && identity.Parameters[0] == new ParameterIdentityDescriptor(ParameterRefKind.None, ServiceCollectionType)
+            && identity.ReturnType == ServiceCollectionType;
 
     private static bool IsLifecycleMethod(ProgramMethod method, string name)
         => method.Name == name

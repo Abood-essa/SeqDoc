@@ -25,7 +25,7 @@ public sealed class HostedWorkerAndSchedulerModelTests
 
         var fact = Assert.Single(result.Facts.OfType<HostedWorkerLifecycleFact>());
         Assert.Equal(Method("StartAsync"), fact.StartMethod);
-        Assert.Equal(Method("ExecuteAsync"), fact.ExecuteMethod);
+        Assert.Null(fact.ExecuteMethod);
         Assert.Equal(Method("StopAsync"), fact.StopMethod);
         Assert.Equal(Method("StartAsync"), fact.RootMethod);
         Assert.Equal("cancellationToken", fact.CancellationParameterName);
@@ -105,12 +105,36 @@ public sealed class HostedWorkerAndSchedulerModelTests
             new FrameworkAnalysisContext(Profile, WorkerIndex(withHostedContract: true)),
             CancellationToken.None);
 
-        Assert.False(result.Recognized);
+        Assert.True(result.Recognized);
         Assert.Empty(result.Facts);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "SEQWRK001");
+    }
+
+    [Fact]
+    public async Task TimerFactRetainsWeakestContributorCertainty()
+    {
+        var operation = new OperationDescriptor(
+            new OperationId("operation:timer-conservative"),
+            Method("ExecuteAsync"),
+            "ObjectCreation",
+            DocumentId,
+            80,
+            30,
+            [SourceEvidenceWithCertainty("timer-conservative", CertaintyLevel.Conservative)],
+            CertaintyLevel.Conservative,
+            TimerConstructor,
+            CallbackTarget: new CallbackTargetDescriptor(Method("RunJob"), null));
+
+        var result = await new SchedulerModel().AnalyzeOperationAsync(
+            operation,
+            new FrameworkAnalysisContext(Profile, WorkerIndex(withHostedContract: true)),
+            CancellationToken.None);
+
+        Assert.Equal(CertaintyLevel.Conservative, Assert.Single(result.Facts.OfType<SchedulerJobFact>()).Certainty);
     }
 
     private static readonly FrameworkMethodIdentity TimerConstructor = new(
-        "System.Threading",
+        "System.Runtime",
         "System.Threading.Timer",
         ".ctor",
         0,
@@ -206,6 +230,9 @@ public sealed class HostedWorkerAndSchedulerModelTests
     private static readonly DocumentId DocumentId = new("document:HostedWorkers.Worker");
 
     private static EvidenceRef SourceEvidence(string subject)
+        => SourceEvidenceWithCertainty(subject, CertaintyLevel.Exact);
+
+    private static EvidenceRef SourceEvidenceWithCertainty(string subject, CertaintyLevel certainty)
         => new(
             new EvidenceId($"evidence:{subject}"),
             EvidenceKind.Source,
@@ -213,5 +240,5 @@ public sealed class HostedWorkerAndSchedulerModelTests
             new SourceRange(DocumentId, new SourcePosition(1, 0), new SourcePosition(1, 10)),
             subject,
             null,
-            CertaintyLevel.Exact);
+            certainty);
 }

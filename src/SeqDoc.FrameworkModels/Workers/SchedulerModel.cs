@@ -35,10 +35,29 @@ public sealed class SchedulerModel : IFrameworkBehaviorModel
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!IsTimerConstructor(operation.TargetIdentity)
-            || operation.CallbackTarget is not { Kind: CallbackTargetKind.MethodGroup, TargetMethod: { } job })
+        if (!IsTimerType(operation.TargetIdentity))
         {
             return ValueTask.FromResult(ModelResult.Unrecognized);
+        }
+
+        if (!IsTimerConstructor(operation.TargetIdentity))
+        {
+            return ValueTask.FromResult(new ModelResult(
+                true,
+                diagnostics: ImmutableArray.Create(WorkerModelDiagnostics.UnsupportedTimerCallback(
+                    context.Profile.Id,
+                    operation.Id,
+                    "uses an unsupported overload"))));
+        }
+
+        if (operation.CallbackTarget is not { Kind: CallbackTargetKind.MethodGroup, TargetMethod: { } job })
+        {
+            return ValueTask.FromResult(new ModelResult(
+                true,
+                diagnostics: ImmutableArray.Create(WorkerModelDiagnostics.UnsupportedTimerCallback(
+                    context.Profile.Id,
+                    operation.Id,
+                    "is not an exact source method group"))));
         }
 
         var callback = context.ProgramIndex.Methods.FirstOrDefault(method => method.Id == job);
@@ -50,7 +69,7 @@ public sealed class SchedulerModel : IFrameworkBehaviorModel
         var underlying = operation.Evidence.Concat(callback.Evidence)
             .DistinctBy(evidence => evidence.Id.Value)
             .ToImmutableArray();
-        var certainty = underlying.Min(evidence => evidence.Certainty);
+        var certainty = underlying.Max(evidence => evidence.Certainty);
         var evidenceId = StableIdentity.CreateEvidenceIdV2(new EvidenceIdentityDescriptor(
             EvidenceKind.FrameworkModel,
             $"{Descriptor.ModelId}:{Descriptor.Version}",
@@ -96,8 +115,7 @@ public sealed class SchedulerModel : IFrameworkBehaviorModel
 
     private static bool IsTimerConstructor(FrameworkMethodIdentity? identity)
         => identity is not null
-            && identity.AssemblyIdentity == "System.Threading"
-            && identity.ContainingMetadataType == "System.Threading.Timer"
+            && IsTimerType(identity)
             && identity.MethodMetadataName == ".ctor"
             && identity.GenericArity == 0
             && identity.Parameters.Length == 4
@@ -106,4 +124,10 @@ public sealed class SchedulerModel : IFrameworkBehaviorModel
             && identity.Parameters[2] == new ParameterIdentityDescriptor(ParameterRefKind.None, "System.TimeSpan")
             && identity.Parameters[3] == new ParameterIdentityDescriptor(ParameterRefKind.None, "System.TimeSpan")
             && (identity.ReturnType is null or "System.Void");
+
+    private static bool IsTimerType(FrameworkMethodIdentity? identity)
+        => identity is not null
+            && identity.AssemblyIdentity is "System.Runtime" or "System.Private.CoreLib"
+            && identity.ContainingMetadataType == "System.Threading.Timer"
+            && identity.MethodMetadataName == ".ctor";
 }

@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using SeqDoc.Core.Diagnostics;
+using SeqDoc.Core.Identity;
 
 namespace SeqDoc.Core.Frameworks;
 
@@ -72,4 +73,6 @@ public sealed record FrameworkAnalysisResult(
     ImmutableArray<SuppressionHint> SuppressionHints,
     ImmutableArray<MethodSummaryRule> SummaryRules,
     ImmutableArray<AnalysisDiagnostic> Diagnostics,
-    ImmutableArray<FrameworkModelDescriptor> AppliedModels);
+    ImmutableArray<FrameworkModelDescriptor> AppliedModels,
+    CompilationProfileId? ProfileId = null,
+    string? ProgramIndexFingerprint = null);
