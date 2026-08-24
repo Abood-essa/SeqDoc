@@ -267,6 +267,12 @@ public sealed record LoopNode(
 {
     private ImmutableArray<int> _bodyBlockOrdinals;
 
+    /// <summary>Compiler-proven source loop shape; Unknown is retained when lowering hides it.</summary>
+    public ExtractedOperationKind LoopKind { get; init; } = ExtractedOperationKind.Unknown;
+
+    /// <summary>Compiler-proven presence of an await operation in the loop body.</summary>
+    public bool ContainsAwait { get; init; }
+
     /// <summary>Canonical compiler block ordinals for loop members, excluding the header.</summary>
     public ImmutableArray<int> BodyBlockOrdinals
     {

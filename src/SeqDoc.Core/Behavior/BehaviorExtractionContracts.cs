@@ -203,7 +203,8 @@ public sealed record ExtractedBasicBlock(
     ImmutableArray<FlowRegionId> EnteringRegions,
     ImmutableArray<FlowRegionId> LeavingRegions,
     ImmutableArray<EvidenceRef> Evidence,
-    CertaintyLevel Certainty);
+    CertaintyLevel Certainty,
+    ExtractedOperationKind LoopKind = ExtractedOperationKind.Unknown);
 
 /// <summary>Describes one exception or control-flow region in a method body.</summary>
 public sealed record ExtractedExceptionRegion(

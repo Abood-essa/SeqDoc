@@ -1601,7 +1601,8 @@ internal static class RoslynBehaviorExtractor
                 enteringRegions,
                 leavingRegions,
                 evidence,
-                CertaintyLevel.Exact));
+                CertaintyLevel.Exact,
+                ResolveLoopKind(block)));
         }
 
         var locals = CollectLocals(bodyOperation)
@@ -4280,13 +4281,50 @@ internal static class RoslynBehaviorExtractor
         {
             LoopKind.For => ExtractedOperationKind.ForLoop,
             LoopKind.ForEach => ExtractedOperationKind.ForEachLoop,
-            _ => ExtractedOperationKind.WhileLoop,
+            LoopKind.While => ExtractedOperationKind.WhileLoop,
+            LoopKind.DoWhile => ExtractedOperationKind.DoWhileLoop,
+            _ => ExtractedOperationKind.Unknown,
         },
         ILockOperation => ExtractedOperationKind.Lock,
         IUsingOperation => ExtractedOperationKind.Using,
         IEndOperation => ExtractedOperationKind.End,
         _ => ExtractedOperationKind.Unknown,
     };
+
+    private static ExtractedOperationKind ResolveLoopKind(BasicBlock block)
+    {
+        foreach (var operation in block.Operations.Append(block.BranchValue).Where(operation => operation is not null))
+        {
+            for (var current = operation; current is not null; current = current.Parent)
+            {
+                if (current is ILoopOperation loop)
+                {
+                    return MapKind(loop);
+                }
+            }
+
+            var loopSyntax = operation.Syntax?
+                .AncestorsAndSelf()
+                .FirstOrDefault(syntax => syntax is ForStatementSyntax
+                    or ForEachStatementSyntax
+                    or ForEachVariableStatementSyntax
+                    or WhileStatementSyntax
+                    or DoStatementSyntax);
+            if (loopSyntax is not null)
+            {
+                return loopSyntax switch
+                {
+                    ForStatementSyntax => ExtractedOperationKind.ForLoop,
+                    ForEachStatementSyntax or ForEachVariableStatementSyntax => ExtractedOperationKind.ForEachLoop,
+                    WhileStatementSyntax => ExtractedOperationKind.WhileLoop,
+                    DoStatementSyntax => ExtractedOperationKind.DoWhileLoop,
+                    _ => ExtractedOperationKind.Unknown,
+                };
+            }
+        }
+
+        return ExtractedOperationKind.Unknown;
+    }
 
     private static ExtractedRegionKind MapRegionKind(ControlFlowRegionKind kind) => kind switch
     {

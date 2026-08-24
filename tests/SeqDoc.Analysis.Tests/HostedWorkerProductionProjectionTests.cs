@@ -4,7 +4,9 @@ using SeqDoc.Analysis.Scenarios;
 using SeqDoc.Application.Analysis;
 using SeqDoc.Application.Documentation;
 using SeqDoc.Core.Frameworks;
+using SeqDoc.Core.Behavior;
 using SeqDoc.Core.Identity;
+using SeqDoc.Core.ScenarioGraph;
 using SeqDoc.Core.Semantics;
 using SeqDoc.FrameworkModels;
 using SeqDoc.FrameworkModels.Workers;
@@ -121,6 +123,13 @@ public sealed class HostedWorkerProductionProjectionTests
             graphs.Graphs,
             item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker
                 && item.OperationKey.Contains("UnregisteredWorker", StringComparison.Ordinal));
+        var lookalikeCancellationGraph = Assert.Single(
+            graphs.Graphs,
+            item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker
+                && item.OperationKey.Contains("LookalikeCancellationWorker", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            lookalikeCancellationGraph.Nodes,
+            node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.CancellationCheck);
         var documentation = DocumentationPlanner.Plan(graph);
         var wording = documentation.Wording.Phrases.Select(phrase => phrase.Text).ToArray();
         Assert.Contains(wording, phrase => phrase.Contains("registers a timer callback", StringComparison.Ordinal));
@@ -130,6 +139,28 @@ public sealed class HostedWorkerProductionProjectionTests
         Assert.DoesNotContain(wording, phrase => phrase.Contains("invokes", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(wording, phrase => phrase.Contains("completed", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(wording, phrase => phrase.Contains("success", StringComparison.OrdinalIgnoreCase));
+
+        var workerControlNodes = graphs.Graphs
+            .Where(item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker)
+            .SelectMany(item => item.Nodes)
+            .Where(node => node.Presentation?.HostedWorkerControlKind is not null)
+            .ToArray();
+        Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.PollingLoop);
+        Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.BatchLoop);
+        Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.RetryLoop);
+        Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.CancellationCheck);
+        var controlWording = graphs.Graphs
+            .Where(item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker)
+            .SelectMany(item => DocumentationPlanner.Plan(item).Wording.Phrases)
+            .Select(phrase => phrase.Text)
+            .ToArray();
+        Assert.Contains(controlWording, phrase => phrase.Contains("repeats awaited polling work", StringComparison.Ordinal));
+        Assert.Contains(controlWording, phrase => phrase.Contains("processes items in a batch loop", StringComparison.Ordinal));
+        Assert.Contains(controlWording, phrase => phrase.Contains("retries work across a compiler-proven loop boundary", StringComparison.Ordinal));
+        Assert.Contains(controlWording, phrase => phrase.Contains("checks its cancellation token", StringComparison.Ordinal));
+        Assert.DoesNotContain(controlWording, phrase => phrase.Contains("eventually", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(controlWording, phrase => phrase.Contains("succeeds", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(controlWording, phrase => phrase.Contains("completed", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string FindRepositoryRoot()

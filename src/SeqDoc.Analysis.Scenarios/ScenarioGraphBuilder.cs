@@ -2576,6 +2576,180 @@ public static class ScenarioGraphBuilder
                 ordinal,
                 Combine(entry.Evidence, scheduler.Evidence)));
         }
+
+        AddHostedWorkerControlFlow(request, entry, nodes, edges);
+    }
+
+    private static void AddHostedWorkerControlFlow(
+        ScenarioAnalysisRequest request,
+        NormalizedEntry entry,
+        List<ScenarioNode> nodes,
+        List<ScenarioEdge> edges)
+    {
+        var worker = entry.HostedWorker!;
+        var methods = new[] { worker.StartMethod, worker.ExecuteMethod, worker.StopMethod }
+            .Where(method => method is not null)
+            .Select(method => method!.Value)
+            .Distinct()
+            .ToArray();
+        var sequenceOrdinal = nodes.Count == 0 ? 0 : nodes.Max(node => node.SequenceOrdinal) + 1;
+        foreach (var method in methods)
+        {
+            var flows = request.Behavior.MethodFlows
+                .Where(flow => flow.Method == method)
+                .Where(flow => request.Behavior.Profile.Id == request.Profile.Id
+                    && string.Equals(request.Behavior.ProgramIndexFingerprint, request.ProgramIndex.IndexFingerprint, StringComparison.Ordinal))
+                .OrderBy(flow => flow.FlowFingerprint, StringComparer.Ordinal)
+                .ToArray();
+            if (flows.Length != 1)
+            {
+                continue;
+            }
+
+            var flow = flows[0];
+            foreach (var loop in flow.Nodes.OfType<LoopNode>().OrderBy(loop => loop.Id.Value, StringComparer.Ordinal))
+            {
+                var classification = ClassifyWorkerLoop(flow, loop);
+                if (classification is null)
+                {
+                    continue;
+                }
+
+                var source = nodes.LastOrDefault(node => node.Method == method)
+                    ?? nodes.First(node => node.Kind == ScenarioNodeKind.Action);
+                var detail = classification.Kind switch
+                {
+                    HostedWorkerControlKind.PollingLoop => "polling loop",
+                    HostedWorkerControlKind.BatchLoop => "batch loop",
+                    HostedWorkerControlKind.RetryLoop => "retry loop",
+                    _ => throw new InvalidOperationException("An impossible worker loop kind was encountered."),
+                };
+                var node = CreateNodeWithPresentation(
+                    request.Profile.Id,
+                    entry.EntryPointId,
+                    ScenarioNodeKind.MethodCall,
+                    $"worker-control:{classification.Kind}:{loop.Id.Value}",
+                    method,
+                    classification.Operation,
+                    detail,
+                    new ScenarioNodePresentation(
+                        TargetContainingTypeName: worker.HostedTypeName,
+                        TargetMemberName: detail,
+                        HostedWorkerTypeName: worker.HostedTypeName,
+                        ActionKind: ScenarioActionKind.HostedWorker,
+                        HostedWorkerControlKind: classification.Kind),
+                    classification.Evidence,
+                    classification.Evidence.Max(item => item.Certainty),
+                    sequenceOrdinal++);
+                nodes.Add(node);
+                edges.Add(CreateEdge(
+                    request.Profile.Id,
+                    entry.EntryPointId,
+                    source,
+                    node,
+                    ScenarioEdgeKind.Call,
+                    detail,
+                    classification.Evidence,
+                    classification.Evidence.Max(item => item.Certainty),
+                    sequenceOrdinal));
+            }
+
+            var programMethod = request.ProgramIndex.Methods.SingleOrDefault(candidate => candidate.Id == method);
+            if (programMethod is null
+                || !programMethod.Parameters.Any(parameter => parameter.FullyQualifiedType == "System.Threading.CancellationToken"))
+            {
+                continue;
+            }
+
+            foreach (var invocation in flow.Nodes
+                         .OfType<InvocationFlowNode>()
+                         .Where(IsCancellationCheck)
+                         .OrderBy(invocation => invocation.Id.Value, StringComparer.Ordinal))
+            {
+                var source = nodes.LastOrDefault(node => node.Method == method)
+                    ?? nodes.First(node => node.Kind == ScenarioNodeKind.Action);
+                var evidence = Combine(invocation.Evidence, flow.Regions
+                    .Where(region => region.Nodes.Contains(invocation.Id))
+                    .SelectMany(region => region.Evidence)
+                    .ToImmutableArray());
+                var node = CreateNodeWithPresentation(
+                    request.Profile.Id,
+                    entry.EntryPointId,
+                    ScenarioNodeKind.MethodCall,
+                    $"worker-control:cancellation:{invocation.Operation.Value}",
+                    method,
+                    invocation.Operation,
+                    "cancellation check",
+                    new ScenarioNodePresentation(
+                        TargetContainingTypeName: worker.HostedTypeName,
+                        TargetMemberName: "cancellation check",
+                        HostedWorkerTypeName: worker.HostedTypeName,
+                        ActionKind: ScenarioActionKind.HostedWorker,
+                        HostedWorkerControlKind: HostedWorkerControlKind.CancellationCheck),
+                    evidence,
+                    evidence.Max(item => item.Certainty),
+                    sequenceOrdinal++);
+                nodes.Add(node);
+                edges.Add(CreateEdge(
+                    request.Profile.Id,
+                    entry.EntryPointId,
+                    source,
+                    node,
+                    ScenarioEdgeKind.Call,
+                    "cancellation check",
+                    evidence,
+                    evidence.Max(item => item.Certainty),
+                    sequenceOrdinal));
+            }
+        }
+
+        static bool IsCancellationCheck(InvocationFlowNode invocation)
+            => invocation.TargetAssemblyName is "System.Runtime" or "System.Private.CoreLib"
+                && invocation.TargetContainingTypeName == "System.Threading.CancellationToken"
+                && invocation.TargetMethodName == "ThrowIfCancellationRequested"
+                && !invocation.IsDynamic;
+    }
+
+    private sealed record WorkerLoopClassification(
+        HostedWorkerControlKind Kind,
+        OperationId? Operation,
+        ImmutableArray<EvidenceRef> Evidence);
+
+    private static WorkerLoopClassification? ClassifyWorkerLoop(MethodFlowSnapshot flow, LoopNode loop)
+    {
+        var members = flow.Nodes
+            .Where(node => loop.Body.Contains(node.Id) || node.Id == loop.Header)
+            .ToArray();
+        var catchRegions = flow.Regions
+            .Where(region => region.Kind == FlowRegionKind.Catch
+                && region.Nodes.Any(node => loop.Body.Contains(node)))
+            .ToArray();
+        var hasLoopBack = flow.Edges.Any(edge => edge.Kind == FlowEdgeKind.LoopBack
+            && edge.Target == loop.Header
+            && loop.Body.Contains(edge.Source));
+        var operation = members.OfType<OperationFlowNode>().FirstOrDefault();
+        var operationKind = loop.LoopKind;
+        var awaited = loop.ContainsAwait;
+        HostedWorkerControlKind? kind = catchRegions.Length > 0 && hasLoopBack
+            ? HostedWorkerControlKind.RetryLoop
+            : operationKind == ExtractedOperationKind.ForEachLoop
+                ? HostedWorkerControlKind.BatchLoop
+                : operationKind is ExtractedOperationKind.WhileLoop or ExtractedOperationKind.DoWhileLoop && awaited
+                    ? HostedWorkerControlKind.PollingLoop
+                    : null;
+        if (kind is null)
+        {
+            return null;
+        }
+
+        var evidence = Combine(
+            loop.Evidence,
+            members.SelectMany(node => node.Evidence).ToImmutableArray(),
+            catchRegions.SelectMany(region => region.Evidence).ToImmutableArray(),
+            flow.Edges.Where(edge => edge.Kind == FlowEdgeKind.LoopBack && (edge.Target == loop.Header || loop.Body.Contains(edge.Source)))
+                .SelectMany(edge => edge.Evidence)
+                .ToImmutableArray());
+        return new WorkerLoopClassification(kind.Value, operation?.Operation, evidence);
     }
 
     private enum SchedulerPlacementKind

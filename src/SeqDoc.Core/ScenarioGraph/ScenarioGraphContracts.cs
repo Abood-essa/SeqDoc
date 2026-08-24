@@ -69,6 +69,15 @@ public enum ScenarioRootKind
     HostedWorker,
 }
 
+/// <summary>Compiler-proven worker control-flow presentations derived from Method Flow topology.</summary>
+public enum HostedWorkerControlKind
+{
+    PollingLoop,
+    BatchLoop,
+    RetryLoop,
+    CancellationCheck,
+}
+
 /// <summary>
 /// One evidence-backed scenario-graph node. The key is the canonical stable identity used to build
 /// the node identity; method and operation anchors are optional per kind. Every node carries
@@ -190,7 +199,8 @@ public sealed record ScenarioNodePresentation(
     string? HostedWorkerStopMethodName = null,
     HostedWorkerLifecycleStep? HostedWorkerLifecycleStep = null,
     string? HostedWorkerCancellationParameterName = null,
-    bool HostedWorkerSchedulerRegistration = false);
+    bool HostedWorkerSchedulerRegistration = false,
+    HostedWorkerControlKind? HostedWorkerControlKind = null);
 
 /// <summary>
 /// One evidence-backed scenario-graph edge connecting two nodes. Every edge carries non-empty

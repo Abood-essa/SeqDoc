@@ -627,7 +627,11 @@ public static class MethodFlowBuilder
                     exits,
                     evidence,
                     CertaintyLevel.Exact,
-                    bodyBlockOrdinals));
+                    bodyBlockOrdinals)
+                {
+                    LoopKind = FindLoopKind(headerOrdinal, loopMembers, blocksByOrdinal),
+                    ContainsAwait = ContainsAwait(body, loopMembers, blocksByOrdinal),
+                });
                 regions.Add(new FlowRegion(
                     loopId,
                     body.Method,
@@ -643,6 +647,54 @@ public static class MethodFlowBuilder
         }
 
         return regions.ToImmutable();
+
+        static ExtractedOperationKind FindLoopKind(
+            int headerOrdinal,
+            HashSet<int> loopMembers,
+            Dictionary<int, ExtractedBasicBlock> blocksByOrdinal)
+            => new[] { headerOrdinal }
+                .Concat(loopMembers.Where(ordinal => ordinal != headerOrdinal).Order())
+                .Select(ordinal => blocksByOrdinal[ordinal].LoopKind)
+                .FirstOrDefault(kind => kind is ExtractedOperationKind.ForLoop
+                    or ExtractedOperationKind.ForEachLoop
+                    or ExtractedOperationKind.WhileLoop
+                    or ExtractedOperationKind.DoWhileLoop);
+
+        static bool ContainsAwait(
+            ExtractedMethodBody body,
+            HashSet<int> loopMembers,
+            Dictionary<int, ExtractedBasicBlock> blocksByOrdinal)
+        {
+            var rootOperationIds = loopMembers
+                .SelectMany(ordinal => blocksByOrdinal[ordinal].Operations)
+                .ToHashSet();
+            var operations = body.Operations.ToDictionary(operation => operation.Id);
+
+            return body.Operations.Any(operation =>
+            {
+                if (operation.Kind != ExtractedOperationKind.Await)
+                {
+                    return false;
+                }
+
+                var current = operation;
+                while (true)
+                {
+                    if (rootOperationIds.Contains(current.Id))
+                    {
+                        return true;
+                    }
+
+                    if (current.Parent is not { } parent
+                        || !operations.TryGetValue(parent, out var parentOperation))
+                    {
+                        return false;
+                    }
+
+                    current = parentOperation;
+                }
+            });
+        }
     }
 
     private static Dictionary<int, HashSet<int>> ComputeDominators(

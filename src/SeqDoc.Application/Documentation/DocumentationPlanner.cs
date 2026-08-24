@@ -3291,6 +3291,14 @@ public static class DocumentationPlanner
                 HostedWorkerLifecycleStep.Stop => presentation.HostedWorkerCancellationParameterName is { Length: > 0 } stopParameter
                     ? $"The registered hosted-worker lifecycle includes StopAsync with cancellation parameter evidence: {stopParameter}."
                     : "The registered hosted-worker lifecycle includes StopAsync.",
+                _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.PollingLoop
+                    => "The hosted worker repeats awaited polling work in a loop.",
+                _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.BatchLoop
+                    => "The hosted worker processes items in a batch loop.",
+                _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.RetryLoop
+                    => "The hosted worker retries work across a compiler-proven loop boundary.",
+                _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.CancellationCheck
+                    => "The hosted worker checks its cancellation token.",
                 _ => presentation.HostedWorkerSchedulerRegistration
                     ? "The hosted worker registers a timer callback."
                     : "The hosted worker has an unsupported lifecycle slot.",

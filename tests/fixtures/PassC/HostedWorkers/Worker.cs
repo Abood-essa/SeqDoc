@@ -32,8 +32,70 @@ public sealed class LookalikeWorker : FakeHosting.IHostedService
 
 public sealed class BackgroundWorker : BackgroundService
 {
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (true)
+        {
+            stoppingToken.ThrowIfCancellationRequested();
+            foreach (var item in Array.Empty<int>())
+            {
+                _ = item;
+            }
+
+            await Task.Delay(1, stoppingToken);
+        }
+    }
+}
+
+public sealed class BatchWorker : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        foreach (var item in Array.Empty<int>())
+        {
+            _ = item;
+            await Task.Delay(1, stoppingToken);
+        }
+    }
+}
+
+public sealed class RetryWorker : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                stoppingToken.ThrowIfCancellationRequested();
+                await Task.Delay(1, stoppingToken);
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+            }
+        }
+    }
+}
+
+public sealed class LookalikeCancellationWorker : BackgroundService
+{
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
-        => Task.CompletedTask;
+    {
+        FakeCancellation.ThrowIfCancellationRequested(stoppingToken);
+        return Task.CompletedTask;
+    }
+}
+
+public static class FakeCancellation
+{
+    public static void ThrowIfCancellationRequested(CancellationToken token)
+    {
+    }
 }
 
 // This type proves that framework capability extraction is not registration admission.
