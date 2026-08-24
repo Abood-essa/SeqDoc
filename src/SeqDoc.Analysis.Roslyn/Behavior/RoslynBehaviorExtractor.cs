@@ -4282,7 +4282,6 @@ internal static class RoslynBehaviorExtractor
             LoopKind.For => ExtractedOperationKind.ForLoop,
             LoopKind.ForEach => ExtractedOperationKind.ForEachLoop,
             LoopKind.While => ExtractedOperationKind.WhileLoop,
-            LoopKind.DoWhile => ExtractedOperationKind.DoWhileLoop,
             _ => ExtractedOperationKind.Unknown,
         },
         ILockOperation => ExtractedOperationKind.Lock,
@@ -4293,7 +4292,7 @@ internal static class RoslynBehaviorExtractor
 
     private static ExtractedOperationKind ResolveLoopKind(BasicBlock block)
     {
-        foreach (var operation in block.Operations.Append(block.BranchValue).Where(operation => operation is not null))
+        foreach (var operation in block.Operations.Append(block.BranchValue).OfType<IOperation>())
         {
             for (var current = operation; current is not null; current = current.Parent)
             {
