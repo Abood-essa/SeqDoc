@@ -6,6 +6,7 @@ using SeqDoc.Application.Analysis;
 using SeqDoc.Application.Documentation;
 using SeqDoc.Core.Frameworks;
 using SeqDoc.Core.Behavior;
+using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Identity;
 using SeqDoc.Core.ScenarioGraph;
 using SeqDoc.Core.Semantics;
@@ -131,6 +132,10 @@ public sealed class HostedWorkerProductionProjectionTests
             graphs.Graphs,
             item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker
                 && item.OperationKey.Contains("BackgroundWorker", StringComparison.Ordinal));
+        var reversedBackgroundGraph = Assert.Single(
+            reversedGraphs.Graphs,
+            item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker
+                && item.OperationKey.Contains("BackgroundWorker", StringComparison.Ordinal));
         var backgroundExecute = backgroundGraph.Nodes.Single(node => node.Presentation?.TargetMemberName == "ExecuteAsync");
         Assert.Equal("stoppingToken", backgroundExecute.Presentation!.HostedWorkerCancellationParameterName);
         Assert.Contains(
@@ -201,8 +206,20 @@ public sealed class HostedWorkerProductionProjectionTests
             graphs.Graphs,
             item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker
                 && item.OperationKey.Contains("RetryWorker", StringComparison.Ordinal));
-        Assert.Single(retryGraph.Nodes,
+        var retryContinuation = Assert.Single(retryGraph.Nodes,
             node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.CatchLoopContinuation);
+        var retryPlacement = Assert.Single(retryGraph.Topology.FlowPlacements,
+            placement => placement.ScenarioNode == retryContinuation.Id);
+        Assert.Contains(retryPlacement.Containers,
+            container => retryGraph.Topology.FlowContainers.Any(candidate => candidate.Region == container
+                && candidate.Kind == ScenarioFlowContainerKind.NaturalLoop));
+        Assert.Contains(retryPlacement.Containers,
+            container => retryGraph.Topology.FlowContainers.Any(candidate => candidate.Region == container
+                && candidate.Kind == ScenarioFlowContainerKind.CatchRegion));
+        var retryPlan = DocumentationPlanner.Plan(retryGraph);
+        var retryMessage = Assert.Single(retryPlan.Diagram.Messages,
+            message => message.Label == "catch-to-loop continuation boundary");
+        Assert.Equal(1, FindMessageReferences(retryPlan.Diagram.Sequence).Count(reference => reference == retryMessage.Id));
         Assert.DoesNotContain(DocumentationPlanner.Plan(retryGraph).Wording.Phrases,
             phrase => phrase.Text.Contains("retries work", StringComparison.OrdinalIgnoreCase)
                 || phrase.Text.Contains("retry policy", StringComparison.OrdinalIgnoreCase));
@@ -245,6 +262,8 @@ public sealed class HostedWorkerProductionProjectionTests
             backgroundGraph.Nodes.Where(node => node.Presentation?.HostedWorkerControlKind is not null),
             node => Assert.Contains(backgroundGraph.Topology.FlowPlacements, placement => placement.ScenarioNode == node.Id));
         var backgroundPlan = DocumentationPlanner.Plan(backgroundGraph);
+        Assert.Equal(backgroundPlan.Diagram.DebugProjection,
+            DocumentationPlanner.Plan(reversedBackgroundGraph).Diagram.DebugProjection);
         var loopFragments = FindFragments(backgroundPlan.Diagram.Sequence)
             .Where(fragment => fragment.Kind == SeqDoc.Core.DiagramPlan.DiagramFragmentKind.Loop)
             .ToArray();
@@ -262,6 +281,28 @@ public sealed class HostedWorkerProductionProjectionTests
         var twoSemaphoreGraph = Assert.Single(graphs.Graphs, item => item.OperationKey.Contains("TwoSemaphoreWorker", StringComparison.Ordinal));
         Assert.Equal(2, twoSemaphoreGraph.Nodes.Count(node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.SemaphoreBoundary));
         Assert.Equal(2, DocumentationPlanner.Plan(twoSemaphoreGraph).Diagram.Messages.Count(message => message.Label == "semaphore synchronization boundary"));
+        var pairedSemaphoreNodes = twoSemaphoreGraph.Nodes
+            .Where(node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.SemaphoreBoundary)
+            .ToArray();
+        Assert.All(pairedSemaphoreNodes, node =>
+        {
+            Assert.NotEmpty(node.Evidence);
+            Assert.NotEqual(CertaintyLevel.Unknown, node.Certainty);
+            Assert.Contains(twoSemaphoreGraph.Topology.FlowPlacements, placement => placement.ScenarioNode == node.Id);
+        });
+
+        foreach (var negativeSemaphoreWorker in new[]
+        {
+            "LoneAcquireWorker", "LoneReleaseWorker", "UnsupportedSemaphoreWorker", "MismatchedLoopSemaphoreWorker",
+        })
+        {
+            var negativeGraph = Assert.Single(
+                graphs.Graphs,
+                item => item.OperationKey.Contains(negativeSemaphoreWorker, StringComparison.Ordinal));
+            Assert.DoesNotContain(negativeGraph.Nodes,
+                node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.SemaphoreBoundary);
+            Assert.Contains(negativeGraph.Diagnostics, diagnostic => diagnostic.Code == "SC-WORKER-UNSUPPORTED-PLACEMENT");
+        }
 
         var guardedGraph = Assert.Single(graphs.Graphs, item => item.OperationKey.Contains("GuardedWorker", StringComparison.Ordinal));
         var guardedCancellation = Assert.Single(guardedGraph.Nodes, node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.CancellationCheck);
@@ -270,6 +311,19 @@ public sealed class HostedWorkerProductionProjectionTests
         var guardedPlan = DocumentationPlanner.Plan(guardedGraph);
         Assert.Contains(FindFragments(guardedPlan.Diagram.Sequence), fragment => fragment.Kind == SeqDoc.Core.DiagramPlan.DiagramFragmentKind.Opt
             && fragment.MessageRefs.Any(reference => guardedPlan.Diagram.Messages.Any(message => message.Id == reference && message.Label == "cancellation check")));
+        var terminalControls = graphs.Graphs
+            .SelectMany(item => item.Nodes)
+            .Where(node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.TerminalOutcome)
+            .ToArray();
+        Assert.NotEmpty(terminalControls);
+        Assert.All(terminalControls, terminal =>
+        {
+            var placement = Assert.Single(
+                graphs.Graphs.SelectMany(graphItem => graphItem.Topology.FlowPlacements),
+                candidate => candidate.ScenarioNode == terminal.Id);
+            Assert.NotNull(placement.Anchor);
+            Assert.NotEmpty(placement.Evidence);
+        });
     }
 
     private static IEnumerable<SeqDoc.Core.DiagramPlan.DiagramFragment> FindFragments(SeqDoc.Core.DiagramPlan.DiagramSequence sequence)

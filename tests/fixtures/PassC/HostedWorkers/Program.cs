@@ -14,4 +14,8 @@ builder.Services.AddHostedService<HostedWorkers.UnrelatedCatchWorker>();
 builder.Services.AddHostedService<HostedWorkers.LambdaAwaitWorker>();
 builder.Services.AddHostedService<HostedWorkers.UnsupportedLoopWorker>();
 builder.Services.AddHostedService<HostedWorkers.TwoSemaphoreWorker>();
+builder.Services.AddHostedService<HostedWorkers.LoneAcquireWorker>();
+builder.Services.AddHostedService<HostedWorkers.LoneReleaseWorker>();
+builder.Services.AddHostedService<HostedWorkers.UnsupportedSemaphoreWorker>();
+builder.Services.AddHostedService<HostedWorkers.MismatchedLoopSemaphoreWorker>();
 builder.Services.AddHostedService<HostedWorkers.GuardedWorker>();

@@ -4328,13 +4328,11 @@ internal static class RoslynBehaviorExtractor
 
         var loops = body.DescendantsAndSelf()
             .OfType<ILoopOperation>()
-            .Where(loop => loop.Syntax is not null)
-            .OrderBy(loop => loop.Syntax!.Span.Length)
-            .ThenBy(loop => loop.Syntax!.Span.Start)
             .ToArray();
         // The kind comes from an exact Roslyn ILoopOperation. The CFG backedge supplies the
-        // natural-loop header identity; syntax is used only to associate that already-admitted
-        // compiler operation with its header, never to classify a loop by nearest ancestry.
+        // natural-loop header identity. The association below uses exact compiler loop anchors;
+        // syntax equality is only a deterministic bridge when Roslyn materializes distinct CFG
+        // operation instances, never ancestry or a nearest enclosing loop.
         var result = new Dictionary<int, ExtractedOperationKind>();
         var ambiguousHeaders = new HashSet<int>();
         foreach (var source in blocks)
@@ -4351,15 +4349,20 @@ internal static class RoslynBehaviorExtractor
                     continue;
                 }
 
-                var headerOperations = target.Operations.Append(target.BranchValue).OfType<IOperation>()
-                    .Select(operation => operation.Syntax)
-                    .Where(syntax => syntax is not null)
-                    .Select(syntax => syntax!.Span)
+                var headerOperations = target.Operations.Append(target.BranchValue)
+                    .OfType<IOperation>()
                     .ToArray();
-                var loop = loops.FirstOrDefault(candidate => headerOperations.Any(span => candidate.Syntax!.Span.Contains(span)));
-                if (loop is not null)
+                var candidates = loops
+                    .Where(loop => headerOperations.Any(operation =>
+                        LoopHeaderAnchors(loop).Any(anchor =>
+                            ReferenceEquals(anchor, operation)
+                            || (anchor.Syntax is { } anchorSyntax
+                                && operation.Syntax is { } operationSyntax
+                                && ReferenceEquals(anchorSyntax, operationSyntax)))))
+                    .ToArray();
+                if (candidates.Length == 1)
                 {
-                    var kind = MapKind(loop);
+                    var kind = MapKind(candidates[0]);
                     if (result.TryGetValue(target.Ordinal, out var existing) && existing != kind)
                     {
                         ambiguousHeaders.Add(target.Ordinal);
@@ -4368,6 +4371,10 @@ internal static class RoslynBehaviorExtractor
                     {
                         result[target.Ordinal] = kind;
                     }
+                }
+                else if (candidates.Length > 1)
+                {
+                    ambiguousHeaders.Add(target.Ordinal);
                 }
             }
         }
@@ -4378,6 +4385,29 @@ internal static class RoslynBehaviorExtractor
         }
 
         return result;
+
+        static IEnumerable<IOperation> LoopHeaderAnchors(ILoopOperation loop)
+        {
+            if (loop is IWhileLoopOperation whileLoop && whileLoop.Condition is { } whileCondition)
+            {
+                yield return whileCondition;
+            }
+            else if (loop is IForLoopOperation forLoop)
+            {
+                if (forLoop.Condition is { } forCondition)
+                {
+                    yield return forCondition;
+                }
+            }
+            else if (loop is IForEachLoopOperation forEachLoop)
+            {
+                yield return forEachLoop.Collection;
+            }
+            else if (loop is IForToLoopOperation forToLoop)
+            {
+                yield return forToLoop.LimitValue;
+            }
+        }
     }
 
     private static int? ResolveDirectParameterOrdinal(IOperation? receiver)

@@ -1017,7 +1017,13 @@ public static class DocumentationPlanner
         }
         else if (hasWorkerFlowTopology)
         {
-            sequence = BuildHostedWorkerFlowSequence(graph, messages, orderedMessageRefs);
+            var hostedSequence = BuildHostedWorkerFlowSequence(graph, messages, orderedMessageRefs);
+            sequence = hostedSequence.Sequence;
+            diagnostics = diagnostics.AddRange(hostedSequence.Diagnostics);
+            if (!hostedSequence.WithheldRefs.IsDefaultOrEmpty)
+            {
+                messages.RemoveAll(message => hostedSequence.WithheldRefs.Contains(message.Id));
+            }
         }
         else if (hasHandlerTopology)
         {
@@ -1232,19 +1238,33 @@ public static class DocumentationPlanner
     /// tree. Automatic loop inference is intentionally absent: raw LoopNode facts are never mapped
     /// to Mermaid loops here.
     /// </summary>
-    private static DiagramSequence BuildHostedWorkerFlowSequence(
+    private static (DiagramSequence Sequence, ImmutableArray<DiagramPlanDiagnostic> Diagnostics,
+        ImmutableArray<DiagramPlanElementId> WithheldRefs) BuildHostedWorkerFlowSequence(
         ScenarioGraph graph,
         List<DiagramMessage> messages,
         List<(ScenarioNodeId Node, DiagramPlanElementId Ref)> orderedMessageRefs)
     {
+        var validation = ValidateHostedWorkerTopology(graph, orderedMessageRefs);
+        if (validation is not null)
+        {
+            return (DiagramSequence.Empty, [validation],
+                orderedMessageRefs.Select(item => item.Ref).ToImmutableArray());
+        }
+
         var referenceByNode = orderedMessageRefs
             .GroupBy(item => item.Node)
-            .ToDictionary(group => group.Key, group => group.First().Ref);
+            .ToDictionary(group => group.Key, group => group
+                .OrderBy(item => item.Ref.Value, StringComparer.Ordinal)
+                .First().Ref);
         var orderByNode = orderedMessageRefs
             .Select((item, index) => (item.Node, Index: index))
             .ToDictionary(item => item.Node, item => item.Index);
-        var placementsByNode = graph.Topology.FlowPlacements.ToDictionary(item => item.ScenarioNode);
-        var containers = graph.Topology.FlowContainers.ToDictionary(item => item.Region);
+        var placementsByNode = graph.Topology.FlowPlacements
+            .OrderBy(item => item.ScenarioNode.Value, StringComparer.Ordinal)
+            .ToDictionary(item => item.ScenarioNode);
+        var containers = graph.Topology.FlowContainers
+            .OrderBy(item => item.Region.Value, StringComparer.Ordinal)
+            .ToDictionary(item => item.Region);
 
         DiagramFragment? BuildFragment(ScenarioFlowContainer container)
         {
@@ -1360,13 +1380,13 @@ public static class DocumentationPlanner
             rootElements.Add((order, DiagramSequenceElement.Fragment(fragment)));
         }
 
-        return new DiagramSequence(rootElements
+        return (new DiagramSequence(rootElements
             .OrderBy(item => item.Order)
             .ThenBy(item => item.Element.IsMessageRef
                 ? item.Element.MessageRefId!.Value.Value
                 : item.Element.NestedFragment!.Key, StringComparer.Ordinal)
             .Select(item => item.Element)
-            .ToImmutableArray());
+            .ToImmutableArray()), [], []);
 
         static int FragmentOrder(
             DiagramFragment fragment,
@@ -1378,8 +1398,73 @@ public static class DocumentationPlanner
                 .Where(node => orderByNode.ContainsKey(node))
                 .Select(node => orderByNode[node])
                 .Concat(fragment.Fragments.Select(nested => FragmentOrder(nested, orderByNode, referenceByNode, placementsByNode)))
-                .DefaultIfEmpty(int.MaxValue)
-                .Min();
+            .DefaultIfEmpty(int.MaxValue)
+            .Min();
+    }
+
+    private static DiagramPlanDiagnostic? ValidateHostedWorkerTopology(
+        ScenarioGraph graph,
+        IReadOnlyList<(ScenarioNodeId Node, DiagramPlanElementId Ref)> orderedMessageRefs)
+    {
+        var topology = graph.Topology;
+        var containers = topology.FlowContainers;
+        var placements = topology.FlowPlacements;
+        var containerIds = containers.Select(container => container.Region).ToArray();
+        var placementIds = placements.Select(placement => placement.ScenarioNode).ToArray();
+        var nodeIds = graph.Nodes.Select(node => node.Id).ToHashSet();
+        var armIds = topology.Arms.Select(arm => arm.Id).ToHashSet();
+        var containerSet = containerIds.ToHashSet();
+
+        var invalid = containerIds.GroupBy(id => id).Any(group => group.Count() != 1)
+            || placementIds.GroupBy(id => id).Any(group => group.Count() != 1)
+            || placements.Any(placement => !nodeIds.Contains(placement.ScenarioNode)
+                || graph.Nodes.Count(node => node.Id == placement.ScenarioNode) != 1
+                || !graph.Nodes.First(node => node.Id == placement.ScenarioNode).Method.Equals(placement.Method)
+                || placement.Containers.Distinct().Count() != placement.Containers.Length
+                || placement.Containers.Any(container => !containerSet.Contains(container))
+                || placement.GuardArms.Any(arm => !armIds.Contains(arm)))
+            || containers.Any(container => !graph.Nodes.Any(node => node.Method == container.Method)
+                || container.Parent == container.Region
+                || (container.Parent is { } parent && !containerSet.Contains(parent)))
+            || HasContainerCycle(containers);
+        if (!invalid)
+        {
+            invalid = orderedMessageRefs.Any(item => !nodeIds.Contains(item.Node));
+        }
+
+        return invalid
+            ? new DiagramPlanDiagnostic(
+                StableIdentity.CreateDiagnosticId(new DiagnosticIdentityDescriptor(
+                    "DP-WORKER-INVALID-TOPOLOGY", AnalysisStage.CommandLine, graph.Profile,
+                    graph.EntryPoint.Value, 0)),
+                "DP-WORKER-INVALID-TOPOLOGY",
+                "The hosted-worker topology was withheld because its container or placement contract is invalid.",
+                OperationKey(graph))
+            : null;
+
+        static bool HasContainerCycle(ImmutableArray<ScenarioFlowContainer> containers)
+        {
+            var byId = containers.ToDictionary(container => container.Region);
+            foreach (var container in containers)
+            {
+                var visited = new HashSet<FlowRegionId>();
+                var current = container;
+                while (current.Parent is { } parent)
+                {
+                    if (!visited.Add(current.Region))
+                    {
+                        return true;
+                    }
+                    if (!byId.TryGetValue(parent, out var parentContainer))
+                    {
+                        break;
+                    }
+                    current = parentContainer;
+                }
+            }
+
+            return false;
+        }
     }
 
     private static (DiagramSequence Sequence, ImmutableArray<DiagramPlanDiagnostic> Diagnostics, ImmutableArray<DiagramPlanElementId> WithheldRefs) BuildFragmentSequence(

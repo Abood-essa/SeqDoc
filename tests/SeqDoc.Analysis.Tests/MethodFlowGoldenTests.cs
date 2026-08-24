@@ -217,6 +217,46 @@ public sealed class MethodFlowGoldenTests
                 && type.MetadataName.EndsWith("CardPaymentProcessor", StringComparison.Ordinal)));
     }
 
+    [Fact]
+    public async Task HostedWorkerLoopsRetainDistinctCompilerHeadersAndFailClosedUnsupportedShapes()
+    {
+        var root = FindRepositoryRoot();
+        const string relativePath = "tests/fixtures/PassC/HostedWorkers/HostedWorkers.csproj";
+        var profile = CompilationProfile.Create(relativePath, "Release", "net10.0");
+        var result = await new RoslynProfileAnalysisExtractor().ExtractAsync(
+            new CompilationAnalysisRequest(
+                root,
+                Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar)),
+                profile),
+            CancellationToken.None);
+        Assert.True(result.IsSuccess, string.Join(Environment.NewLine, result.Diagnostics.Select(item => item.TechnicalCause)));
+        var analyzed = await new BehaviorAnalyzer().AnalyzeAsync(
+            new BehaviorAnalysisRequest(result.Value!.ProgramIndex, result.Value.BehaviorInput),
+            CancellationToken.None);
+        Assert.True(analyzed.IsSuccess);
+        var names = result.Value.ProgramIndex.Methods.ToDictionary(method => method.Id, method => method.Name);
+        var containingTypes = result.Value.ProgramIndex.Methods.ToDictionary(
+            method => method.Id,
+            method => result.Value.ProgramIndex.Types.Single(type => type.Id == method.ContainingType).MetadataName);
+        var background = analyzed.Value!.MethodFlows.Single(flow => containingTypes[flow.Method] == "HostedWorkers.BackgroundWorker");
+        var loops = background.Nodes.OfType<LoopNode>().OrderBy(loop => loop.HeaderBlockOrdinal).ToArray();
+        Assert.True(loops.Length >= 2);
+        Assert.Equal(loops.Length, loops.Select(loop => loop.Header).Distinct().Count());
+        Assert.All(loops, loop =>
+        {
+            Assert.NotNull(loop.Header);
+            Assert.NotNull(loop.HeaderBlockOrdinal);
+            Assert.NotEmpty(loop.Evidence);
+            Assert.NotEqual(CertaintyLevel.Unknown, loop.Certainty);
+        });
+        Assert.Contains(loops, loop => loop.LoopKind == ExtractedOperationKind.WhileLoop);
+        Assert.Contains(loops, loop => loop.LoopKind == ExtractedOperationKind.ForEachLoop);
+
+        var unsupported = analyzed.Value.MethodFlows.Single(flow => containingTypes[flow.Method] == "HostedWorkers.UnsupportedLoopWorker");
+        Assert.DoesNotContain(unsupported.Nodes.OfType<LoopNode>(), loop => loop.LoopKind != ExtractedOperationKind.Unknown);
+        Assert.All(unsupported.Nodes.OfType<LoopNode>(), loop => Assert.NotEmpty(loop.Evidence));
+    }
+
     private static CompilationAnalysisRequest CreateFixtureRequest(string name)
     {
         var root = FindRepositoryRoot();

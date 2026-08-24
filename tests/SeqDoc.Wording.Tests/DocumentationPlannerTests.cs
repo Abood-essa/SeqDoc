@@ -12,6 +12,61 @@ namespace SeqDoc.Wording.Tests;
 
 public sealed class DocumentationPlannerTests
 {
+    [Theory]
+    [InlineData("duplicate-container")]
+    [InlineData("duplicate-placement")]
+    [InlineData("missing-parent")]
+    [InlineData("cycle")]
+    [InlineData("missing-container")]
+    [InlineData("foreign-node")]
+    public void InvalidHostedWorkerTopologyFailsClosedWithoutPlannerExceptions(string invalidShape)
+    {
+        var evidence = ImmutableArray.Create(ScenarioGraphTestFactory.SourceEvidence("invalid-hosted-topology"));
+        var method = new MethodId("method:v1:Workers.InvalidTopology.ExecuteAsync");
+        var entry = new ScenarioNode(
+            new("scenario-node:v1:invalid-hosted:entry"), ScenarioNodeKind.EntryPoint,
+            "entry", method, null, "entry", evidence, CertaintyLevel.Exact);
+        var control = new ScenarioNode(
+            new("scenario-node:v1:invalid-hosted:control"), ScenarioNodeKind.MethodCall,
+            "control", method, new("operation:v1:invalid-hosted:control"), "cancellation check", evidence,
+            CertaintyLevel.Exact, presentation: new ScenarioNodePresentation(
+                ActionKind: ScenarioActionKind.HostedWorker,
+                HostedWorkerTypeName: "Workers.InvalidTopology",
+                HostedWorkerControlKind: HostedWorkerControlKind.CancellationCheck));
+        var region = new FlowRegionId("flow-region:v1:invalid-hosted:loop");
+        var missingRegion = new FlowRegionId("flow-region:v1:invalid-hosted:missing");
+        var container = new ScenarioFlowContainer(
+            region, method, ScenarioFlowContainerKind.NaturalLoop, null, null, evidence, CertaintyLevel.Exact);
+        var placement = new ScenarioFlowPlacement(
+            control.Id, method, null, [region], [], evidence, CertaintyLevel.Exact);
+        var containers = invalidShape switch
+        {
+            "duplicate-container" => ImmutableArray.Create(container, container),
+            "missing-parent" => [container with { Parent = missingRegion }],
+            "cycle" => [container with { Parent = region }],
+            _ => [container],
+        };
+        var placements = invalidShape switch
+        {
+            "duplicate-placement" => ImmutableArray.Create(placement, placement),
+            "missing-container" => [placement with { Containers = [missingRegion] }],
+            "foreign-node" => [placement with { ScenarioNode = new ScenarioNodeId("scenario-node:v1:invalid-hosted:foreign") }],
+            _ => [placement],
+        };
+        var topology = new ScenarioTopology([], [], [], [], containers, placements);
+        var graph = new ScenarioGraph(
+            new("entry-point:v1:invalid-hosted"), ScenarioGraphTestFactory.Profile.Id, method,
+            HttpMethodKind.Unknown, "", "hosted-invalid-topology", [entry, control],
+            [new ScenarioEdge(new("scenario-edge:v1:invalid-hosted"), entry.Id, control.Id,
+                ScenarioEdgeKind.Call, "control", evidence, CertaintyLevel.Exact)], [],
+            "invalid-hosted-topology", topology, rootKind: ScenarioRootKind.HostedWorker);
+
+        var plan = DocumentationPlanner.Plan(graph);
+
+        Assert.Contains(plan.Diagram.Diagnostics, diagnostic => diagnostic.Code == "DP-WORKER-INVALID-TOPOLOGY");
+        Assert.Empty(plan.Diagram.Sequence.Elements);
+    }
+
     [Fact]
     public void ConfiguredMethodUsesNeutralMethodWordingAndParticipants()
     {

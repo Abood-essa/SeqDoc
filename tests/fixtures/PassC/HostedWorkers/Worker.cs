@@ -224,6 +224,64 @@ public sealed class TwoSemaphoreWorker : BackgroundService
     }
 }
 
+public sealed class LoneAcquireWorker : BackgroundService
+{
+    private readonly SemaphoreSlim gate = new(1, 1);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (true)
+        {
+            await gate.WaitAsync(stoppingToken);
+            await Task.Delay(1, stoppingToken);
+        }
+    }
+}
+
+public sealed class LoneReleaseWorker : BackgroundService
+{
+    private readonly SemaphoreSlim gate = new(1, 1);
+
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        gate.Release();
+        return Task.CompletedTask;
+    }
+}
+
+public sealed class UnsupportedSemaphoreWorker : BackgroundService
+{
+    private readonly SemaphoreSlim gate = new(1, 1);
+
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        gate.Wait(1);
+        gate.Release(1);
+        return Task.CompletedTask;
+    }
+}
+
+public sealed class MismatchedLoopSemaphoreWorker : BackgroundService
+{
+    private readonly SemaphoreSlim gate = new(1, 1);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (true)
+        {
+            await gate.WaitAsync(stoppingToken);
+            await Task.Delay(1, stoppingToken);
+            break;
+        }
+
+        while (true)
+        {
+            gate.Release();
+            break;
+        }
+    }
+}
+
 public sealed class GuardedWorker : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

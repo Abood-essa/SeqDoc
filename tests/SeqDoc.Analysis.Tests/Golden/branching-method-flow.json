@@ -1,5 +1,5 @@
 {
-  "BehaviorFingerprint": "eca256327eacf41d15af2d58b5536217bb19e7cfe423f787923233d7f2ecfee4",
+  "BehaviorFingerprint": "9249eaad280c56e867d47be12f36456018135598e838fb10743d08b591da8294",
   "CallSiteCount": 9,
   "CallEdgeCount": 9,
   "CallSites": [
@@ -135,7 +135,7 @@
   "MethodFlows": [
     {
       "Name": "CaughtByBaseType",
-      "FlowFingerprint": "c950707831db633c8ce11eb424e5fa50aca1bdc1438879391e2d7915b42bcc92",
+      "FlowFingerprint": "a48504a5db3cfaae05dea887c0b4af4f03b4085b7eb0093534244b0e9fd9cbba",
       "NodeCount": 9,
       "EdgeCount": 8,
       "RegionCount": 3,
@@ -343,7 +343,7 @@
     },
     {
       "Name": "NonVoidTerminal",
-      "FlowFingerprint": "65d16af06084d4e3187b901196645258ea43303ddc896757b6eead7197e53f30",
+      "FlowFingerprint": "125d6e5b4306b436a67ac1159882ee13a7a33dac214a54cd047ff01fc34af2c2",
       "NodeCount": 7,
       "EdgeCount": 7,
       "RegionCount": 1,
@@ -519,7 +519,7 @@
     },
     {
       "Name": "ShortCircuit",
-      "FlowFingerprint": "e3725bc504dc2cba3c427f90c7c3474676145eba14972b1996b96f17ca9648e8",
+      "FlowFingerprint": "702725de694a61d563b527437a9c711a7cbeaff9f371a70327664ab09888ebf6",
       "NodeCount": 8,
       "EdgeCount": 9,
       "RegionCount": 1,
@@ -761,7 +761,7 @@
     },
     {
       "Name": "MixedSwitchAndThrow",
-      "FlowFingerprint": "e2f6d8e879b8292963a6edc50fbfe43a746befddab82778f1837cde8fb09ad92",
+      "FlowFingerprint": "8ed1460b7eea2bac6006fe25f5d4f6e189c3dfa4470306b17a3fc0790d429213",
       "NodeCount": 23,
       "EdgeCount": 25,
       "RegionCount": 1,
@@ -1357,7 +1357,7 @@
     },
     {
       "Name": "RethrowCaughtByOuter",
-      "FlowFingerprint": "b585eb99640a3935c4714c6d94bca290778ec9f0f72a946b8ff444125f8f7b5e",
+      "FlowFingerprint": "06b579d0459a7545975aed23f9e336ffa8147d6228498da39d95f4ffc8e9aca3",
       "NodeCount": 10,
       "EdgeCount": 9,
       "RegionCount": 5,
@@ -1587,7 +1587,7 @@
     },
     {
       "Name": "GenericCaughtThrow",
-      "FlowFingerprint": "e58b6831d58266c279abd7f030bb5b2205e182483081da30d67a0c03821758e8",
+      "FlowFingerprint": "0a65d146064c1cd43fb715b19fcf076e3b60c92832b0598aa6e2951cf6423898",
       "NodeCount": 7,
       "EdgeCount": 6,
       "RegionCount": 3,
@@ -1749,7 +1749,7 @@
     },
     {
       "Name": "SwitchShape",
-      "FlowFingerprint": "f4772c0fb9dc9062605f10e13e380df35a520f1a47bed78f628e136ca105569d",
+      "FlowFingerprint": "9e34c1f99884ab77ce40a7fcae18453a6bb9ca4875cc29409fef2b8c1a7eabf1",
       "NodeCount": 17,
       "EdgeCount": 19,
       "RegionCount": 1,
@@ -2194,7 +2194,7 @@
     },
     {
       "Name": "ThrowShape",
-      "FlowFingerprint": "ceccf121b47df78b4ad7e31e00d7a457693bdf30f2d9fad4cd1537991f5911f5",
+      "FlowFingerprint": "67742ea45073225c11746756472e64f92c47181fbbc0f7c8bfb08311120d4228",
       "NodeCount": 15,
       "EdgeCount": 14,
       "RegionCount": 5,
@@ -2575,7 +2575,7 @@
     },
     {
       "Name": "WrongCatchType",
-      "FlowFingerprint": "6375cf24c785a0174b2322c612d3dc2ea477fad4571106c28befaf158bdac5ab",
+      "FlowFingerprint": "1190667a721cda5b9ea64af560d61e6ccf6945179ea0fc9eb4416328d73e924b",
       "NodeCount": 9,
       "EdgeCount": 8,
       "RegionCount": 3,
@@ -2787,7 +2787,7 @@
     },
     {
       "Name": "IfElse",
-      "FlowFingerprint": "859cb4a0cf499d8fc324969cf8d472ed5939ea64be043d5876b50fbcd8f29dcf",
+      "FlowFingerprint": "cbcd006418047f7ec40a2a728ddf9b10ae5b7e27cfbb0a8b5ea07bbe0167ef02",
       "NodeCount": 20,
       "EdgeCount": 20,
       "RegionCount": 1,
@@ -3300,7 +3300,7 @@
     },
     {
       "Name": "UncaughtThrow",
-      "FlowFingerprint": "db3c4a1a521e4cd640de35d1ae8c346a20c4c9725568cce52c5d438ab02b6fb6",
+      "FlowFingerprint": "d5e4fbc4662ccb5f3934aa06dcfa48e497ab236578fbe057924a4c495c8999cc",
       "NodeCount": 10,
       "EdgeCount": 10,
       "RegionCount": 1,
@@ -3578,7 +3578,7 @@
     },
     {
       "Name": "WhileShape",
-      "FlowFingerprint": "6b6684f50e77a38c0789bcac153e8cb1d1222869933a0bcbe7dd3b52595a8aac",
+      "FlowFingerprint": "7caa7054dc4f14ca89cf384e202dc5683b52491e740adb9ee429be63371cb609",
       "NodeCount": 19,
       "EdgeCount": 18,
       "RegionCount": 2,
