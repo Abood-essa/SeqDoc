@@ -3291,16 +3291,16 @@ public static class DocumentationPlanner
                 HostedWorkerLifecycleStep.Stop => presentation.HostedWorkerCancellationParameterName is { Length: > 0 } stopParameter
                     ? $"The registered hosted-worker lifecycle includes StopAsync with cancellation parameter evidence: {stopParameter}."
                     : "The registered hosted-worker lifecycle includes StopAsync.",
-                _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.PollingLoop
-                    => "The hosted worker repeats awaited polling work in a loop.",
-                _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.BatchLoop
-                    => "The hosted worker processes items in a batch loop.",
-                _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.RetryLoop
-                    => "The hosted worker retries work across a compiler-proven loop boundary.",
+                _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.AwaitedRepeatingLoop
+                    => "The hosted worker repeats awaited work in a loop.",
+                _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.EnumerationLoop
+                    => "The hosted worker enumerates items in a loop.",
+                _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.CatchLoopContinuation
+                    => "The hosted worker has a catch-to-loop continuation boundary.",
                 _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.CancellationCheck
                     => "The hosted worker checks its cancellation token.",
-                _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.ThrottlingBoundary
-                    => "The hosted worker uses a semaphore throttling boundary.",
+                _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.SemaphoreBoundary
+                    => "The hosted worker uses a semaphore synchronization boundary.",
                 _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.TerminalOutcome
                     => "The hosted worker has a compiler-proven terminal outcome boundary.",
                 _ => presentation.HostedWorkerSchedulerRegistration

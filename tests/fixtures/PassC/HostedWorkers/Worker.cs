@@ -119,6 +119,57 @@ public sealed class ThrottledWorker : BackgroundService
     }
 }
 
+public sealed class LocalTokenWorker : BackgroundService
+{
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var localToken = stoppingToken;
+        localToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
+}
+
+public sealed class FieldTokenWorker : BackgroundService
+{
+    private readonly CancellationToken fieldToken = CancellationToken.None;
+
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        fieldToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
+}
+
+public sealed class SubstitutedTokenWorker : BackgroundService
+{
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        CheckToken(stoppingToken);
+        return Task.CompletedTask;
+    }
+
+    private static void CheckToken(CancellationToken token)
+        => token.ThrowIfCancellationRequested();
+}
+
+public sealed class UnrelatedCatchWorker : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (true)
+        {
+            try
+            {
+                await Task.Delay(1, stoppingToken);
+            }
+            catch
+            {
+                throw;
+            }
+        }
+    }
+}
+
 // This type proves that framework capability extraction is not registration admission.
 public sealed class UnregisteredWorker : IHostedService
 {

@@ -3953,8 +3953,9 @@ internal static class RoslynBehaviorExtractor
                      IsInsideNestedFunction(operation),
                      projectsByAssembly.ContainsKey(target.ContainingAssembly),
                      target.ContainingAssembly.Identity.Name,
-                      IsPlatformAssembly(target.ContainingAssembly.Identity.Name),
-                      argumentMappings);
+                     IsPlatformAssembly(target.ContainingAssembly.Identity.Name),
+                      argumentMappings,
+                      ReceiverParameterOrdinal: ResolveDirectParameterOrdinal(call.Instance));
                 break;
             case IDynamicInvocationOperation dynamicCall:
                 invocation = new ExtractedInvocationPayload(
@@ -4266,6 +4267,7 @@ internal static class RoslynBehaviorExtractor
         IObjectCreationOperation => ExtractedOperationKind.ObjectCreation,
         IDelegateCreationOperation => ExtractedOperationKind.DelegateCreation,
         IAnonymousFunctionOperation => ExtractedOperationKind.AnonymousFunction,
+        ILocalFunctionOperation => ExtractedOperationKind.LocalFunction,
         ISimpleAssignmentOperation => ExtractedOperationKind.Assignment,
         ICompoundAssignmentOperation => ExtractedOperationKind.CompoundAssignment,
         IIncrementOrDecrementOperation => ExtractedOperationKind.IncrementOrDecrement,
@@ -4302,6 +4304,10 @@ internal static class RoslynBehaviorExtractor
                 }
             }
 
+            // The fallback is evaluated only for the CFG block later admitted as the natural-loop
+            // header; body blocks cannot promote a loop because MethodFlowBuilder binds the kind to
+            // that exact header ordinal. This preserves nested-loop separation while supporting
+            // Roslyn lowering that omits the ILoopOperation from the header branch parent chain.
             var loopSyntax = operation.Syntax?
                 .AncestorsAndSelf()
                 .FirstOrDefault(syntax => syntax is ForStatementSyntax
@@ -4320,10 +4326,18 @@ internal static class RoslynBehaviorExtractor
                     _ => ExtractedOperationKind.Unknown,
                 };
             }
+
         }
 
         return ExtractedOperationKind.Unknown;
     }
+
+    private static int? ResolveDirectParameterOrdinal(IOperation? receiver)
+        => receiver is null
+            ? null
+            : UnwrapImplicitConversions(receiver) is IParameterReferenceOperation parameter
+                ? parameter.Parameter.Ordinal
+                : null;
 
     private static ExtractedRegionKind MapRegionKind(ControlFlowRegionKind kind) => kind switch
     {

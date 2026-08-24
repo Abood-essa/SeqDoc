@@ -136,7 +136,8 @@ public sealed record InvocationFlowNode : FlowNode
          int EvaluationOrdinal = 0,
          string? TargetAssemblyName = null,
          bool IsPlatformTarget = false,
-         ImmutableArray<CompilerProvenArgument> ConstantArguments = default) : base(Id, Method, Evidence, Certainty)
+         ImmutableArray<CompilerProvenArgument> ConstantArguments = default,
+         int? ReceiverParameterOrdinal = null) : base(Id, Method, Evidence, Certainty)
     {
         var hasTypedPresentation = TargetContainingTypeName is not null
             || TargetMethodName is not null
@@ -180,9 +181,11 @@ public sealed record InvocationFlowNode : FlowNode
         this.TargetAssemblyName = TargetAssemblyName;
         this.IsPlatformTarget = IsPlatformTarget;
         this.ConstantArguments = ConstantArguments.IsDefault ? [] : ConstantArguments;
+        this.ReceiverParameterOrdinal = ReceiverParameterOrdinal;
     }
 
     public ImmutableArray<CompilerProvenArgument> ConstantArguments { get; init; }
+    public int? ReceiverParameterOrdinal { get; init; }
 
     public OperationId Operation { get; init; }
     public MethodId? Target { get; init; }

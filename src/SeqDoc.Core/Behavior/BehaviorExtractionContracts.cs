@@ -26,6 +26,7 @@ public enum ExtractedOperationKind
     EventAssignment,
     DelegateCreation,
     AnonymousFunction,
+    LocalFunction,
     Assignment,
     CompoundAssignment,
     IncrementOrDecrement,
@@ -121,7 +122,8 @@ public sealed record ExtractedInvocationPayload
         bool IsLoadedProjectTarget = false,
         string? TargetAssemblyName = null,
         bool IsPlatformTarget = false,
-        ImmutableArray<ExtractedInvocationArgument> ArgumentMappings = default)
+        ImmutableArray<ExtractedInvocationArgument> ArgumentMappings = default,
+        int? ReceiverParameterOrdinal = null)
     {
         var hasTypedPresentation = TargetContainingTypeName is not null
             || TargetMethodName is not null
@@ -159,6 +161,7 @@ public sealed record ExtractedInvocationPayload
         this.TargetAssemblyName = TargetAssemblyName;
         this.IsPlatformTarget = IsPlatformTarget;
         this.ArgumentMappings = ArgumentMappings.IsDefault ? [] : ArgumentMappings;
+        this.ReceiverParameterOrdinal = ReceiverParameterOrdinal;
     }
 
     public MethodId? Target { get; init; }
@@ -175,6 +178,8 @@ public sealed record ExtractedInvocationPayload
     public string? TargetAssemblyName { get; init; }
     public bool IsPlatformTarget { get; init; }
     public ImmutableArray<ExtractedInvocationArgument> ArgumentMappings { get; init; }
+    /// <summary>Compiler-bound parameter ordinal when the invocation receiver is that direct parameter.</summary>
+    public int? ReceiverParameterOrdinal { get; init; }
 }
 
 /// <summary>Preserves the compiler's parameter mapping for one invocation argument.</summary>

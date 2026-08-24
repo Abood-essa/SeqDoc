@@ -208,7 +208,8 @@ public static class MethodFlowBuilder
                    operation.EvaluationOrdinal,
                    operation.Invocation?.TargetAssemblyName,
                    operation.Invocation?.IsPlatformTarget ?? false,
-                   ConstantArguments: ProjectConstantArguments(operation, operationsById)),
+                   ConstantArguments: ProjectConstantArguments(operation, operationsById),
+                   ReceiverParameterOrdinal: operation.Invocation?.ReceiverParameterOrdinal),
             ExtractedOperationKind.ObjectCreation => new InvocationFlowNode(
                 id,
                 method,
@@ -652,13 +653,7 @@ public static class MethodFlowBuilder
             int headerOrdinal,
             HashSet<int> loopMembers,
             Dictionary<int, ExtractedBasicBlock> blocksByOrdinal)
-            => new[] { headerOrdinal }
-                .Concat(loopMembers.Where(ordinal => ordinal != headerOrdinal).Order())
-                .Select(ordinal => blocksByOrdinal[ordinal].LoopKind)
-                .FirstOrDefault(kind => kind is ExtractedOperationKind.ForLoop
-                    or ExtractedOperationKind.ForEachLoop
-                    or ExtractedOperationKind.WhileLoop
-                    or ExtractedOperationKind.DoWhileLoop);
+            => blocksByOrdinal[headerOrdinal].LoopKind;
 
         static bool ContainsAwait(
             ExtractedMethodBody body,
@@ -678,11 +673,17 @@ public static class MethodFlowBuilder
                 }
 
                 var current = operation;
+                var nestedFunction = false;
                 while (true)
                 {
+                    if (current.Kind is ExtractedOperationKind.AnonymousFunction or ExtractedOperationKind.LocalFunction)
+                    {
+                        nestedFunction = true;
+                    }
+
                     if (rootOperationIds.Contains(current.Id))
                     {
-                        return true;
+                        return !nestedFunction;
                     }
 
                     if (current.Parent is not { } parent

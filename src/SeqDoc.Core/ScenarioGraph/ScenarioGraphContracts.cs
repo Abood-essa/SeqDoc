@@ -72,11 +72,11 @@ public enum ScenarioRootKind
 /// <summary>Compiler-proven worker control-flow presentations derived from Method Flow topology.</summary>
 public enum HostedWorkerControlKind
 {
-    PollingLoop,
-    BatchLoop,
-    RetryLoop,
+    AwaitedRepeatingLoop,
+    EnumerationLoop,
+    CatchLoopContinuation,
     CancellationCheck,
-    ThrottlingBoundary,
+    SemaphoreBoundary,
     TerminalOutcome,
 }
 

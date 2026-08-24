@@ -145,26 +145,78 @@ public sealed class HostedWorkerProductionProjectionTests
             .SelectMany(item => item.Nodes)
             .Where(node => node.Presentation?.HostedWorkerControlKind is not null)
             .ToArray();
-        Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.PollingLoop);
-        Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.BatchLoop);
-        Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.RetryLoop);
+        Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.AwaitedRepeatingLoop);
+        Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.EnumerationLoop);
+        Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.CatchLoopContinuation);
         Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.CancellationCheck);
-        Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.ThrottlingBoundary);
+        Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.SemaphoreBoundary);
         Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.TerminalOutcome);
         var controlWording = graphs.Graphs
             .Where(item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker)
             .SelectMany(item => DocumentationPlanner.Plan(item).Wording.Phrases)
             .Select(phrase => phrase.Text)
             .ToArray();
-        Assert.Contains(controlWording, phrase => phrase.Contains("repeats awaited polling work", StringComparison.Ordinal));
-        Assert.Contains(controlWording, phrase => phrase.Contains("processes items in a batch loop", StringComparison.Ordinal));
-        Assert.Contains(controlWording, phrase => phrase.Contains("retries work across a compiler-proven loop boundary", StringComparison.Ordinal));
+        Assert.Contains(controlWording, phrase => phrase.Contains("repeats awaited work in a loop", StringComparison.Ordinal));
+        Assert.Contains(controlWording, phrase => phrase.Contains("enumerates items in a loop", StringComparison.Ordinal));
+        Assert.Contains(controlWording, phrase => phrase.Contains("catch-to-loop continuation boundary", StringComparison.Ordinal));
         Assert.Contains(controlWording, phrase => phrase.Contains("checks its cancellation token", StringComparison.Ordinal));
-        Assert.Contains(controlWording, phrase => phrase.Contains("semaphore throttling boundary", StringComparison.Ordinal));
+        Assert.Contains(controlWording, phrase => phrase.Contains("semaphore synchronization boundary", StringComparison.Ordinal));
         Assert.Contains(controlWording, phrase => phrase.Contains("terminal outcome boundary", StringComparison.Ordinal));
         Assert.DoesNotContain(controlWording, phrase => phrase.Contains("eventually", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(controlWording, phrase => phrase.Contains("succeeds", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(controlWording, phrase => phrase.Contains("completed", StringComparison.OrdinalIgnoreCase));
+
+        var backgroundControls = backgroundGraph.Nodes
+            .Where(node => node.Presentation?.HostedWorkerControlKind is not null)
+            .ToArray();
+        Assert.Single(backgroundControls,
+            node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.AwaitedRepeatingLoop);
+        Assert.Single(backgroundControls,
+            node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.EnumerationLoop);
+        Assert.DoesNotContain(DocumentationPlanner.Plan(backgroundGraph).Wording.Phrases,
+            phrase => phrase.Text.Contains("polling", StringComparison.OrdinalIgnoreCase)
+                || phrase.Text.Contains("batch", StringComparison.OrdinalIgnoreCase));
+        var backgroundDiagram = DocumentationPlanner.Plan(backgroundGraph).Diagram;
+        Assert.Equal(1, backgroundDiagram.Messages.Count(message => message.Label == "awaited repeating loop"));
+        Assert.Equal(1, backgroundDiagram.Messages.Count(message => message.Label == "enumeration loop"));
+
+        var retryGraph = Assert.Single(
+            graphs.Graphs,
+            item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker
+                && item.OperationKey.Contains("RetryWorker", StringComparison.Ordinal));
+        Assert.Single(retryGraph.Nodes,
+            node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.CatchLoopContinuation);
+        Assert.DoesNotContain(DocumentationPlanner.Plan(retryGraph).Wording.Phrases,
+            phrase => phrase.Text.Contains("retries work", StringComparison.OrdinalIgnoreCase)
+                || phrase.Text.Contains("retry policy", StringComparison.OrdinalIgnoreCase));
+
+        foreach (var workerName in new[] { "LocalTokenWorker", "FieldTokenWorker", "SubstitutedTokenWorker" })
+        {
+            var graphForWorker = Assert.Single(
+                graphs.Graphs,
+                item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker
+                    && item.OperationKey.Contains(workerName, StringComparison.Ordinal));
+            Assert.DoesNotContain(graphForWorker.Nodes,
+                node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.CancellationCheck);
+        }
+
+        var semaphoreGraph = Assert.Single(
+            graphs.Graphs,
+            item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker
+                && item.OperationKey.Contains("ThrottledWorker", StringComparison.Ordinal));
+        Assert.Single(semaphoreGraph.Nodes,
+            node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.SemaphoreBoundary);
+        Assert.DoesNotContain(DocumentationPlanner.Plan(semaphoreGraph).Wording.Phrases,
+            phrase => phrase.Text.Contains("throttling boundary", StringComparison.OrdinalIgnoreCase));
+
+        var unrelatedCatchGraph = Assert.Single(
+            graphs.Graphs,
+            item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker
+                && item.OperationKey.Contains("UnrelatedCatchWorker", StringComparison.Ordinal));
+        Assert.Contains(unrelatedCatchGraph.Nodes,
+            node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.TerminalOutcome);
+        Assert.DoesNotContain(unrelatedCatchGraph.Nodes,
+            node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.CatchLoopContinuation);
     }
 
     private static string FindRepositoryRoot()
