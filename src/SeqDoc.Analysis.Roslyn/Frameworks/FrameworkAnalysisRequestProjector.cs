@@ -130,7 +130,58 @@ internal static class FrameworkAnalysisRequestProjector
             ConstructedTypeSymbol: project is { } projectId
                 && constructedTypeArgument is not null
                 ? RoslynProgramIndexExtractor.CreateSymbolId(constructedTypeArgument, projectId)
-                : null);
+                : null,
+            ServiceEndpointShape: ProjectServiceEndpointShape(call));
+    }
+
+    /// <summary>
+    /// Projects the compiler-proven shape of an exact
+    /// <c>CoreWCF.Configuration.IServiceBuilder.AddServiceEndpoint&lt;TService, TContract&gt;(Binding, string)</c>
+    /// invocation (assembly <c>CoreWCF.Primitives</c>, version 1.9.0.0). Only this exact two-generic,
+    /// two-parameter overload is recognized; every other <c>AddServiceEndpoint</c> overload (additional
+    /// address/behavior parameters, <c>Uri</c>-typed address, or the non-generic <c>Type</c>-parameter
+    /// forms) is an unsupported shape and returns null rather than approximating registration evidence.
+    /// The address is captured only when the compiler proves it as a constant string.
+    /// </summary>
+    private static FrameworkServiceEndpointShapeDescriptor? ProjectServiceEndpointShape(IInvocationOperation call)
+    {
+        var target = call.TargetMethod;
+        if (!IsExactAddServiceEndpoint(target))
+        {
+            return null;
+        }
+
+        var bindingArgument = call.Arguments.FirstOrDefault(argument => argument.Parameter?.Ordinal == 0)?.Value;
+        var addressArgument = call.Arguments.FirstOrDefault(argument => argument.Parameter?.Ordinal == 1)?.Value;
+        var bindingType = bindingArgument is null ? null : UnwrapAllConversionsAndParentheses(bindingArgument).Type;
+        if (bindingType is null)
+        {
+            return null;
+        }
+
+        var address = addressArgument is not null
+            && UnwrapAllConversionsAndParentheses(addressArgument).ConstantValue is { HasValue: true, Value: string constantAddress }
+            ? constantAddress
+            : null;
+
+        return new FrameworkServiceEndpointShapeDescriptor(
+            target.TypeArguments[0].ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
+            target.TypeArguments[1].ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
+            bindingType.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
+            address);
+    }
+
+    private static bool IsExactAddServiceEndpoint(IMethodSymbol target)
+    {
+        var definition = target.OriginalDefinition;
+        return definition.ContainingAssembly?.Identity.Name == "CoreWCF.Primitives"
+            && definition.ContainingAssembly.Identity.Version?.ToString() == "1.9.0.0"
+            && RoslynProgramIndexExtractor.GetMetadataName(definition.ContainingType) == "CoreWCF.Configuration.IServiceBuilder"
+            && definition.MetadataName == "AddServiceEndpoint"
+            && definition.Arity == 2
+            && definition.Parameters.Length == 2
+            && definition.Parameters[0].Type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) == "CoreWCF.Channels.Binding"
+            && definition.Parameters[1].Type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) == "System.String";
     }
 
     /// <summary>

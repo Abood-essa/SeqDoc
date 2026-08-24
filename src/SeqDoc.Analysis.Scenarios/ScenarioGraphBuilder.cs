@@ -72,14 +72,15 @@ public static class ScenarioGraphBuilder
     {
         ArgumentNullException.ThrowIfNull(request);
         var frameworkEntries = request.FrameworkFacts.Facts
-            .Where(fact => fact is HttpEntryPointFact or MinimalApiRouteFact or ServiceOperationEntryPointFact)
-            .Select(fact => fact switch
-            {
-                MinimalApiRouteFact minimal => new NormalizedEntry(minimal.EntryPointId, minimal.HandlerRoot, minimal.HttpMethod, minimal.CanonicalRoute, minimal.OperationKey, ScenarioActionKind.MinimalApiHandler, minimal.Evidence),
-                ServiceOperationEntryPointFact serviceOperation => new NormalizedEntry(serviceOperation.EntryPointId, serviceOperation.RootMethod, HttpMethodKind.Unknown, string.Empty, serviceOperation.OperationKey, ScenarioActionKind.ServiceOperation, serviceOperation.Evidence, ServiceOperation: serviceOperation),
-                _ => new NormalizedEntry(((HttpEntryPointFact)fact).EntryPointId, ((HttpEntryPointFact)fact).RootMethod, ((HttpEntryPointFact)fact).HttpMethod, ((HttpEntryPointFact)fact).CanonicalRoute, ((HttpEntryPointFact)fact).OperationKey, ScenarioActionKind.ControllerAction, fact.Evidence),
-            })
+            .Where(fact => fact is HttpEntryPointFact or MinimalApiRouteFact)
+            .Select(fact => fact is MinimalApiRouteFact minimal
+                ? new NormalizedEntry(minimal.EntryPointId, minimal.HandlerRoot, minimal.HttpMethod, minimal.CanonicalRoute, minimal.OperationKey, ScenarioActionKind.MinimalApiHandler, minimal.Evidence)
+                : new NormalizedEntry(((HttpEntryPointFact)fact).EntryPointId, ((HttpEntryPointFact)fact).RootMethod, ((HttpEntryPointFact)fact).HttpMethod, ((HttpEntryPointFact)fact).CanonicalRoute, ((HttpEntryPointFact)fact).OperationKey, ScenarioActionKind.ControllerAction, fact.Evidence))
             .ToArray();
+        var serviceUnsupportedDispatchDiagnostics = new List<AnalysisDiagnostic>();
+        var serviceOperationEntries = FrameworkFactsBound(request)
+            ? BuildServiceOperationEntries(request, serviceUnsupportedDispatchDiagnostics)
+            : [];
         var workerEntries = request.FrameworkFacts.Facts
             .OfType<HostedWorkerLifecycleFact>()
             .Where(fact => FrameworkFactsBound(request))
@@ -99,6 +100,7 @@ public static class ScenarioGraphBuilder
             .ToArray();
         var admittedMethods = frameworkEntries.Select(entry => entry.RootMethod)
             .Concat(workerEntries.Select(entry => entry.RootMethod))
+            .Concat(serviceOperationEntries.Select(entry => entry.RootMethod))
             .ToHashSet();
         var configuredEntries = (request.ConfiguredRoots.IsDefault ? [] : request.ConfiguredRoots)
             .Where(method => !admittedMethods.Contains(method))
@@ -117,6 +119,9 @@ public static class ScenarioGraphBuilder
             .Concat(workerEntries
                 .OrderBy(fact => fact.EntryPointId.Value, StringComparer.Ordinal)
                 .Select(fact => BuildGraph(request, fact)))
+            .Concat(serviceOperationEntries
+                .OrderBy(fact => fact.EntryPointId.Value, StringComparer.Ordinal)
+                .Select(fact => BuildGraph(request, fact)))
             .Concat(configuredEntries.Select(entry => BuildGraph(request, entry)))
             .OrderBy(graph => graph.EntryPoint.Value, StringComparer.Ordinal)
             .ToImmutableArray();
@@ -127,8 +132,87 @@ public static class ScenarioGraphBuilder
             request.Profile,
             request.ProgramIndex.IndexFingerprint,
             graphs,
-            [],
+            serviceUnsupportedDispatchDiagnostics
+                .OrderBy(diagnostic => diagnostic.Id.Value, StringComparer.Ordinal)
+                .ToImmutableArray(),
             debugProjection);
+    }
+
+    /// <summary>
+    /// Joins each compiler-proven <see cref="ServiceOperationCapabilityFact"/> with a matching
+    /// <see cref="ServiceEndpointRegistrationFact"/> by exact (implementation type, service contract
+    /// type). Attribute/implementation/body evidence proves capability only, never hosting or
+    /// dispatch; a capability without a matching registration never admits an executable root — it
+    /// contributes a conservative unsupported-dispatch diagnostic instead. A matched pair's combined
+    /// evidence is the union of both facts' evidence, and the combined certainty is the weaker
+    /// (higher-ordinal) of the two, so a Conservative registration can never let an Exact capability
+    /// claim a stronger overall root.
+    /// </summary>
+    private static NormalizedEntry[] BuildServiceOperationEntries(
+        ScenarioAnalysisRequest request, List<AnalysisDiagnostic> unsupportedDispatchDiagnostics)
+    {
+        var registrations = request.FrameworkFacts.Facts.OfType<ServiceEndpointRegistrationFact>().ToArray();
+        var entries = new List<NormalizedEntry>();
+        foreach (var capability in request.FrameworkFacts.Facts.OfType<ServiceOperationCapabilityFact>()
+                     .OrderBy(fact => fact.Id.Value, StringComparer.Ordinal))
+        {
+            var registration = registrations.FirstOrDefault(candidate =>
+                candidate.ImplementationType == capability.ImplementationType
+                && candidate.ServiceContractType == capability.ServiceContractType);
+            if (registration is null)
+            {
+                unsupportedDispatchDiagnostics.Add(CreateServiceUnsupportedDispatchDiagnostic(request.Profile.Id, capability));
+                continue;
+            }
+
+            var combinedEvidence = capability.Evidence
+                .Concat(registration.Evidence)
+                .DistinctBy(item => item.Id.Value)
+                .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
+                .ToImmutableArray();
+            var combinedCertainty = capability.Certainty > registration.Certainty ? capability.Certainty : registration.Certainty;
+            var entryPointId = StableIdentity.CreateServiceOperationEntryPointId(
+                new ServiceOperationEntryPointIdentityDescriptor(request.Profile.Id, capability.RootMethod, capability.OperationKey));
+            var entryFact = new ServiceOperationEntryPointFact
+            {
+                Id = capability.Id,
+                EntryPointId = entryPointId,
+                RootMethod = capability.RootMethod,
+                ServiceContractType = capability.ServiceContractType,
+                ImplementationType = capability.ImplementationType,
+                OperationName = capability.OperationName,
+                OperationKey = capability.OperationKey,
+                Evidence = combinedEvidence,
+                Certainty = combinedCertainty,
+            };
+            entries.Add(new NormalizedEntry(
+                entryPointId, capability.RootMethod, HttpMethodKind.Unknown, string.Empty, capability.OperationKey,
+                ScenarioActionKind.ServiceOperation, combinedEvidence, ServiceOperation: entryFact));
+        }
+
+        return entries.ToArray();
+    }
+
+    private const string ServiceUnsupportedDispatchCode = "SC-SERVICE-UNSUPPORTED-DISPATCH";
+
+    private static AnalysisDiagnostic CreateServiceUnsupportedDispatchDiagnostic(
+        CompilationProfileId profileId, ServiceOperationCapabilityFact capability)
+    {
+        var subject = $"{capability.RootMethod.Value}{capability.OperationKey}";
+        return new AnalysisDiagnostic(
+            StableIdentity.CreateDiagnosticId(new DiagnosticIdentityDescriptor(
+                ServiceUnsupportedDispatchCode, AnalysisStage.FrameworkModel, profileId, subject, Ordinal: 0)),
+            ServiceUnsupportedDispatchCode,
+            DiagnosticSeverity.Warning,
+            AnalysisStage.FrameworkModel,
+            "A compiler-proven service contract operation has no matching endpoint registration.",
+            new DiagnosticLocation("core wcf service operation", profileId),
+            $"'{capability.ImplementationType}' proves the exact [ServiceContract]/[OperationContract] capability for '{capability.OperationKey}' with a real source body, but no exact IServiceBuilder.AddServiceEndpoint<{capability.ImplementationType}, {capability.ServiceContractType}>(Binding, string) registration was found.",
+            "No service operation entry point or execution wording was emitted for the unregistered capability.",
+            "Register the implementation with an exact AddServiceEndpoint<TService, TContract>(Binding, string) call, or remove the unused capability.",
+            CertaintyLevel.Exact,
+            evidence: capability.Evidence,
+            internalDetail: subject);
     }
 
     private sealed record NormalizedEntry(

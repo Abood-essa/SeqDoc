@@ -1,5 +1,3 @@
-using CoreWCF;
-
 namespace Fake.ServiceModel
 {
     [AttributeUsage(AttributeTargets.Interface)]
@@ -19,7 +17,7 @@ namespace CoreWcfServices
     // carries [ServiceContract] must never admit a service operation entry point.
     public interface IUtility
     {
-        [OperationContract]
+        [CoreWCF.OperationContract]
         string Ping();
     }
 
@@ -40,5 +38,21 @@ namespace CoreWcfServices
     public sealed class FakeService : IFakeService
     {
         public string Echo(string value) => value;
+    }
+
+    // Mixed-family negative: the interface carries the CoreWCF ServiceContract attribute, but the
+    // operation is decorated with the classic System.ServiceModel OperationContract attribute instead of
+    // CoreWCF's own. Both are real, exact, admitted-namespace attributes individually, but never as a
+    // mixed pair; the model must reject this rather than treat the families as interchangeable.
+    [CoreWCF.ServiceContract]
+    public interface IMixedFamilyService
+    {
+        [System.ServiceModel.OperationContract]
+        string Ping();
+    }
+
+    public sealed class MixedFamilyService : IMixedFamilyService
+    {
+        public string Ping() => "pong";
     }
 }

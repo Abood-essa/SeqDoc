@@ -135,6 +135,20 @@ public sealed record FrameworkDispatchShapeDescriptor(
     ImmutableArray<FrameworkDispatchCandidateDescriptor> Candidates);
 
 /// <summary>
+/// Compiler-proven CoreWCF/WCF service-endpoint registration shape attached to an
+/// <c>IServiceBuilder.AddServiceEndpoint&lt;TService, TContract&gt;(Binding, string)</c> invocation.
+/// <see cref="ServiceType"/> and <see cref="ContractType"/> are the exact metadata names of the two
+/// constructed generic type arguments; <see cref="BindingType"/> is the exact metadata name of the
+/// compiler-proven type of the binding argument; <see cref="Address"/> is the compiler-proven constant
+/// address string, or null when the address argument is not a compile-time constant.
+/// </summary>
+public sealed record FrameworkServiceEndpointShapeDescriptor(
+    string ServiceType,
+    string ContractType,
+    string BindingType,
+    string? Address);
+
+/// <summary>
 /// One compiler-proven step of an invocation receiver chain. The Roslyn adapter fills steps from the
 /// exact nested invocation operations of an expression; models verify each step against exact
 /// framework symbols. <see cref="NavigationMemberIdentity"/> carries the canonical identity of the
@@ -188,7 +202,8 @@ public sealed record OperationDescriptor(
     FrameworkRouteGroupDescriptor? RouteGroup = null,
     FrameworkDispatchShapeDescriptor? DispatchShape = null,
     FrameworkTypeIdentity? ConstructedType = null,
-    SymbolId? ConstructedTypeSymbol = null);
+    SymbolId? ConstructedTypeSymbol = null,
+    FrameworkServiceEndpointShapeDescriptor? ServiceEndpointShape = null);
 
 /// <summary>
 /// Exact, Roslyn-neutral identity of one named type. The controlled eligibility projector fills this
@@ -215,14 +230,28 @@ public sealed record FrameworkTypeShape(
     ImmutableArray<FrameworkTypeIdentity> Interfaces = default);
 
 /// <summary>
+/// One compiler-proven attribute application resolved to its exact original attribute class identity
+/// (assembly, assembly version, metadata name) rather than a display-name string, so a model can reject
+/// a same-qualified-name attribute defined in a foreign assembly. <see cref="TypeArguments"/> carries
+/// the exact resolved type identity of every <c>typeof(...)</c> constructor argument, in declaration
+/// order, for attributes whose meaning depends on a type argument (for example
+/// <c>[FaultContract(typeof(X))]</c>); it is empty when the attribute has no such argument.
+/// </summary>
+public sealed record FrameworkAttributeApplicationIdentity(
+    FrameworkTypeIdentity AttributeType,
+    ImmutableArray<FrameworkTypeIdentity> TypeArguments);
+
+/// <summary>
 /// One compiler-proven interface member that a method implements, implicitly or explicitly. The
 /// eligibility projector fills this from <c>INamedTypeSymbol.FindImplementationForInterfaceMember</c>
 /// (implicit implementation) and <c>IMethodSymbol.ExplicitInterfaceImplementations</c> (explicit
 /// implementation); models never derive interface implementation from names or signatures written as
 /// strings. <see cref="InterfaceTypeSymbol"/> and <see cref="InterfaceMethodSymbol"/> are the same
-/// Program Index symbol identities used elsewhere, so a model can look up exact attributes applied to
-/// the interface type or interface method (for example <c>[ServiceContract]</c>/<c>[OperationContract]</c>)
-/// by target symbol, exactly like other exact-attribute admission joins. <see cref="InterfaceType"/>,
+/// Program Index symbol identities used elsewhere. <see cref="InterfaceTypeAttributes"/> and
+/// <see cref="InterfaceMethodAttributes"/> are the exact resolved attribute-class identities applied to
+/// the interface type and interface method (for example <c>[ServiceContract]</c>/<c>[OperationContract]</c>),
+/// so a model matches by original assembly/version/metadata-name identity instead of a display-name
+/// string and never accepts a same-qualified-name attribute from a foreign assembly. <see cref="InterfaceType"/>,
 /// <see cref="InterfaceMethodMetadataName"/>, <see cref="GenericArity"/>, <see cref="Parameters"/>, and
 /// <see cref="ReturnType"/> are the exact interface method signature, so a model can additionally guard
 /// against a same-named lookalike overload.
@@ -235,7 +264,9 @@ public sealed record FrameworkInterfaceMemberIdentity(
     int GenericArity,
     ImmutableArray<ParameterIdentityDescriptor> Parameters,
     string ReturnType,
-    bool IsExplicitImplementation);
+    bool IsExplicitImplementation,
+    ImmutableArray<FrameworkAttributeApplicationIdentity> InterfaceTypeAttributes = default,
+    ImmutableArray<FrameworkAttributeApplicationIdentity> InterfaceMethodAttributes = default);
 
 /// <summary>
 /// Compiler-proven shape of one method plus its declaring type, bound to the exact indexed symbols.
@@ -258,7 +289,8 @@ public sealed record FrameworkMethodShape(
     bool IsAbstract,
     int GenericArity,
     FrameworkTypeShape DeclaringType,
-    ImmutableArray<FrameworkInterfaceMemberIdentity> ImplementedInterfaceMembers = default);
+    ImmutableArray<FrameworkInterfaceMemberIdentity> ImplementedInterfaceMembers = default,
+    ImmutableArray<FrameworkAttributeApplicationIdentity> DeclaringTypeAttributes = default);
 
 /// <summary>
 /// Framework-neutral facade over one symbol for model analysis. The Roslyn adapter constructs these;

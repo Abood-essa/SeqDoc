@@ -6,6 +6,8 @@
 
   <ItemGroup>
     <PackageVersion Include="CoreWCF.Primitives" Version="1.9.1" />
+    <PackageVersion Include="CoreWCF.Http" Version="1.9.1" />
+    <PackageVersion Include="System.ServiceModel.Primitives" Version="8.1.2" />
     <!-- Pins CoreWCF.Primitives' vulnerable transitive System.Security.Cryptography.Xml 8.0.3 (see
          GHSA-23rf-6693-g89p and related advisories) to a patched release; central transitive pinning
          is enabled above, so this version wins over the package's own dependency. -->

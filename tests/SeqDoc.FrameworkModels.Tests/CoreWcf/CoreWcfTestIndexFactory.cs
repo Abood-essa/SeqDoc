@@ -9,17 +9,35 @@ namespace SeqDoc.FrameworkModels.Tests.CoreWcf;
 /// <summary>
 /// Builds deterministic Program Index snapshots and model descriptors for CoreWCF/WCF service
 /// contract model tests. Every symbol and attribute uses the exact fully qualified identities the
-/// Roslyn index produces, so tests exercise the same semantic inventory without raw name matching.
+/// Roslyn index and eligibility projector produce, so tests exercise the same semantic inventory
+/// without raw name matching.
 /// </summary>
 internal static class CoreWcfTestIndexFactory
 {
     public const string ProjectRelativePath = "tests/fixtures/PassC/CoreWcfServices/CoreWcfServices.csproj";
     public const string ContractMetadataName = "CoreWcfServices.ICalculatorService";
     public const string ImplementationMetadataName = "CoreWcfServices.CalculatorService";
+
+    public const string CoreWcfAssembly = "CoreWCF.Primitives";
+    public const string CoreWcfAssemblyVersion = "1.9.0.0";
+    public const string SystemServiceModelAssembly = "System.ServiceModel.Primitives";
+    public const string SystemServiceModelAssemblyVersion = "8.1.2.0";
     public const string CoreWcfServiceContractAttribute = "CoreWCF.ServiceContractAttribute";
     public const string CoreWcfOperationContractAttribute = "CoreWCF.OperationContractAttribute";
+    public const string CoreWcfFaultContractAttribute = "CoreWCF.FaultContractAttribute";
     public const string SystemServiceModelServiceContractAttribute = "System.ServiceModel.ServiceContractAttribute";
     public const string SystemServiceModelOperationContractAttribute = "System.ServiceModel.OperationContractAttribute";
+    public const string SystemServiceModelFaultContractAttribute = "System.ServiceModel.FaultContractAttribute";
+    public const string ClientBaseMetadataName = "System.ServiceModel.ClientBase`1";
+    public const string GeneratedCodeAttributeMetadataName = "System.CodeDom.Compiler.GeneratedCodeAttribute";
+
+    // GeneratedCodeAttribute is implemented in System.Private.CoreLib at run time, but the compiler
+    // resolves ContainingAssembly to the System.Runtime reference-assembly facade it is type-forwarded
+    // through (confirmed by reflecting typeof(GeneratedCodeAttribute).Assembly.GetName() from a real
+    // compilation and comparing against the Roslyn-projected identity), so the fixture must match that
+    // compile-time assembly, not the runtime one, or it silently proves nothing about the real producer.
+    public const string CoreLibAssembly = "System.Runtime";
+    public const string CoreLibAssemblyVersion = "10.0.0.0";
 
     public static CompilationProfile Profile { get; } =
         CompilationProfile.Create(ProjectRelativePath, "Release", "net10.0");
@@ -72,17 +90,17 @@ internal static class CoreWcfTestIndexFactory
             SignatureFingerprint: "type-signature:v1:contract",
             Evidence: [SourceEvidence(ContractMetadataName)]);
 
-    public static ProgramType ImplementationType()
+    public static ProgramType ImplementationType(string metadataName = ImplementationMetadataName)
         => new(
-            ImplementationSymbol,
+            new SymbolId($"symbol:v1:{metadataName}"),
             ProjectId,
             new SymbolId("symbol:v1:CoreWcfServices"),
-            ImplementationMetadataName,
+            metadataName,
             ProgramTypeKind.Class,
             BaseType: null,
             Interfaces: [ContractSymbol],
-            SignatureFingerprint: "type-signature:v1:impl",
-            Evidence: [SourceEvidence(ImplementationMetadataName)]);
+            SignatureFingerprint: $"type-signature:v1:{metadataName}",
+            Evidence: [SourceEvidence(metadataName)]);
 
     public static ProgramMethod InterfaceMethod(string name)
         => new(
@@ -167,17 +185,48 @@ internal static class CoreWcfTestIndexFactory
             CertaintyLevel.Exact,
             MethodShape: null);
 
-    public static FrameworkTypeShape EligibleImplementationTypeShape(bool isAbstract = false, bool isStatic = false, int genericArity = 0, bool isPublic = true)
+    public static FrameworkTypeShape EligibleImplementationTypeShape(
+        bool isAbstract = false, bool isStatic = false, int genericArity = 0, bool isPublic = true,
+        string metadataName = ImplementationMetadataName, bool clientBaseDerived = false)
         => new(
-            Identity: new FrameworkTypeIdentity("CoreWcfServices", "1.0.0", ImplementationMetadataName),
+            Identity: new FrameworkTypeIdentity("CoreWcfServices", "1.0.0", metadataName),
             IsClass: true,
             IsPublicOrNestedPublic: isPublic,
             IsAbstract: isAbstract,
             IsStatic: isStatic,
             GenericArity: genericArity,
-            BaseTypeChain: [new FrameworkTypeIdentity("System.Private.CoreLib", "10.0.0.0", "System.Object")]);
+            BaseTypeChain: clientBaseDerived
+                ? [new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, ClientBaseMetadataName), new FrameworkTypeIdentity("System.Private.CoreLib", "10.0.0.0", "System.Object")]
+                : [new FrameworkTypeIdentity("System.Private.CoreLib", "10.0.0.0", "System.Object")]);
 
-    public static FrameworkInterfaceMemberIdentity InterfaceMember(string name, bool isExplicit = false, string interfaceMetadataName = ContractMetadataName)
+    /// <summary>Exact ServiceContract/OperationContract/FaultContract attribute identities for either admitted family.</summary>
+    public static FrameworkAttributeApplicationIdentity ServiceContractAttribute(bool coreWcf = true)
+        => coreWcf
+            ? new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(CoreWcfAssembly, CoreWcfAssemblyVersion, CoreWcfServiceContractAttribute), [])
+            : new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, SystemServiceModelServiceContractAttribute), []);
+
+    public static FrameworkAttributeApplicationIdentity OperationContractAttribute(bool coreWcf = true)
+        => coreWcf
+            ? new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(CoreWcfAssembly, CoreWcfAssemblyVersion, CoreWcfOperationContractAttribute), [])
+            : new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, SystemServiceModelOperationContractAttribute), []);
+
+    public static FrameworkAttributeApplicationIdentity FaultContractAttribute(FrameworkTypeIdentity faultType, bool coreWcf = true)
+        => coreWcf
+            ? new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(CoreWcfAssembly, CoreWcfAssemblyVersion, CoreWcfFaultContractAttribute), [faultType])
+            : new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, SystemServiceModelFaultContractAttribute), [faultType]);
+
+    public static FrameworkAttributeApplicationIdentity ForeignAssemblyServiceContractAttribute()
+        => new(new FrameworkTypeIdentity("Foreign.Assembly", "1.0.0.0", CoreWcfServiceContractAttribute), []);
+
+    public static FrameworkAttributeApplicationIdentity GeneratedCodeAttribute()
+        => new(new FrameworkTypeIdentity(CoreLibAssembly, CoreLibAssemblyVersion, GeneratedCodeAttributeMetadataName), []);
+
+    public static FrameworkInterfaceMemberIdentity InterfaceMember(
+        string name,
+        bool isExplicit = false,
+        string interfaceMetadataName = ContractMetadataName,
+        ImmutableArray<FrameworkAttributeApplicationIdentity> typeAttributes = default,
+        ImmutableArray<FrameworkAttributeApplicationIdentity> methodAttributes = default)
         => new(
             interfaceMetadataName == ContractMetadataName ? ContractSymbol : new SymbolId($"symbol:v1:{interfaceMetadataName}"),
             interfaceMetadataName == ContractMetadataName ? InterfaceMethodSymbol(name) : new SymbolId($"symbol:v1:{interfaceMetadataName}.{name}"),
@@ -186,7 +235,9 @@ internal static class CoreWcfTestIndexFactory
             GenericArity: 0,
             Parameters: [new ParameterIdentityDescriptor(ParameterRefKind.None, "System.Double"), new ParameterIdentityDescriptor(ParameterRefKind.None, "System.Double")],
             ReturnType: "System.Double",
-            IsExplicitImplementation: isExplicit);
+            IsExplicitImplementation: isExplicit,
+            InterfaceTypeAttributes: typeAttributes.IsDefault ? [ServiceContractAttribute()] : typeAttributes,
+            InterfaceMethodAttributes: methodAttributes.IsDefault ? [OperationContractAttribute()] : methodAttributes);
 
     public static FrameworkMethodShape EligibleMethodShape(
         string name,
@@ -195,15 +246,37 @@ internal static class CoreWcfTestIndexFactory
         bool isStatic = false,
         bool isAbstract = false,
         int genericArity = 0,
-        FrameworkTypeShape? declaringType = null)
+        FrameworkTypeShape? declaringType = null,
+        ImmutableArray<FrameworkAttributeApplicationIdentity> declaringTypeAttributes = default,
+        bool isOrdinary = true)
         => new(
             ImplementationMethodSymbol(name),
             ImplementationSymbol,
-            IsOrdinary: true,
+            IsOrdinary: isOrdinary,
             IsPublic: isPublic,
             IsStatic: isStatic,
             IsAbstract: isAbstract,
             GenericArity: genericArity,
             DeclaringType: declaringType ?? EligibleImplementationTypeShape(),
-            ImplementedInterfaceMembers: members.IsDefault ? [InterfaceMember(name)] : members);
+            ImplementedInterfaceMembers: members.IsDefault ? [InterfaceMember(name)] : members,
+            DeclaringTypeAttributes: declaringTypeAttributes);
+
+    /// <summary>Builds the exact <c>AddServiceEndpoint&lt;TService, TContract&gt;</c> operation shape.</summary>
+    public static OperationDescriptor ServiceEndpointOperation(
+        string operationSuffix,
+        string serviceType = ImplementationMetadataName,
+        string contractType = ContractMetadataName,
+        string bindingType = "CoreWCF.BasicHttpBinding",
+        string? address = "/CalculatorService/basicHttp",
+        CertaintyLevel certainty = CertaintyLevel.Exact)
+        => new(
+            new OperationId($"operation:v1:registration:{operationSuffix}"),
+            new MethodId("method:v1:CoreWcfServices.Startup.Configure"),
+            "Invocation",
+            DocumentId,
+            300,
+            40,
+            [SourceEvidence($"registration:{operationSuffix}")],
+            certainty,
+            ServiceEndpointShape: new FrameworkServiceEndpointShapeDescriptor(serviceType, contractType, bindingType, address));
 }

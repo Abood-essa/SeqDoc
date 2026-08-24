@@ -40,7 +40,8 @@ internal static class FrameworkSymbolEligibilityProjector
             IsAbstract: method.IsAbstract,
             GenericArity: method.Arity,
             DeclaringType: ProjectTypeShape(declaringType),
-            ImplementedInterfaceMembers: ProjectImplementedInterfaceMembers(method, declaringType, project));
+            ImplementedInterfaceMembers: ProjectImplementedInterfaceMembers(method, declaringType, project),
+            DeclaringTypeAttributes: ProjectAttributeIdentities(declaringType));
     }
 
     /// <summary>
@@ -120,8 +121,29 @@ internal static class FrameworkSymbolEligibilityProjector
                     DisplayType(parameter.Type)))
                 .ToImmutableArray(),
             DisplayType(interfaceMethod.ReturnType),
-            isExplicit));
+            isExplicit,
+            ProjectAttributeIdentities(interfaceType),
+            ProjectAttributeIdentities(interfaceMethod)));
     }
+
+    /// <summary>
+    /// Projects the exact original attribute-class identity (assembly, assembly version, metadata name)
+    /// of every attribute applied to <paramref name="symbol"/>, resolved from the compiler's own
+    /// <see cref="AttributeData.AttributeClass"/> rather than a display-name string, so a model can
+    /// reject a same-qualified-name attribute defined in a foreign assembly. Each attribute's
+    /// <c>typeof(...)</c> constructor arguments are resolved the same way, in declaration order, for
+    /// attributes whose meaning depends on a type argument (for example <c>[FaultContract(typeof(X))]</c>).
+    /// </summary>
+    private static ImmutableArray<FrameworkAttributeApplicationIdentity> ProjectAttributeIdentities(ISymbol symbol)
+        => symbol.GetAttributes()
+            .Where(attribute => attribute.AttributeClass is not null)
+            .Select(attribute => new FrameworkAttributeApplicationIdentity(
+                ProjectTypeIdentity(attribute.AttributeClass!),
+                attribute.ConstructorArguments
+                    .Where(argument => argument.Kind == TypedConstantKind.Type && argument.Value is INamedTypeSymbol)
+                    .Select(argument => ProjectTypeIdentity((INamedTypeSymbol)argument.Value!))
+                    .ToImmutableArray()))
+            .ToImmutableArray();
 
     private static string DisplayType(ITypeSymbol type)
         => type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat);

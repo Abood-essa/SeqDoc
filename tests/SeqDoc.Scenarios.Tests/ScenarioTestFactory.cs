@@ -850,39 +850,80 @@ internal static class ScenarioTestFactory
         };
     }
 
-    internal static readonly EntryPointId ServiceOperationEntryPoint = new("entry-point:v1:CoreWcfServices.ICalculatorService.Add");
     internal const string ServiceContractTypeName = "CoreWcfServices.ICalculatorService";
     internal const string ServiceImplementationTypeName = "CoreWcfServices.CalculatorService";
     internal const string ServiceOperationName = "Add";
+    internal const string ServiceOperationKeyValue = $"{ServiceContractTypeName}.{ServiceOperationName}";
 
-    /// <summary>
-    /// A CoreWCF service operation root that reuses the existing controller action's root method and
-    /// Method Flow: issue #7's model projects dispatch through the same default Method-Flow-driven
-    /// topology path a controller action already uses, adding only its own entry-point fact and
-    /// presentation. No HTTP method or canonical route ever backs this root.
-    /// </summary>
-    internal static ScenarioAnalysisRequest CreateServiceOperationRequest()
-    {
-        var request = CreateGetRequest();
-        var fact = new ServiceOperationEntryPointFact
+    internal static EntryPointId ServiceOperationEntryPoint => StableIdentity.CreateServiceOperationEntryPointId(
+        new ServiceOperationEntryPointIdentityDescriptor(Profile.Id, ActionMethod, ServiceOperationKeyValue));
+
+    private static ServiceOperationCapabilityFact CreateServiceCapabilityFact(CertaintyLevel certainty = CertaintyLevel.Exact)
+        => new()
         {
-            Id = new BehaviorFactId("behavior-fact:v1:service-operation-entry-point:Add"),
-            Evidence = [SourceEvidence("service-operation-entry-point")],
-            Certainty = CertaintyLevel.Exact,
-            EntryPointId = ServiceOperationEntryPoint,
+            Id = new BehaviorFactId("behavior-fact:v1:service-operation-capability:Add"),
+            Evidence = [SourceEvidence("service-operation-capability")],
+            Certainty = certainty,
             RootMethod = ActionMethod,
             ServiceContractType = ServiceContractTypeName,
             ImplementationType = ServiceImplementationTypeName,
             OperationName = ServiceOperationName,
-            OperationKey = $"{ServiceContractTypeName}.{ServiceOperationName}",
+            OperationKey = ServiceOperationKeyValue,
         };
+
+    private static ServiceEndpointRegistrationFact CreateServiceRegistrationFact(CertaintyLevel certainty = CertaintyLevel.Exact)
+        => new()
+        {
+            Id = new BehaviorFactId("behavior-fact:v1:service-endpoint-registration:Add"),
+            Evidence = [SourceEvidence("service-endpoint-registration")],
+            Certainty = certainty,
+            ImplementationType = ServiceImplementationTypeName,
+            ServiceContractType = ServiceContractTypeName,
+            BindingType = "CoreWCF.BasicHttpBinding",
+            Address = "/CalculatorService/basicHttp",
+        };
+
+    /// <summary>
+    /// A CoreWCF service operation root, admitted by joining an independently proven capability fact
+    /// with a matching registration fact — reuses the existing controller action's root method and
+    /// Method Flow: issue #7's model projects dispatch through the same default Method-Flow-driven
+    /// topology path a controller action already uses. No HTTP method or canonical route ever backs
+    /// this root.
+    /// </summary>
+    internal static ScenarioAnalysisRequest CreateServiceOperationRequest(
+        CertaintyLevel capabilityCertainty = CertaintyLevel.Exact,
+        CertaintyLevel registrationCertainty = CertaintyLevel.Exact)
+    {
+        var request = CreateGetRequest();
         return request with
         {
             FrameworkFacts = new FrameworkAnalysisResult(
                 true,
-                [fact],
+                [CreateServiceCapabilityFact(capabilityCertainty), CreateServiceRegistrationFact(registrationCertainty)],
                 [], [], [], [],
-                [new FrameworkModelDescriptor("seqdoc.corewcf.services", "1.0.0", "test", 110)]),
+                [new FrameworkModelDescriptor("seqdoc.corewcf.services", "2.0.0", "test", 110)],
+                request.Profile.Id,
+                request.ProgramIndex.IndexFingerprint),
+        };
+    }
+
+    /// <summary>
+    /// A compiler-proven service contract capability with no matching endpoint registration: proves the
+    /// unregistered-capability boundary (no executable root, no execution wording, a conservative
+    /// diagnostic instead).
+    /// </summary>
+    internal static ScenarioAnalysisRequest CreateUnregisteredServiceCapabilityRequest()
+    {
+        var request = CreateGetRequest();
+        return request with
+        {
+            FrameworkFacts = new FrameworkAnalysisResult(
+                true,
+                [CreateServiceCapabilityFact()],
+                [], [], [], [],
+                [new FrameworkModelDescriptor("seqdoc.corewcf.services", "2.0.0", "test", 110)],
+                request.Profile.Id,
+                request.ProgramIndex.IndexFingerprint),
         };
     }
 
