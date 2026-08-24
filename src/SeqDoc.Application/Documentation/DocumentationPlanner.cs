@@ -194,6 +194,7 @@ public static class DocumentationPlanner
             graph.Profile,
             OperationKey(graph),
             graph.RootKind is ScenarioRootKind.ConfiguredMethod or ScenarioRootKind.HostedWorker
+                || IsServiceOperationRoot(graph)
                 ? OperationKey(graph)
                 : $"{HttpMethodCanonicalToken.Get(graph.HttpMethod)} {graph.CanonicalRoute}",
             phrases,
@@ -234,6 +235,8 @@ public static class DocumentationPlanner
                              ? "Configured method entry point."
                              : graph.RootKind == ScenarioRootKind.HostedWorker
                              ? "Hosted worker lifecycle entry point."
+                             : IsServiceOperationRoot(graph)
+                             ? $"Service contract operation entry point {OperationKey(graph)}."
                              : $"HTTP {HttpMethodCanonicalToken.Get(graph.HttpMethod)} entry point at route \"{graph.CanonicalRoute}\".",
                         node.Evidence,
                         node.Certainty);
@@ -251,6 +254,8 @@ public static class DocumentationPlanner
                             ? $"The hosted worker {ShortTypeName(node.Presentation?.HostedWorkerTypeName ?? graph.OperationKey)} lifecycle is analyzed."
                             : node.Presentation?.ActionKind == ScenarioActionKind.MinimalApiHandler
                             ? "The Minimal API handler executes."
+                            : node.Presentation?.ActionKind == ScenarioActionKind.ServiceOperation
+                            ? "The service contract operation executes."
                             : "The controller action executes.",
                         node.Evidence,
                         node.Certainty);
@@ -544,6 +549,7 @@ public static class DocumentationPlanner
         var methodCallParticipantKeys = BuildMethodCallParticipantKeys(graph, actionNode);
         bool configuredRoot = graph.RootKind == ScenarioRootKind.ConfiguredMethod;
         bool hostedWorkerRoot = graph.RootKind == ScenarioRootKind.HostedWorker;
+        bool serviceOperationRoot = actionNode?.Presentation?.ActionKind == ScenarioActionKind.ServiceOperation;
         string callerKey = configuredRoot || hostedWorkerRoot ? "caller" : "client";
 
         // Participant labels come from typed presentation facts only. The client is a fixed role;
@@ -557,15 +563,17 @@ public static class DocumentationPlanner
         var participantSources = new List<(string Key, ScenarioNode? Source, string? FullTypeName, string FallbackLabel, DiagramParticipantKind Kind)>();
         if (!configuredRoot && !hostedWorkerRoot)
         {
-            participantSources.Add((callerKey, entryNode, null, "API client", DiagramParticipantKind.Client));
+            participantSources.Add((callerKey, entryNode, null, serviceOperationRoot ? "Service client" : "API client", DiagramParticipantKind.Client));
         }
-        participantSources.Add(("action", actionNode, actionNode?.Presentation?.ControllerTypeName ?? actionNode?.Presentation?.HostedWorkerTypeName,
+        participantSources.Add(("action", actionNode, actionNode?.Presentation?.ControllerTypeName ?? actionNode?.Presentation?.HostedWorkerTypeName ?? actionNode?.Presentation?.ImplementationTypeName,
                  configuredRoot
                      ? ConfiguredActionDisplayName(actionNode?.Presentation) ?? "Selected method"
                      : hostedWorkerRoot
                      ? "Hosted worker lifecycle"
                      : actionNode?.Presentation?.ActionKind == ScenarioActionKind.MinimalApiHandler
                      ? "Minimal API handler"
+                     : serviceOperationRoot
+                     ? "Service operation"
                      : "Controller action",
                   configuredRoot || hostedWorkerRoot
                      ? DiagramParticipantKind.Unknown
@@ -624,6 +632,10 @@ public static class DocumentationPlanner
             // two typed fields above, while generic lambdas still arrive without either field.
             participantLabels["action"] = legacyAction;
         }
+        else if (actionNode?.Presentation is { ActionKind: ScenarioActionKind.ServiceOperation, ImplementationTypeName: { Length: > 0 } serviceImplementationType, ActionMethodName: { Length: > 0 } serviceOperationMethod })
+        {
+            participantLabels["action"] = $"{ShortTypeName(serviceImplementationType)}.{serviceOperationMethod}";
+        }
         else if (configuredRoot)
         {
             participantLabels["action"] = ConfiguredActionDisplayName(actionNode?.Presentation)
@@ -663,6 +675,13 @@ public static class DocumentationPlanner
                 .Any(item => string.Equals(item.Value, participantLabels["action"], StringComparison.Ordinal)))
         {
             participantLabels["action"] = $"{qualifiedControllerType}.{qualifiedActionMethod}";
+        }
+        else if (actionNode?.Presentation is { ActionKind: ScenarioActionKind.ServiceOperation, ImplementationTypeName: { Length: > 0 } qualifiedServiceType, ActionMethodName: { Length: > 0 } qualifiedServiceMethod }
+            && participantLabels
+                .Where(item => item.Key != "action")
+                .Any(item => string.Equals(item.Value, participantLabels["action"], StringComparison.Ordinal)))
+        {
+            participantLabels["action"] = $"{qualifiedServiceType}.{qualifiedServiceMethod}";
         }
 
         foreach (var source in participantSources)
@@ -3320,6 +3339,16 @@ public static class DocumentationPlanner
 
     private static string OperationKey(ScenarioGraph graph)
         => string.IsNullOrWhiteSpace(graph.OperationKey) ? graph.RootMethod.Value : graph.OperationKey;
+
+    /// <summary>
+    /// A service-contract operation root shares <see cref="ScenarioRootKind.HttpEntryPoint"/> with
+    /// controller/Minimal API roots (it is neither a configured method nor a hosted worker), but it
+    /// carries no HTTP method or route, so callers must check the action node's presentation instead
+    /// of formatting <see cref="ScenarioGraph.HttpMethod"/>/<see cref="ScenarioGraph.CanonicalRoute"/>.
+    /// </summary>
+    private static bool IsServiceOperationRoot(ScenarioGraph graph)
+        => graph.Nodes.Any(node => node.Kind == ScenarioNodeKind.Action
+            && node.Presentation?.ActionKind == ScenarioActionKind.ServiceOperation);
 
     private static int DirectCallOrder(ScenarioGraph graph, ScenarioEdge edge)
     {

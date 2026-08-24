@@ -59,6 +59,7 @@ public enum ScenarioActionKind
     MinimalApiHandler,
     ConfiguredMethod,
     HostedWorker,
+    ServiceOperation,
 }
 
 /// <summary>Typed discriminator for the source of a scenario root.</summary>

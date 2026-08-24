@@ -129,6 +129,15 @@ public static class StableIdentity
         return new EntryPointId(Hash("entry-point:v1:", CanonicalIdentityJson.WriteHostedWorkerEntryPoint(descriptor)));
     }
 
+    public static EntryPointId CreateServiceOperationEntryPointId(ServiceOperationEntryPointIdentityDescriptor descriptor)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.Profile.Value, nameof(descriptor));
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.RootMethod.Value, nameof(descriptor));
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.OperationKey, nameof(descriptor));
+        return new EntryPointId(Hash("entry-point:v1:", CanonicalIdentityJson.WriteServiceOperationEntryPoint(descriptor)));
+    }
+
     public static string CreateScenarioDirectCallExpansionId(ScenarioDirectCallExpansionIdentityDescriptor descriptor)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
@@ -686,6 +695,18 @@ internal static class CanonicalIdentityJson
             writer.WriteString("hostedTypeId", descriptor.HostedType.Value);
             writer.WriteString("rootMethodId", descriptor.RootMethod.Value);
             writer.WriteString("kind", "HostedWorker");
+        });
+    }
+
+    public static string WriteServiceOperationEntryPoint(ServiceOperationEntryPointIdentityDescriptor descriptor)
+    {
+        return Write(writer =>
+        {
+            writer.WriteNumber("schemaVersion", 1);
+            writer.WriteString("profileId", descriptor.Profile.Value);
+            writer.WriteString("rootMethodId", descriptor.RootMethod.Value);
+            writer.WriteString("operationKey", descriptor.OperationKey);
+            writer.WriteString("kind", "ServiceOperation");
         });
     }
 

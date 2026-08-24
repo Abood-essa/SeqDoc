@@ -850,6 +850,42 @@ internal static class ScenarioTestFactory
         };
     }
 
+    internal static readonly EntryPointId ServiceOperationEntryPoint = new("entry-point:v1:CoreWcfServices.ICalculatorService.Add");
+    internal const string ServiceContractTypeName = "CoreWcfServices.ICalculatorService";
+    internal const string ServiceImplementationTypeName = "CoreWcfServices.CalculatorService";
+    internal const string ServiceOperationName = "Add";
+
+    /// <summary>
+    /// A CoreWCF service operation root that reuses the existing controller action's root method and
+    /// Method Flow: issue #7's model projects dispatch through the same default Method-Flow-driven
+    /// topology path a controller action already uses, adding only its own entry-point fact and
+    /// presentation. No HTTP method or canonical route ever backs this root.
+    /// </summary>
+    internal static ScenarioAnalysisRequest CreateServiceOperationRequest()
+    {
+        var request = CreateGetRequest();
+        var fact = new ServiceOperationEntryPointFact
+        {
+            Id = new BehaviorFactId("behavior-fact:v1:service-operation-entry-point:Add"),
+            Evidence = [SourceEvidence("service-operation-entry-point")],
+            Certainty = CertaintyLevel.Exact,
+            EntryPointId = ServiceOperationEntryPoint,
+            RootMethod = ActionMethod,
+            ServiceContractType = ServiceContractTypeName,
+            ImplementationType = ServiceImplementationTypeName,
+            OperationName = ServiceOperationName,
+            OperationKey = $"{ServiceContractTypeName}.{ServiceOperationName}",
+        };
+        return request with
+        {
+            FrameworkFacts = new FrameworkAnalysisResult(
+                true,
+                [fact],
+                [], [], [], [],
+                [new FrameworkModelDescriptor("seqdoc.corewcf.services", "1.0.0", "test", 110)]),
+        };
+    }
+
     internal static ScenarioAnalysisRequest CreateMinimalApiHandlerRequest()
     {
         var handlerRoot = new MethodId("method:v1:Program.Telecom");

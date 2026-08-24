@@ -82,6 +82,17 @@ public sealed record ConfiguredMethodEntryPointIdentityDescriptor(
     CompilationProfileId Profile,
     MethodId RootMethod);
 
+/// <summary>
+/// Identity for one admitted service-contract operation entry point. <see cref="OperationKey"/> is the
+/// exact service contract/operation identity key (analogous to <see cref="HttpEntryPointIdentityDescriptor"/>'s
+/// HTTP method plus canonical route), so the same root method under two distinct contract operations
+/// never collides and the same operation is always the same identity within one profile.
+/// </summary>
+public sealed record ServiceOperationEntryPointIdentityDescriptor(
+    CompilationProfileId Profile,
+    MethodId RootMethod,
+    string OperationKey);
+
 public sealed record HostedWorkerEntryPointIdentityDescriptor(
     CompilationProfileId Profile,
     SymbolId HostedType,

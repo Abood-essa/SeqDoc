@@ -215,13 +215,39 @@ public sealed record FrameworkTypeShape(
     ImmutableArray<FrameworkTypeIdentity> Interfaces = default);
 
 /// <summary>
+/// One compiler-proven interface member that a method implements, implicitly or explicitly. The
+/// eligibility projector fills this from <c>INamedTypeSymbol.FindImplementationForInterfaceMember</c>
+/// (implicit implementation) and <c>IMethodSymbol.ExplicitInterfaceImplementations</c> (explicit
+/// implementation); models never derive interface implementation from names or signatures written as
+/// strings. <see cref="InterfaceTypeSymbol"/> and <see cref="InterfaceMethodSymbol"/> are the same
+/// Program Index symbol identities used elsewhere, so a model can look up exact attributes applied to
+/// the interface type or interface method (for example <c>[ServiceContract]</c>/<c>[OperationContract]</c>)
+/// by target symbol, exactly like other exact-attribute admission joins. <see cref="InterfaceType"/>,
+/// <see cref="InterfaceMethodMetadataName"/>, <see cref="GenericArity"/>, <see cref="Parameters"/>, and
+/// <see cref="ReturnType"/> are the exact interface method signature, so a model can additionally guard
+/// against a same-named lookalike overload.
+/// </summary>
+public sealed record FrameworkInterfaceMemberIdentity(
+    SymbolId InterfaceTypeSymbol,
+    SymbolId InterfaceMethodSymbol,
+    FrameworkTypeIdentity InterfaceType,
+    string InterfaceMethodMetadataName,
+    int GenericArity,
+    ImmutableArray<ParameterIdentityDescriptor> Parameters,
+    string ReturnType,
+    bool IsExplicitImplementation);
+
+/// <summary>
 /// Compiler-proven shape of one method plus its declaring type, bound to the exact indexed symbols.
 /// The controlled projector derives both symbol IDs with the same Program Index identity helpers, so
 /// the model can require <see cref="MethodSymbol"/> to equal the indexed method symbol and
 /// <see cref="DeclaringTypeSymbol"/> to equal the indexed containing type before eligibility can
 /// support a root. Carried as the optional additive <see cref="SymbolDescriptor.MethodShape"/>;
 /// missing, mismatched, or incomplete shape input makes the model fail closed with an eligibility
-/// diagnostic and no root.
+/// diagnostic and no root. <see cref="ImplementedInterfaceMembers"/> is the additive exact
+/// interface-member-implementation mapping used by interface-contract-driven models (for example a
+/// service contract's operations); it defaults to an uninitialized array so existing callers compile
+/// unchanged, and a default or empty array means no interface member implementation was proven.
 /// </summary>
 public sealed record FrameworkMethodShape(
     SymbolId MethodSymbol,
@@ -231,7 +257,8 @@ public sealed record FrameworkMethodShape(
     bool IsStatic,
     bool IsAbstract,
     int GenericArity,
-    FrameworkTypeShape DeclaringType);
+    FrameworkTypeShape DeclaringType,
+    ImmutableArray<FrameworkInterfaceMemberIdentity> ImplementedInterfaceMembers = default);
 
 /// <summary>
 /// Framework-neutral facade over one symbol for model analysis. The Roslyn adapter constructs these;

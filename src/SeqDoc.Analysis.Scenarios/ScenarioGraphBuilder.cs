@@ -72,10 +72,13 @@ public static class ScenarioGraphBuilder
     {
         ArgumentNullException.ThrowIfNull(request);
         var frameworkEntries = request.FrameworkFacts.Facts
-            .Where(fact => fact is HttpEntryPointFact or MinimalApiRouteFact)
-            .Select(fact => fact is MinimalApiRouteFact minimal
-                ? new NormalizedEntry(minimal.EntryPointId, minimal.HandlerRoot, minimal.HttpMethod, minimal.CanonicalRoute, minimal.OperationKey, ScenarioActionKind.MinimalApiHandler, minimal.Evidence)
-                : new NormalizedEntry(((HttpEntryPointFact)fact).EntryPointId, ((HttpEntryPointFact)fact).RootMethod, ((HttpEntryPointFact)fact).HttpMethod, ((HttpEntryPointFact)fact).CanonicalRoute, ((HttpEntryPointFact)fact).OperationKey, ScenarioActionKind.ControllerAction, fact.Evidence))
+            .Where(fact => fact is HttpEntryPointFact or MinimalApiRouteFact or ServiceOperationEntryPointFact)
+            .Select(fact => fact switch
+            {
+                MinimalApiRouteFact minimal => new NormalizedEntry(minimal.EntryPointId, minimal.HandlerRoot, minimal.HttpMethod, minimal.CanonicalRoute, minimal.OperationKey, ScenarioActionKind.MinimalApiHandler, minimal.Evidence),
+                ServiceOperationEntryPointFact serviceOperation => new NormalizedEntry(serviceOperation.EntryPointId, serviceOperation.RootMethod, HttpMethodKind.Unknown, string.Empty, serviceOperation.OperationKey, ScenarioActionKind.ServiceOperation, serviceOperation.Evidence, ServiceOperation: serviceOperation),
+                _ => new NormalizedEntry(((HttpEntryPointFact)fact).EntryPointId, ((HttpEntryPointFact)fact).RootMethod, ((HttpEntryPointFact)fact).HttpMethod, ((HttpEntryPointFact)fact).CanonicalRoute, ((HttpEntryPointFact)fact).OperationKey, ScenarioActionKind.ControllerAction, fact.Evidence),
+            })
             .ToArray();
         var workerEntries = request.FrameworkFacts.Facts
             .OfType<HostedWorkerLifecycleFact>()
@@ -136,7 +139,8 @@ public static class ScenarioGraphBuilder
         string OperationKey,
         ScenarioActionKind ActionKind,
         ImmutableArray<EvidenceRef> Evidence,
-        HostedWorkerLifecycleFact? HostedWorker = null)
+        HostedWorkerLifecycleFact? HostedWorker = null,
+        ServiceOperationEntryPointFact? ServiceOperation = null)
     {
         public ScenarioRootKind RootKind => ActionKind switch
         {
@@ -179,6 +183,8 @@ public static class ScenarioGraphBuilder
             ? HostedWorkerPresentation(request.ProgramIndex, entryPoint.HostedWorker!)
             : entryPoint.ActionKind == ScenarioActionKind.MinimalApiHandler
             ? MinimalApiActionPresentation(request.ProgramIndex, entryPoint.RootMethod)
+            : entryPoint.ActionKind == ScenarioActionKind.ServiceOperation
+            ? ServiceOperationPresentation(entryPoint.ServiceOperation!)
             : ControllerActionPresentation(request.ProgramIndex, entryPoint.RootMethod);
         var actionNode = CreateNodeWithPresentation(
             profileId,
@@ -187,7 +193,7 @@ public static class ScenarioGraphBuilder
             $"action:{entryPoint.RootMethod.Value}",
             entryPoint.RootMethod,
             null,
-                 entryPoint.ActionKind == ScenarioActionKind.ConfiguredMethod ? "configured method" : entryPoint.ActionKind == ScenarioActionKind.HostedWorker ? "hosted worker lifecycle" : entryPoint.ActionKind == ScenarioActionKind.MinimalApiHandler ? "minimal API handler" : "controller action",
+                 entryPoint.ActionKind == ScenarioActionKind.ConfiguredMethod ? "configured method" : entryPoint.ActionKind == ScenarioActionKind.HostedWorker ? "hosted worker lifecycle" : entryPoint.ActionKind == ScenarioActionKind.MinimalApiHandler ? "minimal API handler" : entryPoint.ActionKind == ScenarioActionKind.ServiceOperation ? "CoreWCF service operation" : "controller action",
              actionPresentation with { ActionKind = entryPoint.ActionKind },
              entryPoint.Evidence);
         nodes.Add(actionNode);
@@ -2435,6 +2441,12 @@ public static class ScenarioGraphBuilder
                 ActionMethodName: methods[0].Name)
             : new ScenarioNodePresentation();
     }
+
+    private static ScenarioNodePresentation ServiceOperationPresentation(ServiceOperationEntryPointFact serviceOperation)
+        => new(
+            ContractTypeName: serviceOperation.ServiceContractType,
+            ImplementationTypeName: serviceOperation.ImplementationType,
+            ActionMethodName: serviceOperation.OperationName);
 
     private static ScenarioNodePresentation ConfiguredMethodPresentation(ProgramIndexSnapshot index, MethodId methodId)
     {

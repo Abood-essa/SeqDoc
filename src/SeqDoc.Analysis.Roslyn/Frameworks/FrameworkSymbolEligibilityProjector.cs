@@ -39,8 +39,92 @@ internal static class FrameworkSymbolEligibilityProjector
             IsStatic: method.IsStatic,
             IsAbstract: method.IsAbstract,
             GenericArity: method.Arity,
-            DeclaringType: ProjectTypeShape(declaringType));
+            DeclaringType: ProjectTypeShape(declaringType),
+            ImplementedInterfaceMembers: ProjectImplementedInterfaceMembers(method, declaringType, project));
     }
+
+    /// <summary>
+    /// Projects the exact set of interface members <paramref name="method"/> implements, implicit and
+    /// explicit. Implicit implementation is proven with
+    /// <see cref="INamedTypeSymbol.FindImplementationForInterfaceMember"/> over every interface the
+    /// declaring type carries (including inherited interfaces); explicit implementation is read
+    /// directly from <see cref="IMethodSymbol.ExplicitInterfaceImplementations"/>. Only ordinary
+    /// interface methods are considered; property/event accessors are out of scope for this projection.
+    /// </summary>
+    private static ImmutableArray<FrameworkInterfaceMemberIdentity> ProjectImplementedInterfaceMembers(
+        IMethodSymbol method, INamedTypeSymbol declaringType, StableProjectId project)
+    {
+        var builder = ImmutableArray.CreateBuilder<FrameworkInterfaceMemberIdentity>();
+        var seen = new HashSet<(SymbolId InterfaceType, SymbolId InterfaceMethod)>();
+
+        foreach (var interfaceType in declaringType.AllInterfaces)
+        {
+            foreach (var interfaceMember in interfaceType.GetMembers().OfType<IMethodSymbol>())
+            {
+                if (interfaceMember.MethodKind != MethodKind.Ordinary)
+                {
+                    continue;
+                }
+
+                // FindImplementationForInterfaceMember resolves both implicit and explicit
+                // implementations to the same method, so a single resolution proves the member is
+                // implemented; ExplicitInterfaceImplementations then classifies which shape it is.
+                var implementation = declaringType.FindImplementationForInterfaceMember(interfaceMember);
+                if (implementation is null || !SymbolEqualityComparer.Default.Equals(implementation, method))
+                {
+                    continue;
+                }
+
+                var isExplicit = method.ExplicitInterfaceImplementations
+                    .Any(explicitMember => SymbolEqualityComparer.Default.Equals(explicitMember, interfaceMember));
+                AddInterfaceMember(builder, seen, interfaceType, interfaceMember, project, isExplicit);
+            }
+        }
+
+        return builder
+            .OrderBy(item => item.InterfaceType.AssemblyIdentity, StringComparer.Ordinal)
+            .ThenBy(item => item.InterfaceType.MetadataName, StringComparer.Ordinal)
+            .ThenBy(item => item.InterfaceMethodMetadataName, StringComparer.Ordinal)
+            .ThenBy(item => item.GenericArity)
+            .ThenBy(item => item.InterfaceMethodSymbol.Value, StringComparer.Ordinal)
+            .ToImmutableArray();
+    }
+
+    private static void AddInterfaceMember(
+        ImmutableArray<FrameworkInterfaceMemberIdentity>.Builder builder,
+        HashSet<(SymbolId InterfaceType, SymbolId InterfaceMethod)> seen,
+        INamedTypeSymbol interfaceType,
+        IMethodSymbol interfaceMethod,
+        StableProjectId project,
+        bool isExplicit)
+    {
+        var interfaceTypeSymbol = RoslynProgramIndexExtractor.CreateSymbolId(interfaceType, project);
+        var interfaceMethodSymbol = StableIdentity.CreateSymbolId(
+            RoslynProgramIndexExtractor.CreateMethodDescriptor(interfaceMethod, project));
+        if (!seen.Add((interfaceTypeSymbol, interfaceMethodSymbol)))
+        {
+            // The same interface member can be reached through more than one AllInterfaces path (for
+            // example diamond inheritance); the first proof is retained and duplicates are dropped.
+            return;
+        }
+
+        builder.Add(new FrameworkInterfaceMemberIdentity(
+            interfaceTypeSymbol,
+            interfaceMethodSymbol,
+            ProjectTypeIdentity(interfaceType),
+            interfaceMethod.MetadataName,
+            interfaceMethod.Arity,
+            interfaceMethod.Parameters
+                .Select(parameter => new ParameterIdentityDescriptor(
+                    RoslynProgramIndexExtractor.ToParameterRefKind(parameter.RefKind),
+                    DisplayType(parameter.Type)))
+                .ToImmutableArray(),
+            DisplayType(interfaceMethod.ReturnType),
+            isExplicit));
+    }
+
+    private static string DisplayType(ITypeSymbol type)
+        => type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat);
 
     /// <summary>
     /// Projects the compiler shape of one named type, including the exact base-type chain.
