@@ -149,6 +149,8 @@ public sealed class HostedWorkerProductionProjectionTests
         Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.BatchLoop);
         Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.RetryLoop);
         Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.CancellationCheck);
+        Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.ThrottlingBoundary);
+        Assert.Contains(workerControlNodes, node => node.Presentation!.HostedWorkerControlKind == HostedWorkerControlKind.TerminalOutcome);
         var controlWording = graphs.Graphs
             .Where(item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker)
             .SelectMany(item => DocumentationPlanner.Plan(item).Wording.Phrases)
@@ -158,6 +160,8 @@ public sealed class HostedWorkerProductionProjectionTests
         Assert.Contains(controlWording, phrase => phrase.Contains("processes items in a batch loop", StringComparison.Ordinal));
         Assert.Contains(controlWording, phrase => phrase.Contains("retries work across a compiler-proven loop boundary", StringComparison.Ordinal));
         Assert.Contains(controlWording, phrase => phrase.Contains("checks its cancellation token", StringComparison.Ordinal));
+        Assert.Contains(controlWording, phrase => phrase.Contains("semaphore throttling boundary", StringComparison.Ordinal));
+        Assert.Contains(controlWording, phrase => phrase.Contains("terminal outcome boundary", StringComparison.Ordinal));
         Assert.DoesNotContain(controlWording, phrase => phrase.Contains("eventually", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(controlWording, phrase => phrase.Contains("succeeds", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(controlWording, phrase => phrase.Contains("completed", StringComparison.OrdinalIgnoreCase));

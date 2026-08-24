@@ -6,3 +6,4 @@ builder.Services.AddHostedService<HostedWorkers.BackgroundWorker>();
 builder.Services.AddHostedService<HostedWorkers.BatchWorker>();
 builder.Services.AddHostedService<HostedWorkers.RetryWorker>();
 builder.Services.AddHostedService<HostedWorkers.LookalikeCancellationWorker>();
+builder.Services.AddHostedService<HostedWorkers.ThrottledWorker>();

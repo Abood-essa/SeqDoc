@@ -2597,7 +2597,8 @@ public static class ScenarioGraphBuilder
         {
             var flows = request.Behavior.MethodFlows
                 .Where(flow => flow.Method == method)
-                .Where(flow => request.Behavior.Profile.Id == request.Profile.Id
+                .Where(flow => request.Behavior.Profile is { } behaviorProfile
+                    && behaviorProfile.Id == request.Profile.Id
                     && string.Equals(request.Behavior.ProgramIndexFingerprint, request.ProgramIndex.IndexFingerprint, StringComparison.Ordinal))
                 .OrderBy(flow => flow.FlowFingerprint, StringComparer.Ordinal)
                 .ToArray();
@@ -2701,12 +2702,92 @@ public static class ScenarioGraphBuilder
                     evidence.Max(item => item.Certainty),
                     sequenceOrdinal));
             }
+
+            foreach (var invocation in flow.Nodes
+                         .OfType<InvocationFlowNode>()
+                         .Where(IsThrottlingBoundary)
+                         .OrderBy(invocation => invocation.Id.Value, StringComparer.Ordinal))
+            {
+                var source = nodes.LastOrDefault(node => node.Method == method)
+                    ?? nodes.First(node => node.Kind == ScenarioNodeKind.Action);
+                var node = CreateNodeWithPresentation(
+                    request.Profile.Id,
+                    entry.EntryPointId,
+                    ScenarioNodeKind.MethodCall,
+                    $"worker-control:throttling:{invocation.Operation.Value}",
+                    method,
+                    invocation.Operation,
+                    "semaphore throttling boundary",
+                    new ScenarioNodePresentation(
+                        TargetContainingTypeName: worker.HostedTypeName,
+                        TargetMemberName: "semaphore throttling boundary",
+                        HostedWorkerTypeName: worker.HostedTypeName,
+                        ActionKind: ScenarioActionKind.HostedWorker,
+                        HostedWorkerControlKind: HostedWorkerControlKind.ThrottlingBoundary),
+                    invocation.Evidence,
+                    invocation.Certainty,
+                    sequenceOrdinal++);
+                nodes.Add(node);
+                edges.Add(CreateEdge(
+                    request.Profile.Id,
+                    entry.EntryPointId,
+                    source,
+                    node,
+                    ScenarioEdgeKind.Call,
+                    "semaphore throttling boundary",
+                    invocation.Evidence,
+                    invocation.Certainty,
+                    sequenceOrdinal));
+            }
+
+            foreach (var outcome in flow.Outcomes
+                         .Where(outcome => outcome.Kind is FlowOutcomeKind.ExplicitReturn or FlowOutcomeKind.EscapingThrow)
+                         .OrderBy(outcome => outcome.BlockOrdinal ?? int.MaxValue)
+                         .ThenBy(outcome => outcome.Kind))
+            {
+                var source = nodes.LastOrDefault(node => node.Method == method)
+                    ?? nodes.First(node => node.Kind == ScenarioNodeKind.Action);
+                var node = CreateNodeWithPresentation(
+                    request.Profile.Id,
+                    entry.EntryPointId,
+                    ScenarioNodeKind.MethodCall,
+                    $"worker-control:terminal:{outcome.Kind}:{outcome.BlockOrdinal?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "unknown"}",
+                    method,
+                    outcome.TerminalOperation,
+                    "terminal outcome boundary",
+                    new ScenarioNodePresentation(
+                        TargetContainingTypeName: worker.HostedTypeName,
+                        TargetMemberName: "terminal outcome boundary",
+                        HostedWorkerTypeName: worker.HostedTypeName,
+                        ActionKind: ScenarioActionKind.HostedWorker,
+                        HostedWorkerControlKind: HostedWorkerControlKind.TerminalOutcome),
+                    outcome.Evidence,
+                    outcome.Certainty,
+                    sequenceOrdinal++);
+                nodes.Add(node);
+                edges.Add(CreateEdge(
+                    request.Profile.Id,
+                    entry.EntryPointId,
+                    source,
+                    node,
+                    ScenarioEdgeKind.Call,
+                    "terminal outcome boundary",
+                    outcome.Evidence,
+                    outcome.Certainty,
+                    sequenceOrdinal));
+            }
         }
 
         static bool IsCancellationCheck(InvocationFlowNode invocation)
-            => invocation.TargetAssemblyName is "System.Runtime" or "System.Private.CoreLib"
+            => invocation.TargetAssemblyName is "System.Runtime" or "System.Private.CoreLib" or "System.Threading"
                 && invocation.TargetContainingTypeName == "System.Threading.CancellationToken"
                 && invocation.TargetMethodName == "ThrowIfCancellationRequested"
+                && !invocation.IsDynamic;
+
+        static bool IsThrottlingBoundary(InvocationFlowNode invocation)
+            => invocation.TargetAssemblyName is "System.Runtime" or "System.Private.CoreLib" or "System.Threading"
+                && invocation.TargetContainingTypeName == "System.Threading.SemaphoreSlim"
+                && invocation.TargetMethodName is "Wait" or "WaitAsync" or "Release"
                 && !invocation.IsDynamic;
     }
 

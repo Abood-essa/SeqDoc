@@ -76,6 +76,8 @@ public enum HostedWorkerControlKind
     BatchLoop,
     RetryLoop,
     CancellationCheck,
+    ThrottlingBoundary,
+    TerminalOutcome,
 }
 
 /// <summary>

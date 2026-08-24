@@ -3299,6 +3299,10 @@ public static class DocumentationPlanner
                     => "The hosted worker retries work across a compiler-proven loop boundary.",
                 _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.CancellationCheck
                     => "The hosted worker checks its cancellation token.",
+                _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.ThrottlingBoundary
+                    => "The hosted worker uses a semaphore throttling boundary.",
+                _ when presentation.HostedWorkerControlKind is HostedWorkerControlKind.TerminalOutcome
+                    => "The hosted worker has a compiler-proven terminal outcome boundary.",
                 _ => presentation.HostedWorkerSchedulerRegistration
                     ? "The hosted worker registers a timer callback."
                     : "The hosted worker has an unsupported lifecycle slot.",

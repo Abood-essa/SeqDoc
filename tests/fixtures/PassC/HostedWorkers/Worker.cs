@@ -98,6 +98,27 @@ public static class FakeCancellation
     }
 }
 
+public sealed class ThrottledWorker : BackgroundService
+{
+    private readonly SemaphoreSlim gate = new(1, 1);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (true)
+        {
+            await gate.WaitAsync(stoppingToken);
+            try
+            {
+                await Task.Delay(1, stoppingToken);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+    }
+}
+
 // This type proves that framework capability extraction is not registration admission.
 public sealed class UnregisteredWorker : IHostedService
 {
