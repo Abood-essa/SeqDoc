@@ -494,10 +494,10 @@ public sealed record DiagramFragment
 
                 break;
             case DiagramFragmentKind.Loop:
-                if (!arms.IsDefaultOrEmpty || !fragments.IsDefaultOrEmpty)
+                if (!arms.IsDefaultOrEmpty)
                 {
                     throw new ArgumentException(
-                        "A Loop fragment admits only message refs, never arms or nested fragments.",
+                        "A Loop fragment admits message refs and nested fragments, never arms.",
                         nameof(kind));
                 }
 

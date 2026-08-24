@@ -80,6 +80,34 @@ public enum HostedWorkerControlKind
     TerminalOutcome,
 }
 
+public enum ScenarioFlowContainerKind
+{
+    NaturalLoop,
+    CatchRegion,
+    FilterRegion,
+    FinallyRegion,
+}
+
+/// <summary>One exact Method Flow container retained for Scenario and Diagram placement.</summary>
+public sealed record ScenarioFlowContainer(
+    FlowRegionId Region,
+    MethodId Method,
+    ScenarioFlowContainerKind Kind,
+    FlowNodeId? Header,
+    FlowRegionId? Parent,
+    ImmutableArray<EvidenceRef> Evidence,
+    CertaintyLevel Certainty);
+
+/// <summary>Exact placement of one scenario node in Method Flow regions and natural-loop nesting.</summary>
+public sealed record ScenarioFlowPlacement(
+    ScenarioNodeId ScenarioNode,
+    MethodId Method,
+    FlowNodeId? Anchor,
+    ImmutableArray<FlowRegionId> Containers,
+    ImmutableArray<ScenarioArmId> GuardArms,
+    ImmutableArray<EvidenceRef> Evidence,
+    CertaintyLevel Certainty);
+
 /// <summary>
 /// One evidence-backed scenario-graph node. The key is the canonical stable identity used to build
 /// the node identity; method and operation anchors are optional per kind. Every node carries
@@ -202,7 +230,10 @@ public sealed record ScenarioNodePresentation(
     HostedWorkerLifecycleStep? HostedWorkerLifecycleStep = null,
     string? HostedWorkerCancellationParameterName = null,
     bool HostedWorkerSchedulerRegistration = false,
-    HostedWorkerControlKind? HostedWorkerControlKind = null);
+    HostedWorkerControlKind? HostedWorkerControlKind = null,
+    FlowRegionId? HostedWorkerFlowRegion = null,
+    FlowNodeId? HostedWorkerHeader = null,
+    int? HostedWorkerBlockOrdinal = null);
 
 /// <summary>
 /// One evidence-backed scenario-graph edge connecting two nodes. Every edge carries non-empty
@@ -792,10 +823,12 @@ public sealed record ScenarioTopology(
     ImmutableArray<ScenarioDecision> Decisions,
     ImmutableArray<ScenarioArm> Arms,
     ImmutableArray<ScenarioMembership> Memberships,
-    ImmutableArray<ScenarioArmTerminal> Terminals)
+    ImmutableArray<ScenarioArmTerminal> Terminals,
+    ImmutableArray<ScenarioFlowContainer> FlowContainers = default,
+    ImmutableArray<ScenarioFlowPlacement> FlowPlacements = default)
 {
     /// <summary>The canonical empty topology used by source-compatible legacy construction.</summary>
-    public static ScenarioTopology Empty { get; } = new([], [], [], []);
+    public static ScenarioTopology Empty { get; } = new([], [], [], [], [], []);
 }
 
 public sealed record ScenarioHandlerParameter(string Name, string TypeName, HttpBindingKind BindingKind,

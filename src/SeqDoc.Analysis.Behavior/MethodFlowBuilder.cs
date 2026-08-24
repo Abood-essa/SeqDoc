@@ -209,7 +209,8 @@ public static class MethodFlowBuilder
                    operation.Invocation?.TargetAssemblyName,
                    operation.Invocation?.IsPlatformTarget ?? false,
                    ConstantArguments: ProjectConstantArguments(operation, operationsById),
-                   ReceiverParameterOrdinal: operation.Invocation?.ReceiverParameterOrdinal),
+                   ReceiverParameterOrdinal: operation.Invocation?.ReceiverParameterOrdinal,
+                   ReceiverIdentity: operation.Invocation?.ReceiverIdentity),
             ExtractedOperationKind.ObjectCreation => new InvocationFlowNode(
                 id,
                 method,
@@ -632,6 +633,7 @@ public static class MethodFlowBuilder
                 {
                     LoopKind = FindLoopKind(headerOrdinal, loopMembers, blocksByOrdinal),
                     ContainsAwait = ContainsAwait(body, loopMembers, blocksByOrdinal),
+                    HeaderBlockOrdinal = headerOrdinal,
                 });
                 regions.Add(new FlowRegion(
                     loopId,
@@ -803,7 +805,8 @@ public static class MethodFlowBuilder
                         block.Ordinal,
                         block.BranchCondition,
                         block.Evidence,
-                        CertaintyLevel.Exact));
+                        CertaintyLevel.Exact,
+                        blockTails.GetValueOrDefault(block.Ordinal)));
                     break;
                 case ExtractedBlockTerminalKind.Throw:
                     if (!block.EscapingThrow)
@@ -816,7 +819,8 @@ public static class MethodFlowBuilder
                         block.Ordinal,
                         block.BranchCondition,
                         block.Evidence,
-                        CertaintyLevel.Exact));
+                        CertaintyLevel.Exact,
+                        blockTails.GetValueOrDefault(block.Ordinal)));
                     break;
                 case ExtractedBlockTerminalKind.Rethrow:
                     if (!block.EscapingThrow)
@@ -829,7 +833,8 @@ public static class MethodFlowBuilder
                         block.Ordinal,
                         block.BranchCondition,
                         block.Evidence,
-                        CertaintyLevel.Exact));
+                        CertaintyLevel.Exact,
+                        blockTails.GetValueOrDefault(block.Ordinal)));
                     break;
                 case ExtractedBlockTerminalKind.Unknown:
                     outcomes.Add(new FlowOutcome(

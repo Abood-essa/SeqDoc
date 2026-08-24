@@ -170,6 +170,77 @@ public sealed class UnrelatedCatchWorker : BackgroundService
     }
 }
 
+public sealed class LambdaAwaitWorker : BackgroundService
+{
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (true)
+        {
+            async Task LocalWork()
+            {
+                await Task.Delay(1, stoppingToken);
+            }
+
+            _ = (Func<Task>)LocalWork;
+            return Task.CompletedTask;
+        }
+    }
+}
+
+public sealed class UnsupportedLoopWorker : BackgroundService
+{
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+    start:
+        if (!stoppingToken.IsCancellationRequested)
+        {
+            goto start;
+        }
+
+        return Task.CompletedTask;
+    }
+}
+
+public sealed class TwoSemaphoreWorker : BackgroundService
+{
+    private readonly SemaphoreSlim first = new(1, 1);
+    private readonly SemaphoreSlim second = new(1, 1);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (true)
+        {
+            await first.WaitAsync(stoppingToken);
+            try
+            {
+                await second.WaitAsync(stoppingToken);
+                second.Release();
+            }
+            finally
+            {
+                first.Release();
+            }
+        }
+    }
+}
+
+public sealed class GuardedWorker : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (true)
+        {
+            if (!stoppingToken.IsCancellationRequested)
+            {
+                stoppingToken.ThrowIfCancellationRequested();
+                await Task.Delay(1, stoppingToken);
+            }
+
+            return;
+        }
+    }
+}
+
 // This type proves that framework capability extraction is not registration admission.
 public sealed class UnregisteredWorker : IHostedService
 {

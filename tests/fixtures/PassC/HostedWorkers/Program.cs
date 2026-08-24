@@ -11,3 +11,7 @@ builder.Services.AddHostedService<HostedWorkers.LocalTokenWorker>();
 builder.Services.AddHostedService<HostedWorkers.FieldTokenWorker>();
 builder.Services.AddHostedService<HostedWorkers.SubstitutedTokenWorker>();
 builder.Services.AddHostedService<HostedWorkers.UnrelatedCatchWorker>();
+builder.Services.AddHostedService<HostedWorkers.LambdaAwaitWorker>();
+builder.Services.AddHostedService<HostedWorkers.UnsupportedLoopWorker>();
+builder.Services.AddHostedService<HostedWorkers.TwoSemaphoreWorker>();
+builder.Services.AddHostedService<HostedWorkers.GuardedWorker>();

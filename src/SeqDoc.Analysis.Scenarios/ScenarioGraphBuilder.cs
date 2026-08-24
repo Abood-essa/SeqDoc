@@ -203,7 +203,8 @@ public static class ScenarioGraphBuilder
         if (entryPoint.ActionKind == ScenarioActionKind.HostedWorker)
         {
             AddHostedWorkerLifecycle(request, entryPoint, actionNode, nodes, edges, diagnostics);
-            return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, ScenarioTopology.Empty);
+            var hostedTopology = BuildHostedWorkerTopology(request, entryPoint, nodes, edges, diagnostics);
+            return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, hostedTopology);
         }
 
         if (entryPoint.ActionKind == ScenarioActionKind.ConfiguredMethod)
@@ -2632,7 +2633,9 @@ public static class ScenarioGraphBuilder
                     classification.Evidence.Max(item => item.Certainty),
                     LoopAnchorBlock(flow, loop),
                     0,
-                    $"loop:{loop.Id.Value}"));
+                    $"loop:{loop.Id.Value}",
+                    loop.Region,
+                    loop.Header));
             }
 
             var programMethod = request.ProgramIndex.Methods.SingleOrDefault(candidate => candidate.Id == method);
@@ -2669,7 +2672,9 @@ public static class ScenarioGraphBuilder
                     evidence.Max(item => item.Certainty),
                     invocation.BlockOrdinal,
                     invocation.EvaluationOrdinal,
-                    $"cancellation:{invocation.Operation.Value}"));
+                    $"cancellation:{invocation.Operation.Value}",
+                    null,
+                    invocation.Id));
             }
 
             var semaphoreInvocations = flow.Nodes
@@ -2679,17 +2684,20 @@ public static class ScenarioGraphBuilder
                 .ThenBy(invocation => invocation.EvaluationOrdinal)
                 .ThenBy(invocation => invocation.Id.Value, StringComparer.Ordinal)
                 .ToArray();
-            if (semaphoreInvocations.Length > 0)
+            foreach (var semaphoreGroup in semaphoreInvocations
+                         .GroupBy(invocation => SemaphoreGroupKey(flow, invocation), StringComparer.Ordinal)
+                         .OrderBy(group => group.Key, StringComparer.Ordinal))
             {
-                var invocation = semaphoreInvocations[0];
+                var groupInvocations = semaphoreGroup.ToArray();
+                var invocation = groupInvocations[0];
                 var evidence = Combine(
-                    semaphoreInvocations.SelectMany(item => item.Evidence).ToImmutableArray(),
+                    groupInvocations.SelectMany(item => item.Evidence).ToImmutableArray(),
                     flow.Regions
-                        .Where(region => region.Nodes.Any(semaphoreInvocations.Select(item => item.Id).Contains))
+                        .Where(region => region.Nodes.Any(groupInvocations.Select(item => item.Id).Contains))
                         .SelectMany(region => region.Evidence)
                         .ToImmutableArray(),
                     flow.ControlDependences
-                        .Where(dependence => semaphoreInvocations.Any(item => item.Id == dependence.ControlledNode))
+                        .Where(dependence => groupInvocations.Any(item => item.Id == dependence.ControlledNode))
                         .SelectMany(dependence => dependence.Evidence)
                         .ToImmutableArray(),
                     entry.Evidence);
@@ -2701,7 +2709,9 @@ public static class ScenarioGraphBuilder
                     evidence.Max(item => item.Certainty),
                     invocation.BlockOrdinal,
                     invocation.EvaluationOrdinal,
-                    $"semaphore:{invocation.Operation.Value}"));
+                    $"semaphore:{invocation.Operation.Value}",
+                    null,
+                    invocation.Id));
             }
 
             foreach (var outcome in flow.Outcomes
@@ -2717,7 +2727,9 @@ public static class ScenarioGraphBuilder
                     Combine(outcome.Evidence, entry.Evidence).Max(item => item.Certainty),
                     outcome.BlockOrdinal ?? int.MaxValue,
                     int.MaxValue,
-                    $"terminal:{outcome.Kind}:{outcome.BlockOrdinal?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "unknown"}"));
+                    $"terminal:{outcome.Kind}:{outcome.BlockOrdinal?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "unknown"}",
+                    null,
+                    outcome.TerminalNode));
             }
 
             foreach (var observation in observations
@@ -2741,7 +2753,10 @@ public static class ScenarioGraphBuilder
                         TargetMemberName: observation.Detail,
                         HostedWorkerTypeName: worker.HostedTypeName,
                         ActionKind: ScenarioActionKind.HostedWorker,
-                        HostedWorkerControlKind: observation.Kind),
+                        HostedWorkerControlKind: observation.Kind,
+                        HostedWorkerFlowRegion: observation.ContainerRegion,
+                        HostedWorkerHeader: observation.Anchor,
+                        HostedWorkerBlockOrdinal: observation.BlockOrdinal),
                     observation.Evidence,
                     observation.Certainty,
                     sequenceOrdinal++);
@@ -2771,12 +2786,23 @@ public static class ScenarioGraphBuilder
                 && invocation.TargetContainingTypeName == "System.Threading.SemaphoreSlim"
                 && invocation.TargetMethodName is "Wait" or "WaitAsync" or "Release"
                 && !invocation.IsDynamic;
+
+        static string SemaphoreGroupKey(MethodFlowSnapshot flow, InvocationFlowNode invocation)
+        {
+            var regionKey = string.Join(",", flow.Regions
+                .Where(region => region.Kind == FlowRegionKind.NaturalLoop && region.Nodes.Contains(invocation.Id))
+                .Select(region => region.Id.Value)
+                .Order(StringComparer.Ordinal));
+            return $"{invocation.ReceiverIdentity ?? $"unproven:{invocation.Id.Value}"}\u001f{regionKey}";
+        }
     }
 
     private sealed record WorkerLoopClassification(
         HostedWorkerControlKind Kind,
         OperationId? Operation,
-        ImmutableArray<EvidenceRef> Evidence);
+        ImmutableArray<EvidenceRef> Evidence,
+        FlowRegionId Region,
+        FlowNodeId Header);
 
     private sealed record WorkerControlObservation(
         HostedWorkerControlKind Kind,
@@ -2786,15 +2812,209 @@ public static class ScenarioGraphBuilder
         CertaintyLevel Certainty,
         int BlockOrdinal,
         int EvaluationOrdinal,
-        string KeySuffix);
+        string KeySuffix,
+        FlowRegionId? ContainerRegion,
+        FlowNodeId? Anchor);
+
+    private static ScenarioTopology BuildHostedWorkerTopology(
+        ScenarioAnalysisRequest request,
+        NormalizedEntry entry,
+        List<ScenarioNode> nodes,
+        List<ScenarioEdge> edges,
+        List<ScenarioGraphDiagnostic> diagnostics)
+    {
+        var containers = new List<ScenarioFlowContainer>();
+        var placements = new List<ScenarioFlowPlacement>();
+        var decisions = new List<ScenarioDecision>();
+        var arms = new List<ScenarioArm>();
+        var memberships = new List<ScenarioMembership>();
+        var terminals = new List<ScenarioArmTerminal>();
+
+        var methods = new[] { entry.HostedWorker!.StartMethod, entry.HostedWorker.ExecuteMethod, entry.HostedWorker.StopMethod }
+            .Where(method => method is not null)
+            .Select(method => method!.Value)
+            .Distinct()
+            .OrderBy(method => method.Value, StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var method in methods)
+        {
+            var flow = request.Behavior.MethodFlows
+                .Where(candidate => candidate.Method == method)
+                .Where(candidate => request.Behavior.Profile is { } behaviorProfile
+                    && behaviorProfile.Id == request.Profile.Id
+                    && string.Equals(request.Behavior.ProgramIndexFingerprint, request.ProgramIndex.IndexFingerprint, StringComparison.Ordinal))
+                .OrderBy(candidate => candidate.FlowFingerprint, StringComparer.Ordinal)
+                .ToArray();
+            if (flow.Length != 1)
+            {
+                continue;
+            }
+
+            var snapshot = flow[0];
+            var regionById = snapshot.Regions.ToDictionary(region => region.Id);
+            var loopByRegion = snapshot.Nodes.OfType<LoopNode>()
+                .Where(loop => loop.Header is not null && loop.HeaderBlockOrdinal is not null)
+                .ToDictionary(loop => loop.Region);
+            var flowContainers = new List<(ScenarioFlowContainer Container, ImmutableHashSet<FlowNodeId> Members)>();
+            foreach (var region in snapshot.Regions
+                         .Where(region => region.Kind is FlowRegionKind.NaturalLoop or FlowRegionKind.Catch or FlowRegionKind.Filter or FlowRegionKind.Finally)
+                         .OrderBy(region => region.Ordinal))
+            {
+                if (region.Kind == FlowRegionKind.NaturalLoop && !loopByRegion.ContainsKey(region.Id))
+                {
+                    continue;
+                }
+
+                var kind = region.Kind switch
+                {
+                    FlowRegionKind.NaturalLoop => ScenarioFlowContainerKind.NaturalLoop,
+                    FlowRegionKind.Catch => ScenarioFlowContainerKind.CatchRegion,
+                    FlowRegionKind.Filter => ScenarioFlowContainerKind.FilterRegion,
+                    FlowRegionKind.Finally => ScenarioFlowContainerKind.FinallyRegion,
+                    _ => throw new InvalidOperationException("An impossible worker flow region was encountered."),
+                };
+                var loop = loopByRegion.GetValueOrDefault(region.Id);
+                flowContainers.Add((new ScenarioFlowContainer(
+                    region.Id,
+                    method,
+                    kind,
+                    loop?.Header,
+                    region.Parent,
+                    region.Evidence,
+                    region.Certainty),
+                    region.Nodes.ToImmutableHashSet()));
+            }
+
+            // Natural-loop regions are not emitted by Roslyn with a parent link. Derive only the
+            // exact containment already present in Method Flow; never infer nesting from source text
+            // or from scenario-node append order.
+            var withParents = flowContainers.Select(item =>
+            {
+                var parents = flowContainers
+                    .Where(candidate => candidate.Container.Region != item.Container.Region
+                        && candidate.Members.IsSupersetOf(item.Members)
+                        && candidate.Members.Count > item.Members.Count)
+                    .OrderBy(candidate => candidate.Members.Count)
+                    .ThenBy(candidate => candidate.Container.Region.Value, StringComparer.Ordinal)
+                    .ToArray();
+                var container = parents.Length == 0
+                    ? item.Container
+                    : item.Container with { Parent = parents[0].Container.Region };
+                return (Container: container, Members: item.Members);
+            }).ToArray();
+            containers.AddRange(withParents.Select(item => item.Container));
+
+            var topologyNodes = nodes
+                .Where(node => node.Method == method
+                    && node.Presentation?.HostedWorkerControlKind is not null
+                    && node.Operation is not null)
+                .ToImmutableArray();
+            if (topologyNodes.Length > 0)
+            {
+                var guardTopology = BuildTopology(request, request.Profile.Id, entry.EntryPointId, entry, method, topologyNodes, diagnostics);
+                decisions.AddRange(guardTopology.Decisions);
+                arms.AddRange(guardTopology.Arms);
+                memberships.AddRange(guardTopology.Memberships);
+                terminals.AddRange(guardTopology.Terminals);
+            }
+
+            foreach (var node in nodes
+                         .Where(node => node.Method == method && node.Presentation?.HostedWorkerControlKind is not null)
+                         .OrderBy(node => node.SequenceOrdinal)
+                         .ThenBy(node => node.Id.Value, StringComparer.Ordinal))
+            {
+                var anchor = node.Presentation!.HostedWorkerHeader
+                    ?? (node.Operation is { } operation
+                        ? snapshot.Nodes.FirstOrDefault(candidate => candidate switch
+                        {
+                            InvocationFlowNode invocation => invocation.Operation == operation,
+                            OperationFlowNode operationNode => operationNode.Operation == operation,
+                            _ => false,
+                        })?.Id
+                        : null);
+                if (anchor is null)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        request.Profile.Id,
+                        entry.EntryPointId,
+                        "SC-WORKER-UNSUPPORTED-PLACEMENT",
+                        "The worker control was withheld because its exact Method Flow anchor is unavailable.",
+                        $"method={method.Value};node={node.Key}",
+                        node.Evidence,
+                        CertaintyLevel.Conservative));
+                    nodes.Remove(node);
+                    edges.RemoveAll(edge => edge.Source == node.Id || edge.Target == node.Id);
+                    continue;
+                }
+
+                var containing = withParents
+                    .Where(item => item.Members.Contains(anchor.Value)
+                        || item.Container.Header == anchor)
+                    .Select(item => item.Container)
+                    .OrderBy(container => ContainerDepth(container, withParents))
+                    .ThenBy(container => container.Region.Value, StringComparer.Ordinal)
+                    .Select(container => container.Region)
+                    .ToImmutableArray();
+                if (node.Presentation.HostedWorkerFlowRegion is { } declaredRegion
+                    && !containing.Contains(declaredRegion))
+                {
+                    containing = containing.Add(declaredRegion);
+                }
+
+                var nodeMemberships = memberships.Where(membership => membership.ScenarioNode == node.Id).ToArray();
+                var placementEvidence = Combine(
+                    node.Evidence,
+                    containing.SelectMany(region => containers.First(item => item.Region == region).Evidence).ToImmutableArray(),
+                    nodeMemberships.SelectMany(membership => membership.Evidence).ToImmutableArray());
+                placements.Add(new ScenarioFlowPlacement(
+                    node.Id,
+                    method,
+                    anchor,
+                    containing,
+                    nodeMemberships.Select(membership => membership.Arm).ToImmutableArray(),
+                    placementEvidence,
+                    placementEvidence.Max(item => item.Certainty)));
+            }
+        }
+
+        var decisionById = decisions.ToDictionary(decision => decision.Id);
+        var armById = arms.ToDictionary(arm => arm.Id);
+        var orderedContainers = containers
+            .GroupBy(container => container.Region)
+            .Select(group => group.First())
+            .OrderBy(container => container.Method.Value, StringComparer.Ordinal)
+            .ThenBy(container => container.Region.Value, StringComparer.Ordinal)
+            .ToImmutableArray();
+        return new ScenarioTopology(
+            decisions.OrderBy(decision => decision.ControllingFlowNode.Value, StringComparer.Ordinal).ToImmutableArray(),
+            arms.OrderBy(arm => arm.Decision.Value, StringComparer.Ordinal).ThenBy(arm => arm.IsTrue).ToImmutableArray(),
+            memberships.GroupBy(membership => (membership.Arm, membership.ScenarioNode)).Select(group => group.First())
+                .OrderBy(membership => membership.Arm.Value, StringComparer.Ordinal)
+                .ThenBy(membership => membership.ScenarioNode.Value, StringComparer.Ordinal).ToImmutableArray(),
+            terminals.Where(terminal => decisionById.ContainsKey(armById.GetValueOrDefault(terminal.Arm)?.Decision ?? default!))
+                .OrderBy(terminal => terminal.Arm.Value, StringComparer.Ordinal).ToImmutableArray(),
+            orderedContainers,
+            placements.OrderBy(placement => placement.Method.Value, StringComparer.Ordinal)
+                .ThenBy(placement => placement.Anchor?.Value, StringComparer.Ordinal)
+                .ThenBy(placement => placement.ScenarioNode.Value, StringComparer.Ordinal).ToImmutableArray());
+
+        static int ContainerDepth(ScenarioFlowContainer container, IEnumerable<(ScenarioFlowContainer Container, ImmutableHashSet<FlowNodeId> Members)> all)
+        {
+            var depth = 0;
+            var current = container;
+            while (current.Parent is { } parent)
+            {
+                depth++;
+                current = all.FirstOrDefault(item => item.Container.Region == parent).Container;
+                if (current is null) { break; }
+            }
+            return depth;
+        }
+    }
 
     private static int LoopAnchorBlock(MethodFlowSnapshot flow, LoopNode loop)
-    {
-        var header = flow.Nodes.FirstOrDefault(node => node.Id == loop.Header);
-        return header is InvocationFlowNode invocation
-            ? invocation.BlockOrdinal
-            : loop.BodyBlockOrdinals.DefaultIfEmpty(int.MaxValue).Min();
-    }
+        => loop.HeaderBlockOrdinal ?? int.MaxValue;
 
     private static WorkerLoopClassification? ClassifyWorkerLoop(
         MethodFlowSnapshot flow,
@@ -2815,6 +3035,10 @@ public static class ScenarioGraphBuilder
         var operation = members.OfType<OperationFlowNode>().FirstOrDefault();
         var operationKind = loop.LoopKind;
         var awaited = loop.ContainsAwait;
+        if (loop.Header is null || loop.HeaderBlockOrdinal is null || operationKind == ExtractedOperationKind.Unknown)
+        {
+            return null;
+        }
         HostedWorkerControlKind? kind = hasCatchContinuation && hasLoopBack
             ? HostedWorkerControlKind.CatchLoopContinuation
             : operationKind == ExtractedOperationKind.ForEachLoop
@@ -2839,7 +3063,7 @@ public static class ScenarioGraphBuilder
             flow.Edges.Where(edge => edge.Kind == FlowEdgeKind.LoopBack && (edge.Target == loop.Header || loop.Body.Contains(edge.Source)))
                 .SelectMany(edge => edge.Evidence)
                 .ToImmutableArray());
-        return new WorkerLoopClassification(kind.Value, operation?.Operation, evidence);
+        return new WorkerLoopClassification(kind.Value, operation?.Operation, evidence, loop.Region, loop.Header.Value);
 
         static bool CatchReachesLoopBack(MethodFlowSnapshot flow, LoopNode loop, FlowRegion catchRegion)
         {

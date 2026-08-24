@@ -123,7 +123,8 @@ public sealed record ExtractedInvocationPayload
         string? TargetAssemblyName = null,
         bool IsPlatformTarget = false,
         ImmutableArray<ExtractedInvocationArgument> ArgumentMappings = default,
-        int? ReceiverParameterOrdinal = null)
+        int? ReceiverParameterOrdinal = null,
+        string? ReceiverIdentity = null)
     {
         var hasTypedPresentation = TargetContainingTypeName is not null
             || TargetMethodName is not null
@@ -162,6 +163,7 @@ public sealed record ExtractedInvocationPayload
         this.IsPlatformTarget = IsPlatformTarget;
         this.ArgumentMappings = ArgumentMappings.IsDefault ? [] : ArgumentMappings;
         this.ReceiverParameterOrdinal = ReceiverParameterOrdinal;
+        this.ReceiverIdentity = ReceiverIdentity;
     }
 
     public MethodId? Target { get; init; }
@@ -180,6 +182,8 @@ public sealed record ExtractedInvocationPayload
     public ImmutableArray<ExtractedInvocationArgument> ArgumentMappings { get; init; }
     /// <summary>Compiler-bound parameter ordinal when the invocation receiver is that direct parameter.</summary>
     public int? ReceiverParameterOrdinal { get; init; }
+    /// <summary>Compiler-bound receiver identity when the receiver symbol is stable and source-backed.</summary>
+    public string? ReceiverIdentity { get; init; }
 }
 
 /// <summary>Preserves the compiler's parameter mapping for one invocation argument.</summary>

@@ -1007,11 +1007,17 @@ public static class DocumentationPlanner
         // empty sequence. A composition graph (accepted contract/accepted contract) is never emitted through the legacy
         // branches because its alternatives are represented exactly by the one configuration Alt.
         bool hasTopology = graph.Topology.Decisions.Length > 0;
+        bool hasWorkerFlowTopology = graph.RootKind == ScenarioRootKind.HostedWorker
+            && graph.Topology.FlowPlacements.Length > 0;
         bool hasHandlerTopology = graph.HandlerTopology is not null;
         bool hasComposition = graph.Composition is not null;
         if (hasDispatchExpansion)
         {
             // Sequence was built from the exact expansion above.
+        }
+        else if (hasWorkerFlowTopology)
+        {
+            sequence = BuildHostedWorkerFlowSequence(graph, messages, orderedMessageRefs);
         }
         else if (hasHandlerTopology)
         {
@@ -1045,7 +1051,7 @@ public static class DocumentationPlanner
         // Branches are ordered failure-first; renderers serialize the branch array verbatim. They
         // exist only for legacy graphs with neither topology nor composition; a structured plan owns
         // placement in the sequence tree so no message is ever duplicated across both representations.
-        if (!hasTopology && !hasComposition && !hasHandlerTopology && !hasDispatchExpansion)
+        if (!hasTopology && !hasWorkerFlowTopology && !hasComposition && !hasHandlerTopology && !hasDispatchExpansion)
         {
             if (failureMessages.Count > 0)
             {
@@ -1226,6 +1232,156 @@ public static class DocumentationPlanner
     /// tree. Automatic loop inference is intentionally absent: raw LoopNode facts are never mapped
     /// to Mermaid loops here.
     /// </summary>
+    private static DiagramSequence BuildHostedWorkerFlowSequence(
+        ScenarioGraph graph,
+        List<DiagramMessage> messages,
+        List<(ScenarioNodeId Node, DiagramPlanElementId Ref)> orderedMessageRefs)
+    {
+        var referenceByNode = orderedMessageRefs
+            .GroupBy(item => item.Node)
+            .ToDictionary(group => group.Key, group => group.First().Ref);
+        var orderByNode = orderedMessageRefs
+            .Select((item, index) => (item.Node, Index: index))
+            .ToDictionary(item => item.Node, item => item.Index);
+        var placementsByNode = graph.Topology.FlowPlacements.ToDictionary(item => item.ScenarioNode);
+        var containers = graph.Topology.FlowContainers.ToDictionary(item => item.Region);
+
+        DiagramFragment? BuildFragment(ScenarioFlowContainer container)
+        {
+            var childContainers = containers.Values
+                .Where(candidate => candidate.Parent == container.Region)
+                .OrderBy(candidate => candidate.Region.Value, StringComparer.Ordinal)
+                .ToArray();
+            var directPlacements = placementsByNode.Values
+                .Where(placement => placement.Containers.LastOrDefault() == container.Region)
+                .Where(placement => referenceByNode.ContainsKey(placement.ScenarioNode))
+                .OrderBy(placement => orderByNode[placement.ScenarioNode])
+                .ToImmutableArray();
+            var directRefs = directPlacements
+                .Where(placement => placement.GuardArms.IsDefaultOrEmpty)
+                .Select(placement => referenceByNode[placement.ScenarioNode])
+                .ToImmutableArray();
+            var guarded = directPlacements
+                .Where(placement => !placement.GuardArms.IsDefaultOrEmpty)
+                .Select(CreateGuardFragment)
+                .ToImmutableArray();
+            var nested = childContainers
+                .Select(BuildFragment)
+                .Where(fragment => fragment is not null)
+                .Select(fragment => fragment!)
+                .OrderBy(fragment => FragmentOrder(fragment, orderByNode, referenceByNode, placementsByNode))
+                .ThenBy(fragment => fragment.Key, StringComparer.Ordinal)
+                .ToImmutableArray();
+            nested = nested.Concat(guarded)
+                .OrderBy(fragment => FragmentOrder(fragment, orderByNode, referenceByNode, placementsByNode))
+                .ThenBy(fragment => fragment.Key, StringComparer.Ordinal)
+                .ToImmutableArray();
+            var support = CombineEvidence(new[]
+            {
+                container.Evidence,
+                placementsByNode.Values
+                    .Where(placement => placement.Containers.Contains(container.Region))
+                    .SelectMany(placement => placement.Evidence)
+                    .ToImmutableArray(),
+            });
+            var kind = container.Kind == ScenarioFlowContainerKind.NaturalLoop
+                ? DiagramFragmentKind.Loop
+                : DiagramFragmentKind.Opt;
+            var label = container.Kind == ScenarioFlowContainerKind.NaturalLoop
+                ? placementsByNode.Values
+                    .Where(placement => placement.Containers.Contains(container.Region))
+                    .Select(placement => graph.Nodes.FirstOrDefault(node => node.Id == placement.ScenarioNode)?.Detail)
+                    .FirstOrDefault(detail => detail is "awaited repeating loop" or "enumeration loop" or "catch-to-loop continuation boundary")
+                    ?? "compiler-proven loop boundary"
+                : "compiler-proven exception region";
+            if (directRefs.Length == 0 && nested.Length == 0)
+            {
+                return null;
+            }
+
+            return new DiagramFragment(
+                CreateElementId(graph, "fragment", $"worker-flow:{container.Region.Value}"),
+                $"worker-flow:{container.Region.Value}",
+                label,
+                kind,
+                [],
+                directRefs,
+                nested,
+                support.Evidence,
+                support.Certainty);
+        }
+
+        DiagramFragment CreateGuardFragment(ScenarioFlowPlacement placement)
+        {
+            var reference = referenceByNode[placement.ScenarioNode];
+            var support = CombineEvidence([placement.Evidence]);
+            return new DiagramFragment(
+                CreateElementId(graph, "fragment", $"worker-guard:{placement.ScenarioNode.Value}"),
+                $"worker-guard:{placement.ScenarioNode.Value}",
+                "guarded worker control",
+                DiagramFragmentKind.Opt,
+                [],
+                [reference],
+                [],
+                support.Evidence,
+                support.Certainty);
+        }
+
+        var rootElements = new List<(int Order, DiagramSequenceElement Element)>();
+        foreach (var item in orderedMessageRefs)
+        {
+            if (!placementsByNode.TryGetValue(item.Node, out var placement) || placement.Containers.IsDefaultOrEmpty)
+            {
+                if (placementsByNode.TryGetValue(item.Node, out placement) && !placement.GuardArms.IsDefaultOrEmpty)
+                {
+                    rootElements.Add((orderByNode[item.Node], DiagramSequenceElement.Fragment(CreateGuardFragment(placement))));
+                }
+                else
+                {
+                    rootElements.Add((orderByNode[item.Node], DiagramSequenceElement.MessageRef(item.Ref)));
+                }
+            }
+        }
+
+        foreach (var container in containers.Values.Where(container => container.Parent is null || !containers.ContainsKey(container.Parent.Value))
+                     .OrderBy(container => container.Region.Value, StringComparer.Ordinal))
+        {
+            var fragment = BuildFragment(container);
+            if (fragment is null)
+            {
+                continue;
+            }
+            var order = placementsByNode.Values
+                .Where(placement => placement.Containers.Contains(container.Region))
+                .Where(placement => orderByNode.ContainsKey(placement.ScenarioNode))
+                .Select(placement => orderByNode[placement.ScenarioNode])
+                .DefaultIfEmpty(int.MaxValue)
+                .Min();
+            rootElements.Add((order, DiagramSequenceElement.Fragment(fragment)));
+        }
+
+        return new DiagramSequence(rootElements
+            .OrderBy(item => item.Order)
+            .ThenBy(item => item.Element.IsMessageRef
+                ? item.Element.MessageRefId!.Value.Value
+                : item.Element.NestedFragment!.Key, StringComparer.Ordinal)
+            .Select(item => item.Element)
+            .ToImmutableArray());
+
+        static int FragmentOrder(
+            DiagramFragment fragment,
+            Dictionary<ScenarioNodeId, int> orderByNode,
+            Dictionary<ScenarioNodeId, DiagramPlanElementId> referenceByNode,
+            Dictionary<ScenarioNodeId, ScenarioFlowPlacement> placementsByNode)
+            => fragment.MessageRefs
+                .Select(reference => referenceByNode.FirstOrDefault(pair => pair.Value == reference).Key)
+                .Where(node => orderByNode.ContainsKey(node))
+                .Select(node => orderByNode[node])
+                .Concat(fragment.Fragments.Select(nested => FragmentOrder(nested, orderByNode, referenceByNode, placementsByNode)))
+                .DefaultIfEmpty(int.MaxValue)
+                .Min();
+    }
+
     private static (DiagramSequence Sequence, ImmutableArray<DiagramPlanDiagnostic> Diagnostics, ImmutableArray<DiagramPlanElementId> WithheldRefs) BuildFragmentSequence(
         ScenarioGraph graph,
         IReadOnlyList<(ScenarioNodeId Node, DiagramPlanElementId Ref)> orderedMessageRefs)

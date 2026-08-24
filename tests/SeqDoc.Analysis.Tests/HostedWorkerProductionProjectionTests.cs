@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using SeqDoc.Analysis.Roslyn;
 using SeqDoc.Analysis.Behavior;
 using SeqDoc.Analysis.Scenarios;
@@ -85,7 +86,7 @@ public sealed class HostedWorkerProductionProjectionTests
             new BehaviorAnalysisRequest(value.ProgramIndex, value.BehaviorInput),
             CancellationToken.None);
         Assert.True(behavior.IsSuccess, string.Join(Environment.NewLine, behavior.Diagnostics.Select(item => item.TechnicalCause)));
-        var graphs = ScenarioGraphBuilder.Build(new ScenarioAnalysisRequest(
+        var scenarioRequest = new ScenarioAnalysisRequest(
             profile,
             value.ProgramIndex,
             behavior.Value!,
@@ -98,7 +99,23 @@ public sealed class HostedWorkerProductionProjectionTests
             value.ConfigurationSemanticFacts,
             value.CallbackBoundaryFacts,
             value.PredicateSemanticFacts,
-            value.MinimalApiHandlerFacts));
+            value.MinimalApiHandlerFacts);
+        var graphs = ScenarioGraphBuilder.Build(scenarioRequest);
+        var repeatedGraphs = ScenarioGraphBuilder.Build(scenarioRequest);
+        Assert.Equal(graphs.DebugProjection, repeatedGraphs.DebugProjection);
+        var reversedRequest = scenarioRequest with
+        {
+            Behavior = scenarioRequest.Behavior with
+            {
+                MethodFlows = scenarioRequest.Behavior.MethodFlows.Reverse().ToImmutableArray(),
+            },
+            FrameworkFacts = scenarioRequest.FrameworkFacts with
+            {
+                Facts = scenarioRequest.FrameworkFacts.Facts.Reverse().ToImmutableArray(),
+            },
+        };
+        var reversedGraphs = ScenarioGraphBuilder.Build(reversedRequest);
+        Assert.Equal(graphs.DebugProjection, reversedGraphs.DebugProjection);
         var graph = Assert.Single(
             graphs.Graphs,
             item => item.RootKind == SeqDoc.Core.ScenarioGraph.ScenarioRootKind.HostedWorker
@@ -217,7 +234,57 @@ public sealed class HostedWorkerProductionProjectionTests
             node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.TerminalOutcome);
         Assert.DoesNotContain(unrelatedCatchGraph.Nodes,
             node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.CatchLoopContinuation);
+
+        var backgroundContainers = backgroundGraph.Topology.FlowContainers
+            .Where(container => container.Kind == ScenarioFlowContainerKind.NaturalLoop)
+            .ToArray();
+        Assert.True(backgroundContainers.Length >= 2);
+        Assert.All(backgroundContainers, container => Assert.NotNull(container.Header));
+        Assert.All(backgroundGraph.Topology.FlowPlacements, placement => Assert.NotEmpty(placement.Evidence));
+        Assert.All(
+            backgroundGraph.Nodes.Where(node => node.Presentation?.HostedWorkerControlKind is not null),
+            node => Assert.Contains(backgroundGraph.Topology.FlowPlacements, placement => placement.ScenarioNode == node.Id));
+        var backgroundPlan = DocumentationPlanner.Plan(backgroundGraph);
+        var loopFragments = FindFragments(backgroundPlan.Diagram.Sequence)
+            .Where(fragment => fragment.Kind == SeqDoc.Core.DiagramPlan.DiagramFragmentKind.Loop)
+            .ToArray();
+        Assert.True(loopFragments.Length >= 2);
+        Assert.Contains(loopFragments, fragment => fragment.Fragments.Any(nested => nested.Kind == SeqDoc.Core.DiagramPlan.DiagramFragmentKind.Loop));
+        Assert.Equal(
+            backgroundPlan.Diagram.Messages.Length,
+            FindMessageReferences(backgroundPlan.Diagram.Sequence).GroupBy(reference => reference.Value, StringComparer.Ordinal).Count());
+
+        var lambdaGraph = Assert.Single(graphs.Graphs, item => item.OperationKey.Contains("LambdaAwaitWorker", StringComparison.Ordinal));
+        Assert.DoesNotContain(lambdaGraph.Nodes, node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.AwaitedRepeatingLoop);
+        var unsupportedLoopGraph = Assert.Single(graphs.Graphs, item => item.OperationKey.Contains("UnsupportedLoopWorker", StringComparison.Ordinal));
+        Assert.DoesNotContain(unsupportedLoopGraph.Nodes, node => node.Presentation?.HostedWorkerControlKind is HostedWorkerControlKind.AwaitedRepeatingLoop or HostedWorkerControlKind.EnumerationLoop);
+
+        var twoSemaphoreGraph = Assert.Single(graphs.Graphs, item => item.OperationKey.Contains("TwoSemaphoreWorker", StringComparison.Ordinal));
+        Assert.Equal(2, twoSemaphoreGraph.Nodes.Count(node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.SemaphoreBoundary));
+        Assert.Equal(2, DocumentationPlanner.Plan(twoSemaphoreGraph).Diagram.Messages.Count(message => message.Label == "semaphore synchronization boundary"));
+
+        var guardedGraph = Assert.Single(graphs.Graphs, item => item.OperationKey.Contains("GuardedWorker", StringComparison.Ordinal));
+        var guardedCancellation = Assert.Single(guardedGraph.Nodes, node => node.Presentation?.HostedWorkerControlKind == HostedWorkerControlKind.CancellationCheck);
+        var guardedPlacement = Assert.Single(guardedGraph.Topology.FlowPlacements, placement => placement.ScenarioNode == guardedCancellation.Id);
+        Assert.NotEmpty(guardedPlacement.GuardArms);
+        var guardedPlan = DocumentationPlanner.Plan(guardedGraph);
+        Assert.Contains(FindFragments(guardedPlan.Diagram.Sequence), fragment => fragment.Kind == SeqDoc.Core.DiagramPlan.DiagramFragmentKind.Opt
+            && fragment.MessageRefs.Any(reference => guardedPlan.Diagram.Messages.Any(message => message.Id == reference && message.Label == "cancellation check")));
     }
+
+    private static IEnumerable<SeqDoc.Core.DiagramPlan.DiagramFragment> FindFragments(SeqDoc.Core.DiagramPlan.DiagramSequence sequence)
+        => sequence.Elements.Where(element => element.IsFragment).SelectMany(element => FindFragments(element.NestedFragment!));
+
+    private static IEnumerable<SeqDoc.Core.DiagramPlan.DiagramFragment> FindFragments(SeqDoc.Core.DiagramPlan.DiagramFragment fragment)
+        => new[] { fragment }.Concat(fragment.Fragments.SelectMany(FindFragments)).Concat(fragment.Arms.SelectMany(arm => arm.Fragments.SelectMany(FindFragments)));
+
+    private static IEnumerable<DiagramPlanElementId> FindMessageReferences(SeqDoc.Core.DiagramPlan.DiagramSequence sequence)
+        => sequence.Elements.SelectMany(element => element.IsMessageRef
+            ? new[] { element.MessageRefId!.Value }
+            : FindMessageReferences(element.NestedFragment!));
+
+    private static IEnumerable<DiagramPlanElementId> FindMessageReferences(SeqDoc.Core.DiagramPlan.DiagramFragment fragment)
+        => fragment.MessageRefs.Concat(fragment.Fragments.SelectMany(FindMessageReferences)).Concat(fragment.Arms.SelectMany(arm => arm.MessageRefs.Concat(arm.Fragments.SelectMany(FindMessageReferences))));
 
     private static string FindRepositoryRoot()
     {

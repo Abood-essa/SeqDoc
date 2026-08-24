@@ -698,13 +698,12 @@ public sealed class FragmentPlannerTests
     [InlineData("break-with-message-refs")]
     [InlineData("break-with-fragments")]
     [InlineData("loop-with-arms")]
-    [InlineData("loop-with-fragments")]
     public void FragmentKindSpecificStructureRejectsMalformedShapes(string partition)
     {
         // F4: the closed per-kind contract rejects shapes the kind does not admit instead of
         // silently ignoring populated fields. Alt owns its arms (at least two) and no direct
         // content; Opt owns message refs/fragments and no arms; Break must be empty; Loop owns
-        // message refs only (no arms, no nested fragments) for an exact preplanned loop.
+        // message refs and nested fragments for exact compiler-proven nested loop topology.
         var evidence = ScenarioGraphTestFactory.SourceEvidence("fragment");
         var messageRef = new DiagramPlanElementId("diagram-element:v1:message:content");
         var nestedBreak = new DiagramFragment(
@@ -730,7 +729,6 @@ public sealed class FragmentPlannerTests
             "break-with-message-refs" => (DiagramFragmentKind.Break, [], [messageRef], []),
             "break-with-fragments" => (DiagramFragmentKind.Break, [], [], [nestedBreak]),
             "loop-with-arms" => (DiagramFragmentKind.Loop, [AltArm(isElse: false), AltArm(isElse: true)], [], []),
-            "loop-with-fragments" => (DiagramFragmentKind.Loop, [], [], [nestedBreak]),
             _ => throw new ArgumentOutOfRangeException(nameof(partition)),
         };
 

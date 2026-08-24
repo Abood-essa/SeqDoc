@@ -1492,6 +1492,7 @@ internal static class RoslynBehaviorExtractor
         var blocks = ImmutableArray.CreateBuilder<ExtractedBasicBlock>();
         var operationById = new Dictionary<IOperation, OperationId>(ReferenceEqualityComparer.Instance);
         var realThrowBlocks = ComputeRealThrows(bodyOperation, cfg);
+        var loopKindsByHeader = ResolveLoopKinds(bodyOperation, cfg);
         var siblingOrdinals = new Dictionary<(string Kind, int BlockOrdinal), int>();
         var evaluationOrdinal = 0;
 
@@ -1602,7 +1603,7 @@ internal static class RoslynBehaviorExtractor
                 leavingRegions,
                 evidence,
                 CertaintyLevel.Exact,
-                ResolveLoopKind(block)));
+                loopKindsByHeader.GetValueOrDefault(block.Ordinal)));
         }
 
         var locals = CollectLocals(bodyOperation)
@@ -3955,7 +3956,8 @@ internal static class RoslynBehaviorExtractor
                      target.ContainingAssembly.Identity.Name,
                      IsPlatformAssembly(target.ContainingAssembly.Identity.Name),
                       argumentMappings,
-                      ReceiverParameterOrdinal: ResolveDirectParameterOrdinal(call.Instance));
+                      ReceiverParameterOrdinal: ResolveDirectParameterOrdinal(call.Instance),
+                      ReceiverIdentity: ResolveReceiverIdentity(call.Instance));
                 break;
             case IDynamicInvocationOperation dynamicCall:
                 invocation = new ExtractedInvocationPayload(
@@ -4292,44 +4294,90 @@ internal static class RoslynBehaviorExtractor
         _ => ExtractedOperationKind.Unknown,
     };
 
-    private static ExtractedOperationKind ResolveLoopKind(BasicBlock block)
+    private static Dictionary<int, ExtractedOperationKind> ResolveLoopKinds(
+        IMethodBodyOperation body,
+        ControlFlowGraph cfg)
     {
-        foreach (var operation in block.Operations.Append(block.BranchValue).OfType<IOperation>())
+        var blocks = cfg.Blocks.OrderBy(block => block.Ordinal).ToArray();
+        var ordinals = blocks.Select(block => block.Ordinal).ToArray();
+        var all = ordinals.ToHashSet();
+        var dominators = ordinals.ToDictionary(
+            ordinal => ordinal,
+            ordinal => ordinal == blocks[0].Ordinal ? new HashSet<int> { ordinal } : new HashSet<int>(all));
+        var changed = true;
+        while (changed)
         {
-            for (var current = operation; current is not null; current = current.Parent)
+            changed = false;
+            foreach (var block in blocks.Skip(1))
             {
-                if (current is ILoopOperation loop)
+                var predecessors = block.Predecessors.Select(predecessor => predecessor.Source?.Ordinal)
+                    .Where(ordinal => ordinal is not null && dominators.ContainsKey(ordinal.Value))
+                    .Select(ordinal => ordinal!.Value)
+                    .ToArray();
+                if (predecessors.Length == 0) { continue; }
+                var intersection = new HashSet<int>(dominators[predecessors[0]]);
+                foreach (var predecessor in predecessors.Skip(1)) { intersection.IntersectWith(dominators[predecessor]); }
+                intersection.Add(block.Ordinal);
+                if (!intersection.SetEquals(dominators[block.Ordinal]))
                 {
-                    return MapKind(loop);
+                    dominators[block.Ordinal] = intersection;
+                    changed = true;
                 }
             }
-
-            // The fallback is evaluated only for the CFG block later admitted as the natural-loop
-            // header; body blocks cannot promote a loop because MethodFlowBuilder binds the kind to
-            // that exact header ordinal. This preserves nested-loop separation while supporting
-            // Roslyn lowering that omits the ILoopOperation from the header branch parent chain.
-            var loopSyntax = operation.Syntax?
-                .AncestorsAndSelf()
-                .FirstOrDefault(syntax => syntax is ForStatementSyntax
-                    or ForEachStatementSyntax
-                    or ForEachVariableStatementSyntax
-                    or WhileStatementSyntax
-                    or DoStatementSyntax);
-            if (loopSyntax is not null)
-            {
-                return loopSyntax switch
-                {
-                    ForStatementSyntax => ExtractedOperationKind.ForLoop,
-                    ForEachStatementSyntax or ForEachVariableStatementSyntax => ExtractedOperationKind.ForEachLoop,
-                    WhileStatementSyntax => ExtractedOperationKind.WhileLoop,
-                    DoStatementSyntax => ExtractedOperationKind.DoWhileLoop,
-                    _ => ExtractedOperationKind.Unknown,
-                };
-            }
-
         }
 
-        return ExtractedOperationKind.Unknown;
+        var loops = body.DescendantsAndSelf()
+            .OfType<ILoopOperation>()
+            .Where(loop => loop.Syntax is not null)
+            .OrderBy(loop => loop.Syntax!.Span.Length)
+            .ThenBy(loop => loop.Syntax!.Span.Start)
+            .ToArray();
+        // The kind comes from an exact Roslyn ILoopOperation. The CFG backedge supplies the
+        // natural-loop header identity; syntax is used only to associate that already-admitted
+        // compiler operation with its header, never to classify a loop by nearest ancestry.
+        var result = new Dictionary<int, ExtractedOperationKind>();
+        var ambiguousHeaders = new HashSet<int>();
+        foreach (var source in blocks)
+        {
+            foreach (var successor in new[] { source.FallThroughSuccessor, source.ConditionalSuccessor }
+                         .Where(successor => successor is not null)
+                         .Select(successor => successor!))
+            {
+                var target = successor.Destination;
+                if (target is null
+                    || !dominators.TryGetValue(source.Ordinal, out var sourceDominators)
+                    || !sourceDominators.Contains(target.Ordinal))
+                {
+                    continue;
+                }
+
+                var headerOperations = target.Operations.Append(target.BranchValue).OfType<IOperation>()
+                    .Select(operation => operation.Syntax)
+                    .Where(syntax => syntax is not null)
+                    .Select(syntax => syntax!.Span)
+                    .ToArray();
+                var loop = loops.FirstOrDefault(candidate => headerOperations.Any(span => candidate.Syntax!.Span.Contains(span)));
+                if (loop is not null)
+                {
+                    var kind = MapKind(loop);
+                    if (result.TryGetValue(target.Ordinal, out var existing) && existing != kind)
+                    {
+                        ambiguousHeaders.Add(target.Ordinal);
+                    }
+                    else if (!ambiguousHeaders.Contains(target.Ordinal))
+                    {
+                        result[target.Ordinal] = kind;
+                    }
+                }
+            }
+        }
+
+        foreach (var header in ambiguousHeaders)
+        {
+            result[header] = ExtractedOperationKind.Unknown;
+        }
+
+        return result;
     }
 
     private static int? ResolveDirectParameterOrdinal(IOperation? receiver)
@@ -4338,6 +4386,15 @@ internal static class RoslynBehaviorExtractor
             : UnwrapImplicitConversions(receiver) is IParameterReferenceOperation parameter
                 ? parameter.Parameter.Ordinal
                 : null;
+
+    private static string? ResolveReceiverIdentity(IOperation? receiver)
+        => receiver is null ? null : UnwrapImplicitConversions(receiver) switch
+        {
+            IFieldReferenceOperation field => field.Field.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
+            ILocalReferenceOperation local => local.Local.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
+            IParameterReferenceOperation parameter => parameter.Parameter.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
+            _ => null,
+        };
 
     private static ExtractedRegionKind MapRegionKind(ControlFlowRegionKind kind) => kind switch
     {

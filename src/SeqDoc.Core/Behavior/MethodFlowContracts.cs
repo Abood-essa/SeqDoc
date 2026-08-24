@@ -137,7 +137,8 @@ public sealed record InvocationFlowNode : FlowNode
          string? TargetAssemblyName = null,
          bool IsPlatformTarget = false,
          ImmutableArray<CompilerProvenArgument> ConstantArguments = default,
-         int? ReceiverParameterOrdinal = null) : base(Id, Method, Evidence, Certainty)
+         int? ReceiverParameterOrdinal = null,
+         string? ReceiverIdentity = null) : base(Id, Method, Evidence, Certainty)
     {
         var hasTypedPresentation = TargetContainingTypeName is not null
             || TargetMethodName is not null
@@ -182,10 +183,12 @@ public sealed record InvocationFlowNode : FlowNode
         this.IsPlatformTarget = IsPlatformTarget;
         this.ConstantArguments = ConstantArguments.IsDefault ? [] : ConstantArguments;
         this.ReceiverParameterOrdinal = ReceiverParameterOrdinal;
+        this.ReceiverIdentity = ReceiverIdentity;
     }
 
     public ImmutableArray<CompilerProvenArgument> ConstantArguments { get; init; }
     public int? ReceiverParameterOrdinal { get; init; }
+    public string? ReceiverIdentity { get; init; }
 
     public OperationId Operation { get; init; }
     public MethodId? Target { get; init; }
@@ -276,6 +279,9 @@ public sealed record LoopNode(
     /// <summary>Compiler-proven presence of an await operation in the loop body.</summary>
     public bool ContainsAwait { get; init; }
 
+    /// <summary>Exact natural-loop header block ordinal retained for downstream placement.</summary>
+    public int? HeaderBlockOrdinal { get; init; }
+
     /// <summary>Canonical compiler block ordinals for loop members, excluding the header.</summary>
     public ImmutableArray<int> BodyBlockOrdinals
     {
@@ -341,7 +347,8 @@ public sealed record FlowOutcome(
     int? BlockOrdinal,
     OperationId? TerminalOperation,
     ImmutableArray<EvidenceRef> Evidence,
-    CertaintyLevel Certainty);
+    CertaintyLevel Certainty,
+    FlowNodeId? TerminalNode = null);
 
 /// <summary>Describes one normalized method flow with nodes, edges, regions, loops, and outcomes.</summary>
 public sealed record MethodFlowSnapshot(
