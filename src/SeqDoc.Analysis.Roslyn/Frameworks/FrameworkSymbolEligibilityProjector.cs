@@ -22,7 +22,10 @@ internal static class FrameworkSymbolEligibilityProjector
     /// indexed symbols through the same Program Index identity helpers. Returns null when the method
     /// has no usable containing type, which callers must treat as incomplete eligibility input.
     /// </summary>
-    public static FrameworkMethodShape? ProjectMethodShape(IMethodSymbol method, StableProjectId project)
+    public static FrameworkMethodShape? ProjectMethodShape(
+        IMethodSymbol method,
+        StableProjectId project,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents)
     {
         ArgumentNullException.ThrowIfNull(method);
         var declaringType = method.ContainingType;
@@ -40,8 +43,8 @@ internal static class FrameworkSymbolEligibilityProjector
             IsAbstract: method.IsAbstract,
             GenericArity: method.Arity,
             DeclaringType: ProjectTypeShape(declaringType),
-            ImplementedInterfaceMembers: ProjectImplementedInterfaceMembers(method, declaringType, project),
-            DeclaringTypeAttributes: ProjectAttributeIdentities(declaringType));
+            ImplementedInterfaceMembers: ProjectImplementedInterfaceMembers(method, declaringType, project, documents),
+            DeclaringTypeAttributes: ProjectAttributeIdentities(declaringType, documents));
     }
 
     /// <summary>
@@ -53,7 +56,10 @@ internal static class FrameworkSymbolEligibilityProjector
     /// interface methods are considered; property/event accessors are out of scope for this projection.
     /// </summary>
     private static ImmutableArray<FrameworkInterfaceMemberIdentity> ProjectImplementedInterfaceMembers(
-        IMethodSymbol method, INamedTypeSymbol declaringType, StableProjectId project)
+        IMethodSymbol method,
+        INamedTypeSymbol declaringType,
+        StableProjectId project,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents)
     {
         var builder = ImmutableArray.CreateBuilder<FrameworkInterfaceMemberIdentity>();
         var seen = new HashSet<(SymbolId InterfaceType, SymbolId InterfaceMethod)>();
@@ -78,7 +84,7 @@ internal static class FrameworkSymbolEligibilityProjector
 
                 var isExplicit = method.ExplicitInterfaceImplementations
                     .Any(explicitMember => SymbolEqualityComparer.Default.Equals(explicitMember, interfaceMember));
-                AddInterfaceMember(builder, seen, interfaceType, interfaceMember, project, isExplicit);
+                AddInterfaceMember(builder, seen, interfaceType, interfaceMember, project, isExplicit, documents);
             }
         }
 
@@ -97,7 +103,8 @@ internal static class FrameworkSymbolEligibilityProjector
         INamedTypeSymbol interfaceType,
         IMethodSymbol interfaceMethod,
         StableProjectId project,
-        bool isExplicit)
+        bool isExplicit,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents)
     {
         var interfaceTypeSymbol = RoslynProgramIndexExtractor.CreateSymbolId(interfaceType, project);
         var interfaceMethodSymbol = StableIdentity.CreateSymbolId(
@@ -122,8 +129,8 @@ internal static class FrameworkSymbolEligibilityProjector
                 .ToImmutableArray(),
             DisplayType(interfaceMethod.ReturnType),
             isExplicit,
-            ProjectAttributeIdentities(interfaceType),
-            ProjectAttributeIdentities(interfaceMethod)));
+            ProjectAttributeIdentities(interfaceType, documents),
+            ProjectAttributeIdentities(interfaceMethod, documents)));
     }
 
     /// <summary>
@@ -133,8 +140,14 @@ internal static class FrameworkSymbolEligibilityProjector
     /// reject a same-qualified-name attribute defined in a foreign assembly. Each attribute's
     /// <c>typeof(...)</c> constructor arguments are resolved the same way, in declaration order, for
     /// attributes whose meaning depends on a type argument (for example <c>[FaultContract(typeof(X))]</c>).
+    /// The exact source evidence for this specific attribute application travels with the resolved
+    /// identity, so a model never has to recover it later through a separate target-symbol-plus-metadata-
+    /// name-string lookup that a foreign same-qualified-name attribute on the same target could
+    /// contaminate.
     /// </summary>
-    private static ImmutableArray<FrameworkAttributeApplicationIdentity> ProjectAttributeIdentities(ISymbol symbol)
+    private static ImmutableArray<FrameworkAttributeApplicationIdentity> ProjectAttributeIdentities(
+        ISymbol symbol,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents)
         => symbol.GetAttributes()
             .Where(attribute => attribute.AttributeClass is not null)
             .Select(attribute => new FrameworkAttributeApplicationIdentity(
@@ -142,7 +155,13 @@ internal static class FrameworkSymbolEligibilityProjector
                 attribute.ConstructorArguments
                     .Where(argument => argument.Kind == TypedConstantKind.Type && argument.Value is INamedTypeSymbol)
                     .Select(argument => ProjectTypeIdentity((INamedTypeSymbol)argument.Value!))
-                    .ToImmutableArray()))
+                    .ToImmutableArray(),
+                attribute.ApplicationSyntaxReference is null
+                    ? ImmutableArray<EvidenceRef>.Empty
+                    : RoslynProgramIndexExtractor.CreateSyntaxEvidence(
+                        attribute.ApplicationSyntaxReference,
+                        attribute.AttributeClass!.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
+                        documents)))
             .ToImmutableArray();
 
     private static string DisplayType(ITypeSymbol type)
@@ -162,6 +181,7 @@ internal static class FrameworkSymbolEligibilityProjector
             IsStatic: type.IsStatic,
             GenericArity: type.Arity,
             BaseTypeChain: ProjectBaseTypeChain(type),
+            BaseTypeChainWithArguments: ProjectBaseTypeChainWithArguments(type),
             Interfaces: type.AllInterfaces
                 .Select(ProjectTypeIdentity)
                 .OrderBy(identity => identity.AssemblyIdentity, StringComparer.Ordinal)
@@ -226,6 +246,28 @@ internal static class FrameworkSymbolEligibilityProjector
         for (var current = type.BaseType; current is not null; current = current.BaseType)
         {
             builder.Add(ProjectTypeIdentity(current));
+        }
+
+        return builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// Projects the same base-type chain as <see cref="ProjectBaseTypeChain"/>, additionally carrying
+    /// each base type's exact constructed generic type arguments (for example
+    /// <c>ClientBase&lt;ICalculatorService&gt;</c> → <c>[ICalculatorService]</c>). A model needs this to
+    /// prove the constructed argument matches a specific admitted contract; the open generic definition
+    /// appearing in the chain alone does not prove that.
+    /// </summary>
+    private static ImmutableArray<FrameworkBaseTypeIdentity> ProjectBaseTypeChainWithArguments(INamedTypeSymbol type)
+    {
+        var builder = ImmutableArray.CreateBuilder<FrameworkBaseTypeIdentity>();
+        for (var current = type.BaseType; current is not null; current = current.BaseType)
+        {
+            builder.Add(new FrameworkBaseTypeIdentity(
+                ProjectTypeIdentity(current),
+                current.TypeArguments.OfType<INamedTypeSymbol>()
+                    .Select(ProjectTypeIdentity)
+                    .ToImmutableArray()));
         }
 
         return builder.ToImmutable();

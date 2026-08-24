@@ -104,6 +104,9 @@ internal static class RoslynBehaviorExtractor
                 loadedProject.StableId,
                 loadedProject.Compilation.GetTypeByMetadataName(RoslynDependencyInjectionFactCollector.ServiceCollectionInterfaceMetadataName),
                 loadedProject.Compilation.GetTypeByMetadataName(RoslynDependencyInjectionFactCollector.ServiceCollectionServiceExtensionsMetadataName));
+            var hostChainProof = CoreWcfHostChainScanner.Scan(loadedProject.Compilation, byTree);
+            frameworkRequest.SetHostChainProof(hostChainProof);
+            callbackBoundaryFacts.AddHostChainProof(hostChainProof);
 
             CollectTypeHierarchy(loadedProject, byTree, projectByAssembly, typeNodes, cancellationToken);
             CollectInterfaceImplementations(loadedProject, byTree, projectByAssembly, interfaceImplementations, cancellationToken);
@@ -444,7 +447,7 @@ internal static class RoslynBehaviorExtractor
     {
         var identityMethod = method.PartialDefinitionPart ?? method;
         var evidence = CreateMethodEvidence(identityMethod, documents);
-        var descriptor = FrameworkAnalysisRequestProjector.ProjectMethodSymbol(identityMethod, project, evidence);
+        var descriptor = FrameworkAnalysisRequestProjector.ProjectMethodSymbol(identityMethod, project, evidence, documents);
         if (descriptor is not null)
         {
             frameworkRequest.AddSymbol(descriptor);
@@ -546,6 +549,7 @@ internal static class RoslynBehaviorExtractor
                         project.StableId,
                         profile: profileId,
                         localInitializers: topLevelInitializers,
+                        hostChainProof: frameworkRequest.HostChainProof,
                         dispatchCancellationToken: cancellationToken));
                     dependencyInjectionFacts.AddRegistration(
                         project.StableId,
@@ -3178,6 +3182,7 @@ internal static class RoslynBehaviorExtractor
                             project,
                             profileId,
                             localInitializers: localInitializers,
+                            hostChainProof: frameworkRequest.HostChainProof,
                             dispatchCancellationToken: cancellationToken));
                         dependencyInjectionFacts.AddRegistration(project, methodId, call, invocationId, operationEvidence);
                         structuralResultFacts.AddFactoryCall(

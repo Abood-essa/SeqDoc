@@ -66,6 +66,23 @@ internal sealed class RoslynCallbackBoundaryFactCollector
     private Dictionary<IAssemblySymbol, StableProjectId>? _projectsByAssembly;
 
     /// <summary>
+    /// The accumulated <c>CoreWcfHostChainScanner</c> proof across every loaded project, so an exact
+    /// <c>AddServiceEndpoint</c> invocation reached only through this collector's separate
+    /// callback-body companion projection (not the accepted body traversal, since a lambda/local
+    /// callback target has no accepted extracted Method Flow) still carries its host-chain proof
+    /// instead of silently defaulting to unproven. Syntax nodes never collide across projects, so
+    /// merging per-project proofs here is safe.
+    /// </summary>
+    private ImmutableDictionary<SyntaxNode, ImmutableArray<EvidenceRef>> _hostChainProof =
+        ImmutableDictionary<SyntaxNode, ImmutableArray<EvidenceRef>>.Empty;
+
+    public void AddHostChainProof(ImmutableDictionary<SyntaxNode, ImmutableArray<EvidenceRef>> proof)
+    {
+        ArgumentNullException.ThrowIfNull(proof);
+        _hostChainProof = _hostChainProof.SetItems(proof);
+    }
+
+    /// <summary>
     /// Anonymous/local callback target bodies collected while projecting boundaries. During
     /// <see cref="Build"/> these bodies' source-backed descendant invocations become companion
     /// framework operation descriptors so framework models and the scenario graph can see work that
@@ -349,7 +366,8 @@ internal sealed class RoslynCallbackBoundaryFactCollector
                     _companionTargets.Add(new CompanionTarget(
                         targetBody,
                         targetMethodId ?? methodId,
-                        methodEvidence));
+                        methodEvidence,
+                        project));
                 }
             }
         }
@@ -454,7 +472,10 @@ internal sealed class RoslynCallbackBoundaryFactCollector
                     ResolveEvidence(call, target.MethodEvidence),
                     operationMap,
                     _documents,
-                    _models));
+                    _models,
+                    project: target.Project,
+                    hostChainProof: _hostChainProof,
+                    dispatchCancellationToken: cancellationToken));
             }
         }
     }
@@ -1536,5 +1557,6 @@ internal sealed class RoslynCallbackBoundaryFactCollector
     private sealed record CompanionTarget(
         IOperation TargetBody,
         MethodId OwnerMethodId,
-        ImmutableArray<EvidenceRef> MethodEvidence);
+        ImmutableArray<EvidenceRef> MethodEvidence,
+        StableProjectId Project);
 }

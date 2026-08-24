@@ -187,17 +187,24 @@ internal static class CoreWcfTestIndexFactory
 
     public static FrameworkTypeShape EligibleImplementationTypeShape(
         bool isAbstract = false, bool isStatic = false, int genericArity = 0, bool isPublic = true,
-        string metadataName = ImplementationMetadataName, bool clientBaseDerived = false)
-        => new(
+        string metadataName = ImplementationMetadataName, bool clientBaseDerived = false,
+        string clientBaseContractMetadataName = ContractMetadataName)
+    {
+        var objectBase = new FrameworkTypeIdentity("System.Private.CoreLib", "10.0.0.0", "System.Object");
+        var clientBaseIdentity = new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, ClientBaseMetadataName);
+        var clientBaseContract = new FrameworkTypeIdentity("CoreWcfServices", "1.0.0", clientBaseContractMetadataName);
+        return new(
             Identity: new FrameworkTypeIdentity("CoreWcfServices", "1.0.0", metadataName),
             IsClass: true,
             IsPublicOrNestedPublic: isPublic,
             IsAbstract: isAbstract,
             IsStatic: isStatic,
             GenericArity: genericArity,
-            BaseTypeChain: clientBaseDerived
-                ? [new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, ClientBaseMetadataName), new FrameworkTypeIdentity("System.Private.CoreLib", "10.0.0.0", "System.Object")]
-                : [new FrameworkTypeIdentity("System.Private.CoreLib", "10.0.0.0", "System.Object")]);
+            BaseTypeChain: clientBaseDerived ? [clientBaseIdentity, objectBase] : [objectBase],
+            BaseTypeChainWithArguments: clientBaseDerived
+                ? [new FrameworkBaseTypeIdentity(clientBaseIdentity, [clientBaseContract]), new FrameworkBaseTypeIdentity(objectBase, [])]
+                : [new FrameworkBaseTypeIdentity(objectBase, [])]);
+    }
 
     /// <summary>Exact ServiceContract/OperationContract/FaultContract attribute identities for either admitted family.</summary>
     public static FrameworkAttributeApplicationIdentity ServiceContractAttribute(bool coreWcf = true)
@@ -261,14 +268,24 @@ internal static class CoreWcfTestIndexFactory
             ImplementedInterfaceMembers: members.IsDefault ? [InterfaceMember(name)] : members,
             DeclaringTypeAttributes: declaringTypeAttributes);
 
-    /// <summary>Builds the exact <c>AddServiceEndpoint&lt;TService, TContract&gt;</c> operation shape.</summary>
+    /// <summary>
+    /// Builds the exact <c>AddServiceEndpoint&lt;TService, TContract&gt;</c> operation shape. Defaults to
+    /// a host-chain-proven registration (matching a real admitted <c>Startup.Configure</c> ->
+    /// <c>UseServiceModel</c> -> <c>AddService&lt;TService&gt;().AddServiceEndpoint&lt;TService,TContract&gt;</c>
+    /// chain); pass <paramref name="hostChainProven"/>: false to build the shape for an invocation that
+    /// exists in source but was never proven reachable through that chain (dead helper, disconnected
+    /// callback, unchained AddService/AddServiceEndpoint pair, etc.).
+    /// </summary>
     public static OperationDescriptor ServiceEndpointOperation(
         string operationSuffix,
         string serviceType = ImplementationMetadataName,
+        SymbolId? serviceTypeSymbol = null,
         string contractType = ContractMetadataName,
+        SymbolId? contractTypeSymbol = null,
         string bindingType = "CoreWCF.BasicHttpBinding",
         string? address = "/CalculatorService/basicHttp",
-        CertaintyLevel certainty = CertaintyLevel.Exact)
+        CertaintyLevel certainty = CertaintyLevel.Exact,
+        bool hostChainProven = true)
         => new(
             new OperationId($"operation:v1:registration:{operationSuffix}"),
             new MethodId("method:v1:CoreWcfServices.Startup.Configure"),
@@ -278,5 +295,13 @@ internal static class CoreWcfTestIndexFactory
             40,
             [SourceEvidence($"registration:{operationSuffix}")],
             certainty,
-            ServiceEndpointShape: new FrameworkServiceEndpointShapeDescriptor(serviceType, contractType, bindingType, address));
+            ServiceEndpointShape: new FrameworkServiceEndpointShapeDescriptor(
+                new FrameworkTypeIdentity("CoreWcfServices", "1.0.0", serviceType),
+                serviceTypeSymbol ?? new SymbolId($"symbol:v1:{serviceType}"),
+                new FrameworkTypeIdentity("CoreWcfServices", "1.0.0", contractType),
+                contractTypeSymbol ?? new SymbolId($"symbol:v1:{contractType}"),
+                new FrameworkTypeIdentity(CoreWcfAssembly, CoreWcfAssemblyVersion, bindingType),
+                address,
+                hostChainProven,
+                hostChainProven ? [SourceEvidence($"host-chain:{operationSuffix}")] : ImmutableArray<EvidenceRef>.Empty));
 }

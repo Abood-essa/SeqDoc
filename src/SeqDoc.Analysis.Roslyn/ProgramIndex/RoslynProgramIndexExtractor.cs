@@ -863,7 +863,7 @@ internal static class RoslynProgramIndexExtractor
                 documents))
             .ToImmutableArray();
 
-    private static ImmutableArray<EvidenceRef> CreateSyntaxEvidence(
+    internal static ImmutableArray<EvidenceRef> CreateSyntaxEvidence(
         SyntaxReference reference,
         string symbol,
         IReadOnlyDictionary<SyntaxTree, DocumentContext> documents)

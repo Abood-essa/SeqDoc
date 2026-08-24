@@ -18,9 +18,15 @@ public sealed record ServiceOperationCapabilityFact : BehaviorFact
 
     public required string ServiceContractType { get; init; }
 
+    public required SymbolId ServiceContractTypeSymbol { get; init; }
+
     public required string ImplementationType { get; init; }
 
+    public required SymbolId ImplementationTypeSymbol { get; init; }
+
     public required string OperationName { get; init; }
+
+    public required SymbolId OperationSymbol { get; init; }
 
     public required string OperationKey { get; init; }
 }
@@ -37,7 +43,11 @@ public sealed record ServiceEndpointRegistrationFact : BehaviorFact
 {
     public required string ImplementationType { get; init; }
 
+    public required SymbolId ImplementationTypeSymbol { get; init; }
+
     public required string ServiceContractType { get; init; }
+
+    public required SymbolId ServiceContractTypeSymbol { get; init; }
 
     public required string BindingType { get; init; }
 
@@ -54,7 +64,11 @@ public sealed record ServiceFaultContractFact : BehaviorFact
 
     public required string OperationName { get; init; }
 
+    public required SymbolId OperationSymbol { get; init; }
+
     public required string FaultType { get; init; }
+
+    public required FrameworkTypeIdentity FaultTypeIdentity { get; init; }
 }
 
 /// <summary>Classifies a service-client boundary by whether the compiler proved a source or generated body.</summary>
@@ -77,7 +91,11 @@ public sealed record ServiceClientBoundaryFact : BehaviorFact
 {
     public required string ServiceContractType { get; init; }
 
+    public required SymbolId ServiceContractTypeSymbol { get; init; }
+
     public required string ClientType { get; init; }
+
+    public required SymbolId ClientTypeSymbol { get; init; }
 
     public required ServiceClientKind ClientKind { get; init; }
 }
@@ -100,7 +118,11 @@ public sealed record ServiceOperationEntryPointFact : BehaviorFact
 
     public required string ServiceContractType { get; init; }
 
+    public required SymbolId ServiceContractTypeSymbol { get; init; }
+
     public required string ImplementationType { get; init; }
+
+    public required SymbolId ImplementationTypeSymbol { get; init; }
 
     public required string OperationName { get; init; }
 

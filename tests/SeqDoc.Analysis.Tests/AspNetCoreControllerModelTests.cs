@@ -157,7 +157,8 @@ public sealed class AspNetCoreControllerModelTests
         StableProjectId project,
         string repositoryRoot)
     {
-        var shape = FrameworkSymbolEligibilityProjector.ProjectMethodShape(method, project);
+        var shape = FrameworkSymbolEligibilityProjector.ProjectMethodShape(
+            method, project, ImmutableDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext>.Empty);
         var evidence = FrameworkSymbolEligibilityProjector.ProjectSourceEvidence(method, project, repositoryRoot);
         return new SymbolDescriptor(
             shape!.MethodSymbol,

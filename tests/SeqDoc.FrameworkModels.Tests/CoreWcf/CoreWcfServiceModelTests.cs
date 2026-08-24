@@ -349,6 +349,38 @@ public sealed class CoreWcfServiceModelTests
     }
 
     [Fact]
+    public async Task ClientBaseConstructedForOneContractNeverEmitsABoundaryForAnUnrelatedAdmittedContract()
+    {
+        // The type derives ClientBase<ICalculatorService> (the admitted "Add" member's own contract) but
+        // the triggering method here implements a DIFFERENT, unrelated admitted interface directly, not
+        // through ClientBase. Finding ClientBase somewhere in the base chain must never be enough to
+        // claim a client boundary for a contract ClientBase was never constructed with.
+        const string otherContractMetadataName = "CoreWcfServices.IOtherContract";
+        var index = Index(
+            "Add",
+            typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute()],
+            methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute()]);
+        var mismatchedShape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "Add",
+            members:
+            [
+                CoreWcfTestIndexFactory.InterfaceMember(
+                    "Add",
+                    interfaceMetadataName: otherContractMetadataName,
+                    typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute()],
+                    methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute()]),
+            ],
+            declaringType: CoreWcfTestIndexFactory.EligibleImplementationTypeShape(
+                clientBaseDerived: true,
+                clientBaseContractMetadataName: CoreWcfTestIndexFactory.ContractMetadataName));
+        var context = new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index);
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("Add", mismatchedShape), context, CancellationToken.None);
+
+        Assert.Empty(result.Facts.OfType<ServiceClientBoundaryFact>());
+    }
+
+    [Fact]
     public async Task ExactAddServiceEndpointInvocationProducesARegistrationFact()
     {
         var operation = CoreWcfTestIndexFactory.ServiceEndpointOperation("Add");
@@ -362,6 +394,21 @@ public sealed class CoreWcfServiceModelTests
         Assert.Equal("CoreWCF.BasicHttpBinding", fact.BindingType);
         Assert.Equal("/CalculatorService/basicHttp", fact.Address);
         Assert.Equal(CertaintyLevel.Exact, fact.Certainty);
+    }
+
+    [Fact]
+    public async Task UnprovenHostChainNeverProducesARegistrationFactDespiteTheExactEndpointShape()
+    {
+        // An exact AddServiceEndpoint<TService,TContract>(Binding,string) invocation proves only that
+        // source contains a call with that compiler identity; it does not prove the application actually
+        // registers or dispatches it. Only an invocation the CoreWcfHostChainScanner proved reachable
+        // through the complete active host chain may produce registration evidence.
+        var operation = CoreWcfTestIndexFactory.ServiceEndpointOperation("Add", hostChainProven: false);
+        var context = new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, CoreWcfTestIndexFactory.ToIndex([], [], []));
+        var result = await new CoreWcfServiceModel().AnalyzeOperationAsync(operation, context, CancellationToken.None);
+
+        Assert.False(result.Recognized);
+        Assert.Empty(result.Facts);
     }
 
     [Fact]

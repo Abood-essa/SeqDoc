@@ -854,6 +854,9 @@ internal static class ScenarioTestFactory
     internal const string ServiceImplementationTypeName = "CoreWcfServices.CalculatorService";
     internal const string ServiceOperationName = "Add";
     internal const string ServiceOperationKeyValue = $"{ServiceContractTypeName}.{ServiceOperationName}";
+    internal static readonly SymbolId ServiceContractTypeSymbol = new($"symbol:v1:{ServiceContractTypeName}");
+    internal static readonly SymbolId ServiceImplementationTypeSymbol = new($"symbol:v1:{ServiceImplementationTypeName}");
+    internal static readonly SymbolId ServiceOperationSymbol = new($"symbol:v1:{ServiceContractTypeName}.{ServiceOperationName}");
 
     // A dedicated service-implementation method identity, distinct from ActionMethod (a controller
     // action): reusing ActionMethod would anchor the service-operation root to a controller's Method
@@ -873,8 +876,11 @@ internal static class ScenarioTestFactory
             Certainty = certainty,
             RootMethod = ServiceOperationMethod,
             ServiceContractType = ServiceContractTypeName,
+            ServiceContractTypeSymbol = ServiceContractTypeSymbol,
             ImplementationType = ServiceImplementationTypeName,
+            ImplementationTypeSymbol = ServiceImplementationTypeSymbol,
             OperationName = ServiceOperationName,
+            OperationSymbol = ServiceOperationSymbol,
             OperationKey = ServiceOperationKeyValue,
         };
 
@@ -885,7 +891,9 @@ internal static class ScenarioTestFactory
             Evidence = [SourceEvidence("service-endpoint-registration")],
             Certainty = certainty,
             ImplementationType = ServiceImplementationTypeName,
+            ImplementationTypeSymbol = ServiceImplementationTypeSymbol,
             ServiceContractType = ServiceContractTypeName,
+            ServiceContractTypeSymbol = ServiceContractTypeSymbol,
             BindingType = "CoreWCF.BasicHttpBinding",
             Address = "/CalculatorService/basicHttp",
         };
@@ -968,6 +976,44 @@ internal static class ScenarioTestFactory
             FrameworkFacts = new FrameworkAnalysisResult(
                 true,
                 [CreateServiceCapabilityFact(capabilityCertainty), CreateServiceRegistrationFact(registrationCertainty)],
+                [], [], [], [],
+                [new FrameworkModelDescriptor("seqdoc.corewcf.services", "2.0.0", "test", 110)],
+                request.Profile.Id,
+                request.ProgramIndex.IndexFingerprint),
+        };
+    }
+
+    private static ServiceEndpointRegistrationFact CreateSecondServiceRegistrationFact(CertaintyLevel certainty = CertaintyLevel.Exact)
+        => new()
+        {
+            Id = new BehaviorFactId("behavior-fact:v1:service-endpoint-registration:Add:second"),
+            Evidence = [SourceEvidence("service-endpoint-registration-second")],
+            Certainty = certainty,
+            ImplementationType = ServiceImplementationTypeName,
+            ImplementationTypeSymbol = ServiceImplementationTypeSymbol,
+            ServiceContractType = ServiceContractTypeName,
+            ServiceContractTypeSymbol = ServiceContractTypeSymbol,
+            BindingType = "CoreWCF.WSHttpBinding",
+            Address = "/CalculatorService/wsHttp",
+        };
+
+    /// <summary>
+    /// Two exact, independently proven endpoint registrations for the same (implementation, contract)
+    /// pair: proves exactly one root is admitted (never one per endpoint), both registrations' evidence
+    /// is unioned into it, and reversing the registration array's order never changes the admitted root,
+    /// its evidence, or its certainty.
+    /// </summary>
+    internal static ScenarioAnalysisRequest CreateServiceOperationRequestWithTwoRegistrations(bool reversed = false)
+    {
+        var request = CreateServiceBaseRequest();
+        var capability = CreateServiceCapabilityFact();
+        var first = CreateServiceRegistrationFact();
+        var second = CreateSecondServiceRegistrationFact();
+        return request with
+        {
+            FrameworkFacts = new FrameworkAnalysisResult(
+                true,
+                reversed ? [capability, second, first] : [capability, first, second],
                 [], [], [], [],
                 [new FrameworkModelDescriptor("seqdoc.corewcf.services", "2.0.0", "test", 110)],
                 request.Profile.Id,

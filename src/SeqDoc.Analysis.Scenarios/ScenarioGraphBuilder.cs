@@ -151,26 +151,32 @@ public static class ScenarioGraphBuilder
     private static NormalizedEntry[] BuildServiceOperationEntries(
         ScenarioAnalysisRequest request, List<AnalysisDiagnostic> unsupportedDispatchDiagnostics)
     {
-        var registrations = request.FrameworkFacts.Facts.OfType<ServiceEndpointRegistrationFact>().ToArray();
+        var registrations = request.FrameworkFacts.Facts.OfType<ServiceEndpointRegistrationFact>()
+            .OrderBy(fact => fact.Id.Value, StringComparer.Ordinal)
+            .ToArray();
         var entries = new List<NormalizedEntry>();
         foreach (var capability in request.FrameworkFacts.Facts.OfType<ServiceOperationCapabilityFact>()
                      .OrderBy(fact => fact.Id.Value, StringComparer.Ordinal))
         {
-            var registration = registrations.FirstOrDefault(candidate =>
-                candidate.ImplementationType == capability.ImplementationType
-                && candidate.ServiceContractType == capability.ServiceContractType);
-            if (registration is null)
+            var matches = registrations
+                .Where(candidate =>
+                    candidate.ImplementationTypeSymbol == capability.ImplementationTypeSymbol
+                    && candidate.ServiceContractTypeSymbol == capability.ServiceContractTypeSymbol)
+                .ToArray();
+            if (matches.Length == 0)
             {
                 unsupportedDispatchDiagnostics.Add(CreateServiceUnsupportedDispatchDiagnostic(request.Profile.Id, capability));
                 continue;
             }
 
             var combinedEvidence = capability.Evidence
-                .Concat(registration.Evidence)
+                .Concat(matches.SelectMany(match => match.Evidence))
                 .DistinctBy(item => item.Id.Value)
                 .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
                 .ToImmutableArray();
-            var combinedCertainty = capability.Certainty > registration.Certainty ? capability.Certainty : registration.Certainty;
+            var combinedCertainty = matches.Aggregate(
+                capability.Certainty,
+                (weakest, match) => match.Certainty > weakest ? match.Certainty : weakest);
             var entryPointId = StableIdentity.CreateServiceOperationEntryPointId(
                 new ServiceOperationEntryPointIdentityDescriptor(request.Profile.Id, capability.RootMethod, capability.OperationKey));
             var entryFact = new ServiceOperationEntryPointFact
@@ -179,7 +185,9 @@ public static class ScenarioGraphBuilder
                 EntryPointId = entryPointId,
                 RootMethod = capability.RootMethod,
                 ServiceContractType = capability.ServiceContractType,
+                ServiceContractTypeSymbol = capability.ServiceContractTypeSymbol,
                 ImplementationType = capability.ImplementationType,
+                ImplementationTypeSymbol = capability.ImplementationTypeSymbol,
                 OperationName = capability.OperationName,
                 OperationKey = capability.OperationKey,
                 Evidence = combinedEvidence,
@@ -198,19 +206,22 @@ public static class ScenarioGraphBuilder
     private static AnalysisDiagnostic CreateServiceUnsupportedDispatchDiagnostic(
         CompilationProfileId profileId, ServiceOperationCapabilityFact capability)
     {
-        var subject = $"{capability.RootMethod.Value}{capability.OperationKey}";
+        var subject = $"{capability.RootMethod.Value}{capability.OperationKey}";
+        var certainty = capability.Evidence.IsDefaultOrEmpty
+            ? capability.Certainty
+            : capability.Evidence.Aggregate(capability.Certainty, (weakest, item) => item.Certainty > weakest ? item.Certainty : weakest);
         return new AnalysisDiagnostic(
             StableIdentity.CreateDiagnosticId(new DiagnosticIdentityDescriptor(
                 ServiceUnsupportedDispatchCode, AnalysisStage.FrameworkModel, profileId, subject, Ordinal: 0)),
             ServiceUnsupportedDispatchCode,
             DiagnosticSeverity.Warning,
             AnalysisStage.FrameworkModel,
-            "A compiler-proven service contract operation has no matching endpoint registration.",
+            "A compiler-proven service contract operation has no matching host-chain-proven endpoint registration.",
             new DiagnosticLocation("core wcf service operation", profileId),
-            $"'{capability.ImplementationType}' proves the exact [ServiceContract]/[OperationContract] capability for '{capability.OperationKey}' with a real source body, but no exact IServiceBuilder.AddServiceEndpoint<{capability.ImplementationType}, {capability.ServiceContractType}>(Binding, string) registration was found.",
-            "No service operation entry point or execution wording was emitted for the unregistered capability.",
-            "Register the implementation with an exact AddServiceEndpoint<TService, TContract>(Binding, string) call, or remove the unused capability.",
-            CertaintyLevel.Exact,
+            $"'{capability.ImplementationType}' proves the compiler-shape [ServiceContract]/[OperationContract] capability for '{capability.OperationKey}' with a real source body, but no exact IServiceBuilder.AddServiceEndpoint<{capability.ImplementationType}, {capability.ServiceContractType}>(Binding, string) call reachable through a proven active host chain was found.",
+            "No service operation entry point or execution wording was emitted for the unregistered or host-unreachable capability.",
+            "Register the implementation through the exact active host chain (generic-host construction, UseStartup<TStartup>, the selected Configure/UseServiceModel callback, and a matching AddService<TService>().AddServiceEndpoint<TService,TContract>(Binding,string) call), or remove the unused capability.",
+            certainty,
             evidence: capability.Evidence,
             internalDetail: subject);
     }
@@ -230,6 +241,7 @@ public static class ScenarioGraphBuilder
         {
             ScenarioActionKind.ConfiguredMethod => ScenarioRootKind.ConfiguredMethod,
             ScenarioActionKind.HostedWorker => ScenarioRootKind.HostedWorker,
+            ScenarioActionKind.ServiceOperation => ScenarioRootKind.ServiceOperation,
             _ => ScenarioRootKind.HttpEntryPoint,
         };
     }

@@ -103,12 +103,38 @@ public sealed class CoreWcfServiceModelProjectionTests
     {
         var (aggregate, _) = await AnalyzeFixtureAsync();
 
+        // Exactly one registration fact: the real, admitted Startup.Configure -> UseServiceModel ->
+        // AddService<CalculatorService>().AddServiceEndpoint<CalculatorService,ICalculatorService>(...)
+        // chain. UnusedRegistrationHelper.NeverCalled's exact same-shaped AddServiceEndpoint call (never
+        // reachable from the admitted Configure method) and UnusedStartup's entire disconnected
+        // Configure/UseServiceModel callback (never selected by any UseStartup<T>()) both exist in real
+        // compiled source with the identical compiler-proven registration shape, yet neither contributes
+        // a fact here — proving the host-chain gate, not mere textual presence, decides admission.
         var registration = Assert.Single(aggregate.Facts.OfType<ServiceEndpointRegistrationFact>());
         Assert.Equal(CalculatorServiceMetadataName, registration.ImplementationType);
         Assert.Equal(CalculatorContractMetadataName, registration.ServiceContractType);
         Assert.Equal("CoreWCF.BasicHttpBinding", registration.BindingType);
         Assert.Equal("/CalculatorService/basicHttp", registration.Address);
         Assert.Equal(CertaintyLevel.Exact, registration.Certainty);
+    }
+
+    [Fact]
+    public async Task ClientBaseConstructedForOneContractNeverEmitsABoundaryForASeparatelyImplementedContract()
+    {
+        var (aggregate, _) = await AnalyzeFixtureAsync();
+
+        var clients = aggregate.Facts.OfType<ServiceClientBoundaryFact>()
+            .Where(fact => fact.ClientType == "CoreWcfServices.MismatchedContractClient")
+            .ToArray();
+
+        // MismatchedContractClient derives ClientBase<ICalculatorService> (constructed with
+        // ICalculatorService) but separately implements the unrelated admitted IClassicEchoService
+        // directly. Only the constructed contract may ever get a client boundary.
+        Assert.Contains(clients, fact => fact.ServiceContractType == CalculatorContractMetadataName);
+        Assert.DoesNotContain(clients, fact => fact.ServiceContractType == ClassicContractMetadataName);
+        Assert.DoesNotContain(
+            aggregate.Facts.OfType<ServiceOperationCapabilityFact>(),
+            fact => fact.ImplementationType == "CoreWcfServices.MismatchedContractClient" && fact.ServiceContractType == CalculatorContractMetadataName);
     }
 
     [Fact]
@@ -123,7 +149,7 @@ public sealed class CoreWcfServiceModelProjectionTests
             new SeqDoc.Core.Semantics.NonGetSemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], [], [], [], [], "non-get-test")));
 
         var addGraph = Assert.Single(graphSet.Graphs, graph => graph.OperationKey == $"{CalculatorContractMetadataName}.Add");
-        Assert.Equal(ScenarioRootKind.HttpEntryPoint, addGraph.RootKind);
+        Assert.Equal(ScenarioRootKind.ServiceOperation, addGraph.RootKind);
         var action = Assert.Single(addGraph.Nodes, node => node.Kind == ScenarioNodeKind.Action);
         Assert.Equal(ScenarioActionKind.ServiceOperation, action.Presentation?.ActionKind);
 

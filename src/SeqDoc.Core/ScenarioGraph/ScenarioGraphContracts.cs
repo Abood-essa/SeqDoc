@@ -68,6 +68,11 @@ public enum ScenarioRootKind
     HttpEntryPoint,
     ConfiguredMethod,
     HostedWorker,
+
+    // Added last to preserve the existing numeric values of every prior member; no persistence layer
+    // currently serializes ScenarioGraphSet/ScenarioRootKind (confirmed by a repository-wide search), so
+    // this is a purely additive, backward-compatible extension.
+    ServiceOperation,
 }
 
 /// <summary>

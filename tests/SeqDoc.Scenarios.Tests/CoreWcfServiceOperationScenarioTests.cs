@@ -23,7 +23,7 @@ public sealed class CoreWcfServiceOperationScenarioTests
         var second = ScenarioGraphBuilder.Build(request);
 
         var graph = Assert.Single(first.Graphs, item => item.EntryPoint == ScenarioTestFactory.ServiceOperationEntryPoint);
-        Assert.Equal(ScenarioRootKind.HttpEntryPoint, graph.RootKind);
+        Assert.Equal(ScenarioRootKind.ServiceOperation, graph.RootKind);
         Assert.Equal(ScenarioTestFactory.ServiceOperationKeyValue, graph.OperationKey);
         Assert.Empty(first.Diagnostics);
 
@@ -95,5 +95,31 @@ public sealed class CoreWcfServiceOperationScenarioTests
         var action = Assert.Single(graph.Nodes, node => node.Kind == ScenarioNodeKind.Action);
         Assert.Contains(action.Evidence, item => item.Artifact == "service-operation-capability");
         Assert.Contains(action.Evidence, item => item.Artifact == "service-endpoint-registration");
+    }
+
+    [Fact]
+    public void TwoValidRegistrationsForTheSamePairAdmitExactlyOneRootWithUnionedEvidenceDeterministically()
+    {
+        var forward = ScenarioGraphBuilder.Build(ScenarioTestFactory.CreateServiceOperationRequestWithTwoRegistrations(reversed: false));
+        var reversed = ScenarioGraphBuilder.Build(ScenarioTestFactory.CreateServiceOperationRequestWithTwoRegistrations(reversed: true));
+
+        var forwardGraph = Assert.Single(forward.Graphs, item => item.EntryPoint == ScenarioTestFactory.ServiceOperationEntryPoint);
+        var reversedGraph = Assert.Single(reversed.Graphs, item => item.EntryPoint == ScenarioTestFactory.ServiceOperationEntryPoint);
+        var forwardAction = Assert.Single(forwardGraph.Nodes, node => node.Kind == ScenarioNodeKind.Action);
+        var reversedAction = Assert.Single(reversedGraph.Nodes, node => node.Kind == ScenarioNodeKind.Action);
+
+        // Exactly one root, not one per endpoint.
+        Assert.Single(forward.Graphs, item => item.EntryPoint == ScenarioTestFactory.ServiceOperationEntryPoint);
+
+        // Both registrations' evidence is unioned into the single admitted root.
+        Assert.Contains(forwardAction.Evidence, item => item.Artifact == "service-endpoint-registration");
+        Assert.Contains(forwardAction.Evidence, item => item.Artifact == "service-endpoint-registration-second");
+
+        // Reversing the registration input order never changes the admitted identities, evidence, or certainty.
+        Assert.Equal(forwardGraph.Nodes.Select(node => node.Id.Value), reversedGraph.Nodes.Select(node => node.Id.Value));
+        Assert.Equal(
+            forwardAction.Evidence.Select(item => item.Id.Value).OrderBy(id => id, StringComparer.Ordinal),
+            reversedAction.Evidence.Select(item => item.Id.Value).OrderBy(id => id, StringComparer.Ordinal));
+        Assert.Equal(forwardAction.Certainty, reversedAction.Certainty);
     }
 }

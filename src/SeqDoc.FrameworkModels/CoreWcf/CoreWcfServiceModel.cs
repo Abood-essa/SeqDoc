@@ -165,24 +165,34 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
             .OrderBy(entry => entry.Member.InterfaceMethodSymbol.Value, StringComparer.Ordinal)
             .ToArray();
 
-        // A client boundary (an exact System.ServiceModel.ClientBase<TContract> derivation) is never
-        // capability, regardless of how many admitted contracts it implements.
-        if (IsClientBaseDerived(shape.DeclaringType) && admittedMembers.Length > 0)
+        // A client boundary (a constructed System.ServiceModel.ClientBase<TContract> derivation for THIS
+        // exact admitted contract) is never capability. Matching is per admitted member's own contract
+        // identity against ClientBase's constructed generic argument, not "ClientBase appears somewhere
+        // in the base-type chain": a class deriving ClientBase<IContractA> that also separately
+        // implements an unrelated admitted IContractB must never emit a client boundary for IContractB.
+        var clientMembers = admittedMembers
+            .Where(entry => IsClientBaseDerivedForContract(shape.DeclaringType, entry.Member.InterfaceType))
+            .ToArray();
+        if (clientMembers.Length > 0)
         {
             var clientKind = HasGeneratedCodeMarker(shape.DeclaringTypeAttributes)
                 ? ServiceClientKind.GeneratedClient
                 : ServiceClientKind.SourceClient;
+            var generatedMarkerEvidence = clientKind == ServiceClientKind.GeneratedClient
+                ? FindGeneratedCodeMarkerEvidence(shape.DeclaringTypeAttributes)
+                : ImmutableArray<EvidenceRef>.Empty;
             // AnalyzeMethod runs once per admitting method on the client type (for example once per
             // ClientBase<T> method the interface declares), so the fact is anchored to this method's own
             // symbol rather than the declaring type alone: a type-level anchor would make every admitting
             // method on the same client independently emit the exact same BehaviorFactId, and because
             // ServiceClientBoundaryFact is not a GeneralBehaviorFact the host's exact-payload dedup never
             // applies, so the repeated identity would report as a genuine conflict and admit none of them.
-            var clientFacts = admittedMembers
-                .Select(entry => entry.Member.InterfaceType.MetadataName)
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(contractType => contractType, StringComparer.Ordinal)
-                .Select((contractType, ordinal) => (BehaviorFact)BuildClientBoundaryFact(type, symbol.Id, symbol.Certainty, contractType, clientKind, profileId, ordinal))
+            var clientFacts = clientMembers
+                .Select(entry => entry.Member)
+                .DistinctBy(member => member.InterfaceType.MetadataName, StringComparer.Ordinal)
+                .OrderBy(member => member.InterfaceType.MetadataName, StringComparer.Ordinal)
+                .Select((member, ordinal) => (BehaviorFact)BuildClientBoundaryFact(
+                    type, symbol.Id, symbol.Certainty, symbol.Evidence, generatedMarkerEvidence, member, clientKind, profileId, ordinal))
                 .ToImmutableArray();
             return new ModelResult(true, facts: clientFacts);
         }
@@ -240,8 +250,11 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
                 Id = CreateBehaviorFactId(profileId, "service-operation-capability", new SymbolBehaviorFactAnchor(type.Project, symbol.Id), 0),
                 RootMethod = method.Id,
                 ServiceContractType = serviceContractType,
+                ServiceContractTypeSymbol = member.InterfaceTypeSymbol,
                 ImplementationType = type.MetadataName,
+                ImplementationTypeSymbol = type.Id,
                 OperationName = operationName,
+                OperationSymbol = member.InterfaceMethodSymbol,
                 OperationKey = operationKey,
                 Evidence = CreateModelEvidence($"service-operation-capability:{operationKey}:{method.Id.Value}", underlyingEvidence, effectiveCertainty),
                 Certainty = effectiveCertainty,
@@ -259,15 +272,25 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
             var faultTypes = faultAttribute.TypeArguments.IsDefault
                 ? Enumerable.Empty<FrameworkTypeIdentity>()
                 : faultAttribute.TypeArguments.OrderBy(t => t.MetadataName, StringComparer.Ordinal);
+            var faultAttributeEvidence = faultAttribute.Evidence.IsDefault
+                ? ImmutableArray<EvidenceRef>.Empty
+                : faultAttribute.Evidence;
             foreach (var faultType in faultTypes)
             {
+                var faultUnderlyingEvidence = underlyingEvidence
+                    .Concat(faultAttributeEvidence)
+                    .DistinctBy(item => item.Id.Value)
+                    .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
+                    .ToImmutableArray();
                 facts.Add(new ServiceFaultContractFact
                 {
                     Id = CreateBehaviorFactId(profileId, "service-fault-contract", new SymbolBehaviorFactAnchor(type.Project, symbol.Id), faultOrdinal++),
                     ServiceContractType = serviceContractType,
                     OperationName = operationName,
+                    OperationSymbol = member.InterfaceMethodSymbol,
                     FaultType = faultType.MetadataName,
-                    Evidence = CreateModelEvidence($"service-fault-contract:{operationKey}:{faultType.MetadataName}", operationEvidence, effectiveCertainty),
+                    FaultTypeIdentity = faultType,
+                    Evidence = CreateModelEvidence($"service-fault-contract:{operationKey}:{faultType.MetadataName}", faultUnderlyingEvidence, effectiveCertainty),
                     Certainty = effectiveCertainty,
                 });
             }
@@ -283,8 +306,26 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
             return ModelResult.Unrecognized;
         }
 
+        // An exact AddServiceEndpoint invocation proves only that source contains a call with that
+        // compiler identity; it does not prove the application registers or dispatches it. Only an
+        // invocation the compiler-proven active host chain (generic-host construction/execution,
+        // UseStartup<TStartup> selection, TStartup's own Configure/UseServiceModel callback, and a
+        // matching AddService<TService> receiver) reaches promotes to registration evidence — an
+        // unreachable/unsupported chain never emits a fact here, so it falls through to the existing
+        // capability-without-registration conservative diagnostic in ScenarioGraphBuilder instead of
+        // inventing execution.
+        if (!shape.HostChainProven || shape.ServiceTypeSymbol is not { } serviceTypeSymbol || shape.ContractTypeSymbol is not { } contractTypeSymbol)
+        {
+            return ModelResult.Unrecognized;
+        }
+
         var profileId = context.Profile.Id;
-        var effectiveCertainty = WeakestCertainty(operation.Certainty, operation.Evidence);
+        var underlyingEvidence = operation.Evidence
+            .Concat(shape.HostChainEvidence.IsDefault ? [] : shape.HostChainEvidence)
+            .DistinctBy(item => item.Id.Value)
+            .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
+            .ToImmutableArray();
+        var effectiveCertainty = WeakestCertainty(operation.Certainty, underlyingEvidence);
         var diagnostics = ImmutableArray<AnalysisDiagnostic>.Empty;
         if (operation.Certainty != CertaintyLevel.Exact)
         {
@@ -294,11 +335,13 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         var fact = new ServiceEndpointRegistrationFact
         {
             Id = CreateBehaviorFactId(profileId, "service-endpoint-registration", new OperationBehaviorFactAnchor(operation.Method, operation.Id), 0),
-            ImplementationType = shape.ServiceType,
-            ServiceContractType = shape.ContractType,
-            BindingType = shape.BindingType,
+            ImplementationType = shape.ServiceType.MetadataName,
+            ImplementationTypeSymbol = serviceTypeSymbol,
+            ServiceContractType = shape.ContractType.MetadataName,
+            ServiceContractTypeSymbol = contractTypeSymbol,
+            BindingType = shape.BindingType.MetadataName,
             Address = shape.Address,
-            Evidence = CreateModelEvidence($"service-endpoint-registration:{operation.Id.Value}", operation.Evidence, effectiveCertainty),
+            Evidence = CreateModelEvidence($"service-endpoint-registration:{operation.Id.Value}", underlyingEvidence, effectiveCertainty),
             Certainty = effectiveCertainty,
         };
         return new ModelResult(true, facts: [fact], diagnostics: diagnostics);
@@ -343,12 +386,22 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
             && !type.IsStatic
             && type.GenericArity == 0;
 
-    private static bool IsClientBaseDerived(FrameworkTypeShape type)
-        => !type.BaseTypeChain.IsDefault
-            && type.BaseTypeChain.Any(identity =>
-                identity.AssemblyIdentity == Identity.SystemServiceModelAssembly
-                && identity.AssemblyVersion == Identity.SystemServiceModelAssemblyVersion
-                && identity.MetadataName == Identity.ClientBaseMetadataName);
+    /// <summary>
+    /// True only when <paramref name="type"/>'s base-type chain contains the exact
+    /// <c>System.ServiceModel.ClientBase&lt;TContract&gt;</c> identity *constructed with the exact
+    /// admitted <paramref name="contract"/> as its type argument*. Finding <c>ClientBase\`1</c> anywhere
+    /// in the chain without proving the constructed argument matches this specific contract is not
+    /// sufficient.
+    /// </summary>
+    private static bool IsClientBaseDerivedForContract(FrameworkTypeShape type, FrameworkTypeIdentity contract)
+        => !type.BaseTypeChainWithArguments.IsDefault
+            && type.BaseTypeChainWithArguments.Any(baseType =>
+                baseType.Identity.AssemblyIdentity == Identity.SystemServiceModelAssembly
+                && baseType.Identity.AssemblyVersion == Identity.SystemServiceModelAssemblyVersion
+                && baseType.Identity.MetadataName == Identity.ClientBaseMetadataName
+                && !baseType.TypeArguments.IsDefault
+                && baseType.TypeArguments.Length == 1
+                && baseType.TypeArguments[0] == contract);
 
     private static bool HasGeneratedCodeMarker(ImmutableArray<FrameworkAttributeApplicationIdentity> declaringTypeAttributes)
         => !declaringTypeAttributes.IsDefault
@@ -356,6 +409,21 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
                 attribute.AttributeType.AssemblyIdentity == Identity.CoreLibAssembly
                 && attribute.AttributeType.AssemblyVersion == Identity.CoreLibAssemblyVersion
                 && attribute.AttributeType.MetadataName == Identity.GeneratedCodeAttribute);
+
+    private static ImmutableArray<EvidenceRef> FindGeneratedCodeMarkerEvidence(
+        ImmutableArray<FrameworkAttributeApplicationIdentity> declaringTypeAttributes)
+    {
+        if (declaringTypeAttributes.IsDefault)
+        {
+            return ImmutableArray<EvidenceRef>.Empty;
+        }
+
+        var marker = declaringTypeAttributes.FirstOrDefault(attribute =>
+            attribute.AttributeType.AssemblyIdentity == Identity.CoreLibAssembly
+            && attribute.AttributeType.AssemblyVersion == Identity.CoreLibAssemblyVersion
+            && attribute.AttributeType.MetadataName == Identity.GeneratedCodeAttribute);
+        return marker is null || marker.Evidence.IsDefault ? ImmutableArray<EvidenceRef>.Empty : marker.Evidence;
+    }
 
     private static ContractFamily? ServiceContractFamily(FrameworkTypeIdentity attributeType)
         => IsExactAttribute(attributeType, Identity.CoreWcfAssembly, Identity.CoreWcfAssemblyVersion, Identity.CoreWcfServiceContractAttribute) ? ContractFamily.CoreWcf
@@ -445,19 +513,30 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         ProgramType type,
         SymbolId triggeringMethodSymbol,
         CertaintyLevel triggeringMethodCertainty,
-        string serviceContractType,
+        ImmutableArray<EvidenceRef> triggeringMethodEvidence,
+        ImmutableArray<EvidenceRef> generatedMarkerEvidence,
+        FrameworkInterfaceMemberIdentity member,
         ServiceClientKind clientKind,
         CompilationProfileId profileId,
         int ordinal)
     {
-        var effectiveCertainty = WeakestCertainty(triggeringMethodCertainty, type.Evidence);
+        var underlyingEvidence = type.Evidence
+            .Concat(triggeringMethodEvidence.IsDefault ? [] : triggeringMethodEvidence)
+            .Concat(generatedMarkerEvidence.IsDefault ? [] : generatedMarkerEvidence)
+            .DistinctBy(item => item.Id.Value)
+            .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
+            .ToImmutableArray();
+        var effectiveCertainty = WeakestCertainty(triggeringMethodCertainty, underlyingEvidence);
+        var serviceContractType = member.InterfaceType.MetadataName;
         return new ServiceClientBoundaryFact
         {
             Id = CreateBehaviorFactId(profileId, "service-client-boundary", new SymbolBehaviorFactAnchor(type.Project, triggeringMethodSymbol), ordinal),
             ServiceContractType = serviceContractType,
+            ServiceContractTypeSymbol = member.InterfaceTypeSymbol,
             ClientType = type.MetadataName,
+            ClientTypeSymbol = type.Id,
             ClientKind = clientKind,
-            Evidence = CreateModelEvidence($"service-client-boundary:{type.MetadataName}:{serviceContractType}", type.Evidence, effectiveCertainty),
+            Evidence = CreateModelEvidence($"service-client-boundary:{type.MetadataName}:{serviceContractType}", underlyingEvidence, effectiveCertainty),
             Certainty = effectiveCertainty,
         };
     }

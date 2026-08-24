@@ -72,13 +72,13 @@ public sealed class InterfaceMemberEligibilityProjectionTests
     [Fact]
     public async Task ImplicitImplementationProjectsExactAdmittedInterfaceMemberIdentity()
     {
-        await WithFixtureCompilation(async (index, project, repositoryRoot, compilation) =>
+        await WithFixtureCompilation(async (index, project, repositoryRoot, compilation, documents) =>
         {
             var calculator = compilation.GetTypeByMetadataName(CalculatorServiceMetadataName);
             Assert.NotNull(calculator);
             var add = Assert.Single(calculator.GetMembers("Add").OfType<IMethodSymbol>());
 
-            var shape = FrameworkSymbolEligibilityProjector.ProjectMethodShape(add, project);
+            var shape = FrameworkSymbolEligibilityProjector.ProjectMethodShape(add, project, documents);
             Assert.NotNull(shape);
             var member = Assert.Single(shape!.ImplementedInterfaceMembers);
             Assert.False(member.IsExplicitImplementation);
@@ -99,7 +99,7 @@ public sealed class InterfaceMemberEligibilityProjectionTests
             // Determinism: repeated projection of the same method produces the same identities.
             // ImmutableArray<T> equality is reference-based, so compare canonical identity keys
             // rather than the record instances themselves.
-            var repeated = FrameworkSymbolEligibilityProjector.ProjectMethodShape(add, project);
+            var repeated = FrameworkSymbolEligibilityProjector.ProjectMethodShape(add, project, documents);
             Assert.Equal(
                 shape.ImplementedInterfaceMembers.Select(item => (item.InterfaceTypeSymbol, item.InterfaceMethodSymbol, item.IsExplicitImplementation)),
                 repeated!.ImplementedInterfaceMembers.Select(item => (item.InterfaceTypeSymbol, item.InterfaceMethodSymbol, item.IsExplicitImplementation)));
@@ -109,7 +109,7 @@ public sealed class InterfaceMemberEligibilityProjectionTests
     [Fact]
     public async Task ExplicitImplementationProjectsTheSameAdmittedInterfaceMemberIdentity()
     {
-        await WithFixtureCompilation(async (index, project, repositoryRoot, compilation) =>
+        await WithFixtureCompilation(async (index, project, repositoryRoot, compilation, documents) =>
         {
             var explicitCalculator = compilation.GetTypeByMetadataName(ExplicitCalculatorServiceMetadataName);
             Assert.NotNull(explicitCalculator);
@@ -117,7 +117,7 @@ public sealed class InterfaceMemberEligibilityProjectionTests
                 explicitCalculator.GetMembers().OfType<IMethodSymbol>(),
                 method => method.Name.EndsWith(".Add", StringComparison.Ordinal));
 
-            var shape = FrameworkSymbolEligibilityProjector.ProjectMethodShape(add, project);
+            var shape = FrameworkSymbolEligibilityProjector.ProjectMethodShape(add, project, documents);
             Assert.NotNull(shape);
             var member = Assert.Single(shape!.ImplementedInterfaceMembers);
             Assert.True(member.IsExplicitImplementation);
@@ -130,13 +130,13 @@ public sealed class InterfaceMemberEligibilityProjectionTests
     [Fact]
     public async Task SiblingOperationWithoutOperationContractStillProjectsInterfaceMembershipButNoAttribute()
     {
-        await WithFixtureCompilation(async (index, project, repositoryRoot, compilation) =>
+        await WithFixtureCompilation(async (index, project, repositoryRoot, compilation, documents) =>
         {
             var calculator = compilation.GetTypeByMetadataName(CalculatorServiceMetadataName);
             Assert.NotNull(calculator);
             var modulo = Assert.Single(calculator.GetMembers("Modulo").OfType<IMethodSymbol>());
 
-            var shape = FrameworkSymbolEligibilityProjector.ProjectMethodShape(modulo, project);
+            var shape = FrameworkSymbolEligibilityProjector.ProjectMethodShape(modulo, project, documents);
             Assert.NotNull(shape);
             var member = Assert.Single(shape!.ImplementedInterfaceMembers);
             Assert.Equal("Modulo", member.InterfaceMethodMetadataName);
@@ -152,13 +152,13 @@ public sealed class InterfaceMemberEligibilityProjectionTests
     [Fact]
     public async Task OperationContractWithoutServiceContractOnTheInterfaceNeverProjectsTheServiceContractAttribute()
     {
-        await WithFixtureCompilation(async (index, project, repositoryRoot, compilation) =>
+        await WithFixtureCompilation(async (index, project, repositoryRoot, compilation, documents) =>
         {
             var utility = compilation.GetTypeByMetadataName(UtilityHelperMetadataName);
             Assert.NotNull(utility);
             var ping = Assert.Single(utility.GetMembers("Ping").OfType<IMethodSymbol>());
 
-            var shape = FrameworkSymbolEligibilityProjector.ProjectMethodShape(ping, project);
+            var shape = FrameworkSymbolEligibilityProjector.ProjectMethodShape(ping, project, documents);
             Assert.NotNull(shape);
             var member = Assert.Single(shape!.ImplementedInterfaceMembers);
             Assert.Contains(index.Attributes, attribute =>
@@ -172,13 +172,13 @@ public sealed class InterfaceMemberEligibilityProjectionTests
     [Fact]
     public async Task LookalikeAttributeNamespaceNeverResolvesToTheAdmittedCoreWcfIdentity()
     {
-        await WithFixtureCompilation(async (index, project, repositoryRoot, compilation) =>
+        await WithFixtureCompilation(async (index, project, repositoryRoot, compilation, documents) =>
         {
             var fakeService = compilation.GetTypeByMetadataName(FakeServiceMetadataName);
             Assert.NotNull(fakeService);
             var echo = Assert.Single(fakeService.GetMembers("Echo").OfType<IMethodSymbol>());
 
-            var shape = FrameworkSymbolEligibilityProjector.ProjectMethodShape(echo, project);
+            var shape = FrameworkSymbolEligibilityProjector.ProjectMethodShape(echo, project, documents);
             Assert.NotNull(shape);
             var member = Assert.Single(shape!.ImplementedInterfaceMembers);
 
@@ -193,7 +193,7 @@ public sealed class InterfaceMemberEligibilityProjectionTests
     }
 
     private static async Task WithFixtureCompilation(
-        Func<ProgramIndexSnapshot, StableProjectId, string, Compilation, Task> assertions)
+        Func<ProgramIndexSnapshot, StableProjectId, string, Compilation, IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext>, Task> assertions)
     {
         var request = CreateFixtureRequest();
         await MsBuildRegistration.EnsureRegisteredAsync(request.RepositoryRoot, CancellationToken.None);
@@ -208,7 +208,9 @@ public sealed class InterfaceMemberEligibilityProjectionTests
                 request.RepositoryRoot,
                 CancellationToken.None);
             var project = Assert.Single(loaded.Projects);
-            await assertions(index, project.StableId, request.RepositoryRoot, project.Compilation);
+            var contexts = await RoslynProgramIndexExtractor.ReadDocumentsAsync(project, request.RepositoryRoot, CancellationToken.None);
+            var documents = RoslynProgramIndexExtractor.CreateDocumentIndex(contexts);
+            await assertions(index, project.StableId, request.RepositoryRoot, project.Compilation, documents);
         }
     }
 
