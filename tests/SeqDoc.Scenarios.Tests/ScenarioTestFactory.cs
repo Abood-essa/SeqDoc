@@ -855,8 +855,15 @@ internal static class ScenarioTestFactory
     internal const string ServiceOperationName = "Add";
     internal const string ServiceOperationKeyValue = $"{ServiceContractTypeName}.{ServiceOperationName}";
 
+    // A dedicated service-implementation method identity, distinct from ActionMethod (a controller
+    // action): reusing ActionMethod would anchor the service-operation root to a controller's Method
+    // Flow instead of a real service implementation method, masking bugs in root identity, evidence
+    // propagation, and topology that depend on the actual admitted service method.
+    internal static readonly MethodId ServiceOperationMethod =
+        new($"method:v1:{ServiceImplementationTypeName}.{ServiceOperationName}");
+
     internal static EntryPointId ServiceOperationEntryPoint => StableIdentity.CreateServiceOperationEntryPointId(
-        new ServiceOperationEntryPointIdentityDescriptor(Profile.Id, ActionMethod, ServiceOperationKeyValue));
+        new ServiceOperationEntryPointIdentityDescriptor(Profile.Id, ServiceOperationMethod, ServiceOperationKeyValue));
 
     private static ServiceOperationCapabilityFact CreateServiceCapabilityFact(CertaintyLevel certainty = CertaintyLevel.Exact)
         => new()
@@ -864,7 +871,7 @@ internal static class ScenarioTestFactory
             Id = new BehaviorFactId("behavior-fact:v1:service-operation-capability:Add"),
             Evidence = [SourceEvidence("service-operation-capability")],
             Certainty = certainty,
-            RootMethod = ActionMethod,
+            RootMethod = ServiceOperationMethod,
             ServiceContractType = ServiceContractTypeName,
             ImplementationType = ServiceImplementationTypeName,
             OperationName = ServiceOperationName,
@@ -884,17 +891,78 @@ internal static class ScenarioTestFactory
         };
 
     /// <summary>
+    /// A minimal Program Index + Method Flow scoped to the CoreWCF service implementation method
+    /// (<see cref="ServiceOperationMethod"/>), independent of the GetMeaning controller/action fixture
+    /// <see cref="CreateGetRequest"/> builds. This is what anchors the service-operation scenario tests
+    /// to a real service-shaped root method identity and flow rather than a borrowed controller action.
+    /// </summary>
+    private static ScenarioAnalysisRequest CreateServiceBaseRequest()
+    {
+        var contractType = new SymbolId($"symbol:v1:{ServiceContractTypeName}");
+        var implementationType = new SymbolId($"symbol:v1:{ServiceImplementationTypeName}");
+        var index = CreateIndex(
+            ImmutableArray.Create(
+                CreateType(contractType, ServiceContractTypeName),
+                CreateType(implementationType, ServiceImplementationTypeName)),
+            ImmutableArray.Create(CreateMethod(ServiceOperationMethod, implementationType, ServiceOperationName)));
+
+        var entry = new EntryFlowNode(
+            StableIdentity.CreateFlowNodeId(new FlowNodeIdentityDescriptor(ServiceOperationMethod, "Entry", 0, 0, "entry")),
+            ServiceOperationMethod,
+            [SourceEvidence("service-operation-entry")],
+            CertaintyLevel.Exact);
+        var exit = new ExitFlowNode(
+            StableIdentity.CreateFlowNodeId(new FlowNodeIdentityDescriptor(ServiceOperationMethod, "Exit", int.MaxValue, int.MaxValue, "exit")),
+            ServiceOperationMethod,
+            [SourceEvidence("service-operation-exit")],
+            CertaintyLevel.Exact);
+        var flow = new MethodFlowSnapshot(
+            ServiceOperationMethod,
+            "service-operation-body-fingerprint",
+            [entry, exit],
+            [Edge(ServiceOperationMethod, 0, entry, exit, FlowEdgeKind.Normal, null)],
+            [],
+            [],
+            new LocalValueGraph([], []),
+            [],
+            null,
+            [],
+            "service-operation-flow-fingerprint");
+        var behavior = new BehaviorSnapshot(
+            1,
+            "test",
+            Profile,
+            index.IndexFingerprint,
+            [flow],
+            new CallGraph([], []),
+            new RtaFoundation([], HasExplicitRoots: true),
+            [],
+            [],
+            "service-operation-behavior-fingerprint");
+
+        return new ScenarioAnalysisRequest(
+            Profile,
+            index,
+            behavior,
+            new FrameworkAnalysisResult(true, [], [], [], [], [], []),
+            new SemanticFactSet(1, "test", Profile, index.IndexFingerprint, [], [], [], [], "semantic-test"),
+            new DependencyInjectionFactSet(1, "test", Profile, index.IndexFingerprint, [], [], [], "di-test"),
+            new StructuralResultFactSet(1, "test", Profile, index.IndexFingerprint, [], [], [], "structural-test"),
+            new NonGetSemanticFactSet(1, "test", Profile, index.IndexFingerprint, [], [], [], [], [], [], [], [], "non-get-test"));
+    }
+
+    /// <summary>
     /// A CoreWCF service operation root, admitted by joining an independently proven capability fact
-    /// with a matching registration fact — reuses the existing controller action's root method and
-    /// Method Flow: issue #7's model projects dispatch through the same default Method-Flow-driven
-    /// topology path a controller action already uses. No HTTP method or canonical route ever backs
-    /// this root.
+    /// with a matching registration fact, anchored to <see cref="ServiceOperationMethod"/>'s own Program
+    /// Index entry and Method Flow: issue #7's model projects dispatch through the same default
+    /// Method-Flow-driven topology path a controller action already uses. No HTTP method or canonical
+    /// route ever backs this root.
     /// </summary>
     internal static ScenarioAnalysisRequest CreateServiceOperationRequest(
         CertaintyLevel capabilityCertainty = CertaintyLevel.Exact,
         CertaintyLevel registrationCertainty = CertaintyLevel.Exact)
     {
-        var request = CreateGetRequest();
+        var request = CreateServiceBaseRequest();
         return request with
         {
             FrameworkFacts = new FrameworkAnalysisResult(
@@ -914,7 +982,7 @@ internal static class ScenarioTestFactory
     /// </summary>
     internal static ScenarioAnalysisRequest CreateUnregisteredServiceCapabilityRequest()
     {
-        var request = CreateGetRequest();
+        var request = CreateServiceBaseRequest();
         return request with
         {
             FrameworkFacts = new FrameworkAnalysisResult(

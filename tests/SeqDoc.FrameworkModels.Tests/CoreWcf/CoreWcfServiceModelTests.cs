@@ -315,6 +315,23 @@ public sealed class CoreWcfServiceModelTests
     }
 
     [Fact]
+    public async Task ClientBoundaryCertaintyNeverExceedsTheTriggeringSymbolsCertainty()
+    {
+        var index = Index("Add", typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute()], methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute()]);
+        var context = new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index);
+        var clientShape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "Add",
+            declaringType: CoreWcfTestIndexFactory.EligibleImplementationTypeShape(clientBaseDerived: true));
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("Add", clientShape, certainty: CertaintyLevel.Conservative),
+            context, CancellationToken.None);
+
+        Assert.True(result.Recognized);
+        var clientFact = Assert.Single(result.Facts.OfType<ServiceClientBoundaryFact>());
+        Assert.Equal(CertaintyLevel.Conservative, clientFact.Certainty);
+    }
+
+    [Fact]
     public async Task GeneratedCodeMarkedClientBaseDerivedTypeEmitsGeneratedClientBoundary()
     {
         var index = Index("Add", typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute()], methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute()]);

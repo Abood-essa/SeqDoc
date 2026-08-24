@@ -76,9 +76,15 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         Order: 110);
 
     /// <summary>
-    /// Applies when the unmodified Program Index contains an exact admitted ServiceContract or
-    /// OperationContract attribute identity. A lookalike-only index without an exact admitted attribute
-    /// identity remains non-applicable.
+    /// A coarse, inexpensive pre-filter: applies when the Program Index contains any attribute whose
+    /// metadata name matches an admitted ServiceContract or OperationContract name. This is a
+    /// <see cref="SeqDoc.Core.ProgramIndex.ProgramAttributeApplication.AttributeType"/> string match
+    /// only — it cannot distinguish the real CoreWCF/<c>System.ServiceModel</c> identity from a
+    /// same-qualified-name lookalike in a foreign assembly, so a lookalike-only index still returns
+    /// applicable here. The real exact-identity decision (assembly, version, metadata name, and family
+    /// consistency) is made later, per member, in <see cref="AnalyzeMethod"/> against
+    /// <see cref="FrameworkInterfaceMemberIdentity.InterfaceTypeAttributes"/>/<c>InterfaceMethodAttributes</c>;
+    /// this method only decides whether the model runs at all, never whether any fact is admitted.
     /// </summary>
     public bool IsApplicable(FrameworkDetectionContext context)
     {
@@ -176,7 +182,7 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
                 .Select(entry => entry.Member.InterfaceType.MetadataName)
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(contractType => contractType, StringComparer.Ordinal)
-                .Select((contractType, ordinal) => (BehaviorFact)BuildClientBoundaryFact(type, symbol.Id, contractType, clientKind, profileId, ordinal))
+                .Select((contractType, ordinal) => (BehaviorFact)BuildClientBoundaryFact(type, symbol.Id, symbol.Certainty, contractType, clientKind, profileId, ordinal))
                 .ToImmutableArray();
             return new ModelResult(true, facts: clientFacts);
         }
@@ -438,12 +444,13 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
     private ServiceClientBoundaryFact BuildClientBoundaryFact(
         ProgramType type,
         SymbolId triggeringMethodSymbol,
+        CertaintyLevel triggeringMethodCertainty,
         string serviceContractType,
         ServiceClientKind clientKind,
         CompilationProfileId profileId,
         int ordinal)
     {
-        var effectiveCertainty = WeakestCertainty(CertaintyLevel.Exact, type.Evidence);
+        var effectiveCertainty = WeakestCertainty(triggeringMethodCertainty, type.Evidence);
         return new ServiceClientBoundaryFact
         {
             Id = CreateBehaviorFactId(profileId, "service-client-boundary", new SymbolBehaviorFactAnchor(type.Project, triggeringMethodSymbol), ordinal),
