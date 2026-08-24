@@ -315,7 +315,7 @@ public static class DocumentationPlanner
                         phrases,
                         WordingPhraseKind.Statement,
                         StateAssignmentPhraseKey,
-                        $"The service assigns state: {node.Detail}.",
+                        $"The service assigns: {node.Detail}.",
                         node.Evidence,
                         node.Certainty);
                     break;
@@ -3415,7 +3415,7 @@ public static class DocumentationPlanner
     private static string? BuildSaveLabel(ScenarioGraph graph, ScenarioEdge edge)
     {
         var presentation = graph.Nodes.FirstOrDefault(node => node.Id == edge.Target)?.Presentation;
-        if (presentation?.MutationKind == EntityFrameworkMutationKind.SaveChangesAsync)
+        if (presentation?.MutationKind is EntityFrameworkMutationKind.SaveChangesAsync or EntityFrameworkMutationKind.SaveChanges)
         {
             return "Save changes";
         }
@@ -3697,7 +3697,7 @@ public static class DocumentationPlanner
     /// example an Add node whose detail text claims a save) never overrides it.
     /// </summary>
     private static bool IsSaveNode(ScenarioNode node)
-        => node.Presentation?.MutationKind == EntityFrameworkMutationKind.SaveChangesAsync;
+        => node.Presentation?.MutationKind is EntityFrameworkMutationKind.SaveChangesAsync or EntityFrameworkMutationKind.SaveChanges;
 
     /// <summary>
     /// Kind-distinct mutation wording built from typed presentation facts only; a conflicting Detail
@@ -3733,10 +3733,10 @@ public static class DocumentationPlanner
         var presentation = node.Presentation;
         if (presentation is not null && !string.IsNullOrWhiteSpace(presentation.DbContextTypeName))
         {
-            return $"The service persists changes: saves changes to {ShortTypeName(presentation.DbContextTypeName)}.";
+            return $"The service calls SaveChanges: saves changes to {ShortTypeName(presentation.DbContextTypeName)}.";
         }
 
-        return $"The service persists changes: {node.Detail}.";
+        return $"The service calls SaveChanges: {node.Detail}.";
     }
 
     private static ImmutableArray<EvidenceRef> SourceEvidenceFallback(ScenarioGraph graph)

@@ -241,6 +241,11 @@ public static class ScenarioGraphBuilder
             }
 
             var directExpansion = AddConfiguredDirectCalls(request, entryPoint, profileId, actionNode, nodes, edges, diagnostics);
+
+            JoinEntityQueries(request, profileId, entryPointId, entryPoint.RootMethod, actionNode, nodes, edges, diagnostics);
+            JoinStateAssignments(request, profileId, entryPointId, entryPoint.RootMethod, actionNode, nodes, edges);
+            JoinEntityMutations(request, profileId, entryPointId, entryPoint.RootMethod, actionNode, nodes, edges);
+
             var topologyNodes = nodes.Where(node => node.Kind != ScenarioNodeKind.MethodCall
                 || directExpansion.Steps.Any(step => step.ScenarioNodeId == node.Id && step.Depth == 1)).ToImmutableArray();
             var configuredTopology = BuildTopology(request, profileId, entryPointId, entryPoint, entryPoint.RootMethod,
@@ -1158,21 +1163,35 @@ public static class ScenarioGraphBuilder
         List<ScenarioEdge> edges,
         List<ScenarioGraphDiagnostic> diagnostics)
     {
+        if ((request.FrameworkFacts.ProfileId is not null && request.FrameworkFacts.ProfileId != request.Profile.Id)
+            || (request.FrameworkFacts.ProgramIndexFingerprint is not null && request.FrameworkFacts.ProgramIndexFingerprint != request.ProgramIndex.IndexFingerprint)
+            || (request.NonGetSemanticFacts is not null
+                && (request.NonGetSemanticFacts.Profile.Id != request.Profile.Id
+                    || request.NonGetSemanticFacts.ProgramIndexFingerprint != request.ProgramIndex.IndexFingerprint)))
+        {
+            return;
+        }
+
         var efFacts = request.FrameworkFacts.Facts
             .OfType<EntityFrameworkQueryFact>()
             .Where(fact => fact.Method == serviceMethod)
             .ToArray();
-        var queryOrder = request.NonGetSemanticFacts.EfOperationSequence
+
+        var useNonGet = true;
+
+        var queryOrder = useNonGet ? request.NonGetSemanticFacts!.EfOperationSequence
             .Where(item => item.Method == serviceMethod && item.Kind == EfOperationSequenceKind.QueryTerminal)
             .GroupBy(item => item.Operation.Value)
-            .ToDictionary(group => group.Key, group => group.Min(item => item.Ordinal), StringComparer.Ordinal);
+            .ToDictionary(group => group.Key, group => group.Min(item => item.Ordinal), StringComparer.Ordinal) : null;
+
         var ordered = efFacts
-            .OrderBy(fact => queryOrder.GetValueOrDefault(fact.Operation.Value, int.MaxValue))
+            .OrderBy(fact => queryOrder?.GetValueOrDefault(fact.Operation.Value, int.MaxValue) ?? int.MaxValue)
             .ThenBy(fact => fact.Operation.Value, StringComparer.Ordinal)
             .ToArray();
+
         foreach (var fact in ordered)
         {
-            int ordinal = queryOrder.GetValueOrDefault(fact.Operation.Value, 0);
+            int ordinal = queryOrder?.GetValueOrDefault(fact.Operation.Value, int.MaxValue) ?? int.MaxValue;
             var queryNode = BuildEntityQueryNode(
                 request,
                 profileId,
@@ -1195,7 +1214,7 @@ public static class ScenarioGraphBuilder
         }
     }
 
-    /// <summary>Joins every exact state assignment of the service method as an ordered state node.</summary>
+    /// <summary>Joins every exact property state assignment of the service method in source order.</summary>
     private static void JoinStateAssignments(
         ScenarioAnalysisRequest request,
         CompilationProfileId profileId,
@@ -1205,6 +1224,13 @@ public static class ScenarioGraphBuilder
         List<ScenarioNode> nodes,
         List<ScenarioEdge> edges)
     {
+        if (request.NonGetSemanticFacts is null
+            || request.NonGetSemanticFacts.Profile.Id != request.Profile.Id
+            || request.NonGetSemanticFacts.ProgramIndexFingerprint != request.ProgramIndex.IndexFingerprint)
+        {
+            return;
+        }
+
         foreach (var assignment in request.NonGetSemanticFacts.StateAssignments
                      .Where(fact => fact.Method == serviceMethod)
                      .OrderBy(fact => fact.SequenceOrdinal)
@@ -1245,6 +1271,13 @@ public static class ScenarioGraphBuilder
         List<ScenarioNode> nodes,
         List<ScenarioEdge> edges)
     {
+        if (request.NonGetSemanticFacts is null
+            || request.NonGetSemanticFacts.Profile.Id != request.Profile.Id
+            || request.NonGetSemanticFacts.ProgramIndexFingerprint != request.ProgramIndex.IndexFingerprint)
+        {
+            return;
+        }
+
         foreach (var mutation in request.NonGetSemanticFacts.EntityFrameworkMutations
                      .Where(fact => fact.Method == serviceMethod)
                      .OrderBy(fact => fact.SequenceOrdinal))
@@ -1265,7 +1298,7 @@ public static class ScenarioGraphBuilder
                     EntityTypeName: mutation.EntityType,
                     MutationKind: mutation.MutationKind));
             nodes.Add(mutationNode);
-            var edgeKind = mutation.MutationKind == EntityFrameworkMutationKind.SaveChangesAsync
+            var edgeKind = mutation.MutationKind is EntityFrameworkMutationKind.SaveChangesAsync or EntityFrameworkMutationKind.SaveChanges
                 ? ScenarioEdgeKind.Save
                 : ScenarioEdgeKind.Mutation;
             edges.Add(CreateEdge(
@@ -1274,7 +1307,7 @@ public static class ScenarioGraphBuilder
                 serviceNode,
                 mutationNode,
                 edgeKind,
-                edgeKind == ScenarioEdgeKind.Save ? "persists changes" : "mutates tracked entities",
+                edgeKind == ScenarioEdgeKind.Save ? "calls SaveChanges" : "mutates tracked entities",
                 mutation.Evidence,
                 mutation.Certainty,
                 mutation.SequenceOrdinal));
@@ -1627,7 +1660,7 @@ public static class ScenarioGraphBuilder
             EntityFrameworkMutationKind.Add => $"adds {entityName}",
             EntityFrameworkMutationKind.RemoveRange => $"removes {entityName} records",
             EntityFrameworkMutationKind.Clear => $"clears the tracked {entityName} set",
-            EntityFrameworkMutationKind.SaveChangesAsync => $"saves changes to {ShortTypeName(mutation.DbContextType)}",
+            EntityFrameworkMutationKind.SaveChangesAsync or EntityFrameworkMutationKind.SaveChanges => $"saves changes to {ShortTypeName(mutation.DbContextType)}",
             _ => "mutates the data store",
         };
     }

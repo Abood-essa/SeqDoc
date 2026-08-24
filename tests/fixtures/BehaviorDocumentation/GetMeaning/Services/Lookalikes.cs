@@ -13,6 +13,42 @@ public static class QueryableLookalikes
         this IQueryable<Gadget> source,
         Expression<Func<Gadget, bool>> predicate)
         => Task.FromResult<Gadget?>(null);
+
+    public static Task<Gadget?> LookalikeFirstOrDefaultAsync(
+        this IQueryable<Gadget> source,
+        Expression<Func<Gadget, bool>> predicate)
+        => Task.FromResult<Gadget?>(null);
+
+    public static IQueryable<T> FromSqlRaw<T>(
+        this IQueryable<T> source,
+        string sql,
+        params object[] parameters)
+        => source;
+
+    public static Task<int> ExecuteSqlRawAsync(
+        this object database,
+        string sql,
+        params object[] parameters)
+        => Task.FromResult(0);
+}
+
+/// <summary>
+/// Non-EF lookalike classes with SaveChanges and ExecuteSqlRaw methods.
+/// Must be rejected fail-closed by exact compiler symbol validation.
+/// </summary>
+public sealed class FakeDbContext
+{
+    public int SaveChanges() => 1;
+    public int SaveChanges(bool acceptAllChangesOnSuccess) => 1;
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(1);
+    public void ExecuteSqlRaw(string sql, params object[] parameters) { }
+}
+
+public sealed class FakeRepository
+{
+    public int SaveChanges() => 1;
+    public void Add(Gadget gadget) { }
+    public void RemoveRange(IEnumerable<Gadget> gadgets) { }
 }
 
 /// <summary>
@@ -84,4 +120,26 @@ public sealed class OppositePolarityResult<T>
     public static OppositePolarityResult<T> Success(T data) => new(false, data);
 
     public static OppositePolarityResult<T> NotFound(string message) => new(true, default);
+}
+
+public sealed class LookalikeCaller
+{
+    private readonly FakeDbContext _fakeDb = new();
+    private readonly FakeRepository _fakeRepo = new();
+
+    public async Task CallFakeMethodsAsync(IQueryable<Gadget> query)
+    {
+        _fakeDb.SaveChanges();
+        _fakeDb.SaveChanges(true);
+        await _fakeDb.SaveChangesAsync();
+        _fakeDb.ExecuteSqlRaw("dummy");
+
+        _fakeRepo.SaveChanges();
+        _fakeRepo.Add(new Gadget());
+        _fakeRepo.RemoveRange(new[] { new Gadget() });
+
+        await query.LookalikeSingleOrDefaultAsync(g => g.Id == 1);
+        await query.LookalikeFirstOrDefaultAsync(g => g.Id == 1);
+        query.FromSqlRaw("dummy");
+    }
 }
