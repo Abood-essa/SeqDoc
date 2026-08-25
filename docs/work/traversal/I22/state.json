@@ -1,22 +1,49 @@
 {
   "schemaVersion": 1,
   "checkpointId": "I22",
-  "status": "Building",
+  "status": "Closed",
   "baselineRevision": "68928142b70a9105a6a022789c1053a5ea1bc773",
-  "candidateRevision": null,
+  "candidateRevision": "7212d56",
   "review": {
-    "status": "NotStarted",
-    "findings": []
+    "status": "Complete",
+    "findings": [
+      { "id": "I22-F1", "severity": "Minor", "disposition": "Fixed", "summary": "Dead conservative-guarded fixture conditional removed; control-dependence evidence comment corrected.", "commit": "fdc63f6" },
+      { "id": "I22-F2", "severity": "Minor", "disposition": "Fixed", "summary": "Occurrence-pass diagnostics deduped by code and detail in deterministic first-occurrence order; composition unchanged.", "commit": "fdc63f6" },
+      { "id": "I22-F3", "severity": "Capsule gap", "disposition": "Fixed", "summary": "Rendered-Mermaid acceptance added through the production builder, planner, renderer, and Mermaid validation.", "commit": "fdc63f6" },
+      { "id": "I22-OQ1", "severity": "Open question", "disposition": "Fixed", "summary": "Locked null-scope decision identity vector proven against the baseline computation." },
+      { "id": "I22-OQ2", "severity": "Open question", "disposition": "Fixed", "summary": "Polarity, single placement, evidence, certainty, chronology, and nested shape assertions reviewed directly." },
+      { "id": "I22-D1", "severity": "Observation", "disposition": "Deferred", "summary": "Rendering project references were approved for the production-path test." },
+      { "id": "I22-D2", "severity": "Observation", "disposition": "Fixed", "summary": "Repeated guarded occurrences receive distinct Diagram identities in I22R." },
+      { "id": "I22-D3", "severity": "Observation", "disposition": "Rejected", "summary": "Pre-existing duplicate flow-node GroupBy-first behavior is outside this checkpoint." }
+    ]
   },
+  "repairFindings": [
+    { "id": "I22R-F1", "disposition": "Fixed" },
+    { "id": "I22R-F2", "disposition": "Fixed" },
+    { "id": "I22R-R1", "disposition": "Fixed" },
+    { "id": "I22R-R2", "disposition": "Fixed" },
+    { "id": "I22R-R3", "disposition": "Fixed" },
+    { "id": "I22R-R4", "disposition": "Fixed" },
+    { "id": "I22R-R5", "disposition": "Fixed" }
+  ],
+  "publicationRepairFindings": [
+    { "id": "I22PUB-R1", "disposition": "Fixed", "summary": "Owner-authorized takeover removed switch over-pruning; the admitted parent and independent sibling remain while the child-descendant closure is withheld." },
+    { "id": "I22PUB-R2", "disposition": "Fixed", "summary": "Owner-authorized takeover preserves deterministic SC013 evidence, certainty, and reversed-input output." }
+  ],
   "verification": {
-    "focusedCommand": { "result": "NotRun", "summary": "" },
-    "finalGate": { "result": "NotRun", "summary": "" },
-    "mermaidRender": { "result": "NotRun", "summary": "" }
+    "focusedCommand": { "result": "Passed", "summary": "DirectExactTraversal 45/45, GuardedCallee 3/3, and FourFlows 13/13 passed." },
+    "finalGate": { "result": "Passed", "summary": "Release build passed. Core 84/84, Analysis 198/198, Behavior 63/63, Scenarios 175/175, Wording 112/112, Rendering 60/60. Acceptance 29/30: CorpusMediatRTests.OrderingDraftRouteReachesExactMediatRHandlerWithoutPipelineClaim is the known baseline failure because MTR-1 is not present on origin/main; the repair was not imported or claimed." },
+    "mermaidRender": { "result": "Passed", "summary": "Production nested guarded output rendered: 3 messages, 405 chars, zero in-process validator findings; Mermaid CLI generated a 26,209-byte SVG." }
   },
+  "commits": [
+    { "hash": "0985f03", "message": "Preserve guarded callee topology red candidate" },
+    { "hash": "d7c5f38", "message": "Compose guarded callee topology" },
+    { "hash": "fdc63f6", "message": "Resolve guarded topology review findings" },
+    { "hash": "7212d56", "message": "Repair occurrence identity and production proof" }
+  ],
   "notes": [
-    "GitHub Issue #22 is the execution authority; closed Issues #19 and #20 supply depthless traversal and finite budgets.",
-    "PR #26 merged and the preserved candidate was rebased onto current main.",
-    "Owner authorized an uninterrupted local maintenance wave (Issues #22, #21, #23, then parent #2 closeout); nothing is pushed to GitHub during this wave.",
-    "Focused red baseline verified: Scenarios filter 75 total, 70 passed, 5 failed; four failures are intended reds and DeepChainReversedFactsProduceIdenticalExpansionAndPlan fails on three misplaced chronology lines that must be removed before the baseline commit."
+    "Issue #22 is reconstructed on the isolated publication branch through commit 4.",
+    "I22R baseline is commit 3 fdc63f6 and candidate is commit 4 7212d56.",
+    "Final Release gate passed: 721 tests passed and one known baseline Acceptance failure remains; the first Analysis gate attempt had 14 fixture-reference failures before locked fixture restores, then passed 198/198."
   ]
 }

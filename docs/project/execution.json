@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "mode": "active",
-  "activePlanPath": "docs/project/credit-transfer-plan.md",
-  "activeCheckpointPath": "docs/work/traversal/I22",
-  "activeCheckpointId": "I22",
-  "nextAction": "Owner authorized an uninterrupted local maintenance wave covering Issues #22, #21, #23, then parent #2 closeout. Nothing is pushed to GitHub during this wave. I22 is active: preserve the rebased Test Writer candidate as the baseline commit, implement guarded nested callee topology, then run review and gates."
+  "mode": "idle",
+  "activePlanPath": null,
+  "activeCheckpointPath": null,
+  "activeCheckpointId": null,
+  "nextAction": "The verified Issue #22 publication PR is next."
 }

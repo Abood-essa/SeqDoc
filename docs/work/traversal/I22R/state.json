@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "I22R",
+  "status": "Closed",
+  "baselineRevision": "fdc63f6",
+  "candidateRevision": "7212d56",
+  "review": {
+    "status": "FindingsResolved",
+    "findings": [
+      { "id": "I22R-F1", "severity": "Major", "disposition": "Fixed", "summary": "Fixed in ScenarioGraphBuilder.cs and DocumentationPlanner.cs; DirectExactTraversalTests proves distinct occurrence-scoped fragment, arm, break, and message identities." },
+      { "id": "I22R-F2", "severity": "Major", "disposition": "Fixed", "summary": "Fixed and proven by BehaviorDocumentationFourFlowTests.ConfiguredSourceRootPlacesGuardedCallAndWithholdsUnsupportedLoopCall from C# extraction through Diagram/Mermaid." },
+      { "id": "I22R-R1", "severity": "Blocking", "disposition": "Fixed", "summary": "One complete transitive withheld-occurrence closure now controls expansion, graph nodes/edges, and occurrence-scoped decision, arm, terminal, and membership pruning; switch-controlled child and descendant occurrences are withheld while the independent sibling remains." },
+      { "id": "I22R-R2", "severity": "Blocking", "disposition": "Fixed", "summary": "Exact child anchors are checked for LoopNode body identity/body-block ordinals and Try/Catch/Filter/Finally regions before the decision-free fast path; unsupported child occurrences are diagnosed and withheld transitively." },
+      { "id": "I22R-R3", "severity": "Major", "disposition": "Fixed", "summary": "BehaviorDocumentationFourFlowTests now begins with C# and asserts Program Index identities, exact calls, Method Flow decision/invocation anchors, compiler control-dependence polarity, predicate mapping, Scenario membership, Diagram placement, evidence, weakest certainty, deterministic rendering, and conservative loop withholding." },
+      { "id": "I22R-R4", "severity": "Major", "disposition": "Fixed", "summary": "Occurrence-scoped Diagram keys use invariant length-prefixed tuple components; a delimiter-collision regression proves distinct fragment, arm, and break identities while frozen null-scope legacy vectors remain unchanged." },
+      { "id": "I22R-R5", "severity": "Moderate", "disposition": "Fixed", "summary": "The focused DirectExactTraversal lane now covers missing and conflicting anchor boundaries plus exception placements; the realistic source path proves LoopNode body-block withholding, descendant pruning, and unaffected sibling preservation without adding loop or exception presentation." }
+    ]
+  },
+  "verification": {
+    "focusedCommand": {
+      "result": "Passed",
+      "summary": "DirectExactTraversal 45/45, GuardedCallee 3/3, and FourFlows 13/13 passed."
+    },
+    "finalGate": { "result": "Passed", "summary": "Release build passed. Core 84/84, Analysis 198/198, Behavior 63/63, Scenarios 175/175, Wording 112/112, Rendering 60/60. Acceptance 29/30 with the known baseline CorpusMediatRTests.OrderingDraftRouteReachesExactMediatRHandlerWithoutPipelineClaim failure because MTR-1 is not present on origin/main; that repair was not imported or claimed. Aggregate: 721 passed / 1 known-baseline failure." }
+  },
+  "notes": [
+    "This repair is reconstructed on top of commit 3 fdc63f6 and candidate commit 4 7212d56.",
+    "No external-corpus repair was attempted.",
+    "Production nested guarded Mermaid verification passed: 3 messages, 405 chars, zero in-process validator findings, and a 26,209-byte SVG from Mermaid CLI."
+  ]
+}

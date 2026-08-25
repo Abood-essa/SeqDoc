@@ -80,15 +80,10 @@ and 45,000-character Mermaid budgets with provenance and CLI visibility, while p
 the public configuration ABI. Issue #19 is the next maintainer implementation boundary. Its independent review found
 legacy-branch, irreducible Mermaid-size, diagnostic-visibility, chronological participant-budget, and deep-stack gaps.
 Owner-authorized repairs resolved those findings, replaced recursive traversal with deterministic work frames, and
-passed focused verification plus the four-project final gate; Issue #19 is merged. Issue #22 began locally and is
-preserved while the maintainer completes a bounded integration repair on contributor PR #26 after two repair rounds.
-The integration repair found and resolved snapshot, placement-boundary, observable-evidence, cancellation-wording, and
-generic constructed-type projection regressions. Focused verification and the complete FrameworkModels, Analysis,
-Scenario, Wording, and Rendering gate passed; the original contributor PR merged with contributor attribution intact.
-The compact semantic-delivery sequence is recorded in contributor instructions. Issue #22 is paused by owner direction
-after rebasing its preserved local Test Writer candidate onto current `main`. Contributor PR #27 was reviewed again;
-changes were requested for exact overload identity, profile/snapshot confinement, non-persistent assignment claims,
-guard and terminal placement, observable source proof, raw-SQL boundaries, and realistic multi-entity coverage.
+passed focused verification plus the four-project final gate; Issue #19 is merged. The maintainer completed a bounded
+integration repair on contributor PR #26 after two repair rounds; PR #26 merged with snapshot, placement-boundary,
+observable-evidence, cancellation-wording, and generic constructed-type projection repairs. Issue #22 is closed after
+occurrence-identity and production-proof repairs; publication of the verified Issue #22 PR is next.
 
 ## Next execution order
 
