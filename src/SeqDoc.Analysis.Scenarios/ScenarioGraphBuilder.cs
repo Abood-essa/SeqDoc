@@ -77,6 +77,10 @@ public static class ScenarioGraphBuilder
                 ? new NormalizedEntry(minimal.EntryPointId, minimal.HandlerRoot, minimal.HttpMethod, minimal.CanonicalRoute, minimal.OperationKey, ScenarioActionKind.MinimalApiHandler, minimal.Evidence)
                 : new NormalizedEntry(((HttpEntryPointFact)fact).EntryPointId, ((HttpEntryPointFact)fact).RootMethod, ((HttpEntryPointFact)fact).HttpMethod, ((HttpEntryPointFact)fact).CanonicalRoute, ((HttpEntryPointFact)fact).OperationKey, ScenarioActionKind.ControllerAction, fact.Evidence))
             .ToArray();
+        var serviceUnsupportedDispatchDiagnostics = new List<AnalysisDiagnostic>();
+        var serviceOperationEntries = FrameworkFactsBound(request)
+            ? BuildServiceOperationEntries(request, serviceUnsupportedDispatchDiagnostics)
+            : [];
         var workerEntries = request.FrameworkFacts.Facts
             .OfType<HostedWorkerLifecycleFact>()
             .Where(fact => FrameworkFactsBound(request))
@@ -96,6 +100,7 @@ public static class ScenarioGraphBuilder
             .ToArray();
         var admittedMethods = frameworkEntries.Select(entry => entry.RootMethod)
             .Concat(workerEntries.Select(entry => entry.RootMethod))
+            .Concat(serviceOperationEntries.Select(entry => entry.RootMethod))
             .ToHashSet();
         var configuredEntries = (request.ConfiguredRoots.IsDefault ? [] : request.ConfiguredRoots)
             .Where(method => !admittedMethods.Contains(method))
@@ -114,6 +119,9 @@ public static class ScenarioGraphBuilder
             .Concat(workerEntries
                 .OrderBy(fact => fact.EntryPointId.Value, StringComparer.Ordinal)
                 .Select(fact => BuildGraph(request, fact)))
+            .Concat(serviceOperationEntries
+                .OrderBy(fact => fact.EntryPointId.Value, StringComparer.Ordinal)
+                .Select(fact => BuildGraph(request, fact)))
             .Concat(configuredEntries.Select(entry => BuildGraph(request, entry)))
             .OrderBy(graph => graph.EntryPoint.Value, StringComparer.Ordinal)
             .ToImmutableArray();
@@ -124,8 +132,98 @@ public static class ScenarioGraphBuilder
             request.Profile,
             request.ProgramIndex.IndexFingerprint,
             graphs,
-            [],
+            serviceUnsupportedDispatchDiagnostics
+                .OrderBy(diagnostic => diagnostic.Id.Value, StringComparer.Ordinal)
+                .ToImmutableArray(),
             debugProjection);
+    }
+
+    /// <summary>
+    /// Joins each compiler-proven <see cref="ServiceOperationCapabilityFact"/> with a matching
+    /// <see cref="ServiceEndpointRegistrationFact"/> by exact (implementation type, service contract
+    /// type). Attribute/implementation/body evidence proves capability only, never hosting or
+    /// dispatch; a capability without a matching registration never admits an executable root — it
+    /// contributes a conservative unsupported-dispatch diagnostic instead. A matched pair's combined
+    /// evidence is the union of both facts' evidence, and the combined certainty is the weaker
+    /// (higher-ordinal) of the two, so a Conservative registration can never let an Exact capability
+    /// claim a stronger overall root.
+    /// </summary>
+    private static NormalizedEntry[] BuildServiceOperationEntries(
+        ScenarioAnalysisRequest request, List<AnalysisDiagnostic> unsupportedDispatchDiagnostics)
+    {
+        var registrations = request.FrameworkFacts.Facts.OfType<ServiceEndpointRegistrationFact>()
+            .OrderBy(fact => fact.Id.Value, StringComparer.Ordinal)
+            .ToArray();
+        var entries = new List<NormalizedEntry>();
+        foreach (var capability in request.FrameworkFacts.Facts.OfType<ServiceOperationCapabilityFact>()
+                     .OrderBy(fact => fact.Id.Value, StringComparer.Ordinal))
+        {
+            var matches = registrations
+                .Where(candidate =>
+                    candidate.ImplementationTypeSymbol == capability.ImplementationTypeSymbol
+                    && candidate.ServiceContractTypeSymbol == capability.ServiceContractTypeSymbol)
+                .ToArray();
+            if (matches.Length == 0)
+            {
+                unsupportedDispatchDiagnostics.Add(CreateServiceUnsupportedDispatchDiagnostic(request.Profile.Id, capability));
+                continue;
+            }
+
+            var combinedEvidence = capability.Evidence
+                .Concat(matches.SelectMany(match => match.Evidence))
+                .DistinctBy(item => item.Id.Value)
+                .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
+                .ToImmutableArray();
+            var combinedCertainty = matches.Aggregate(
+                capability.Certainty,
+                (weakest, match) => match.Certainty > weakest ? match.Certainty : weakest);
+            var entryPointId = StableIdentity.CreateServiceOperationEntryPointId(
+                new ServiceOperationEntryPointIdentityDescriptor(request.Profile.Id, capability.RootMethod, capability.OperationKey));
+            var entryFact = new ServiceOperationEntryPointFact
+            {
+                Id = capability.Id,
+                EntryPointId = entryPointId,
+                RootMethod = capability.RootMethod,
+                ServiceContractType = capability.ServiceContractType,
+                ServiceContractTypeSymbol = capability.ServiceContractTypeSymbol,
+                ImplementationType = capability.ImplementationType,
+                ImplementationTypeSymbol = capability.ImplementationTypeSymbol,
+                OperationName = capability.OperationName,
+                OperationKey = capability.OperationKey,
+                Evidence = combinedEvidence,
+                Certainty = combinedCertainty,
+            };
+            entries.Add(new NormalizedEntry(
+                entryPointId, capability.RootMethod, HttpMethodKind.Unknown, string.Empty, capability.OperationKey,
+                ScenarioActionKind.ServiceOperation, combinedEvidence, ServiceOperation: entryFact));
+        }
+
+        return entries.ToArray();
+    }
+
+    private const string ServiceUnsupportedDispatchCode = "SC-SERVICE-UNSUPPORTED-DISPATCH";
+
+    private static AnalysisDiagnostic CreateServiceUnsupportedDispatchDiagnostic(
+        CompilationProfileId profileId, ServiceOperationCapabilityFact capability)
+    {
+        var subject = $"{capability.RootMethod.Value}{capability.OperationKey}";
+        var certainty = capability.Evidence.IsDefaultOrEmpty
+            ? capability.Certainty
+            : capability.Evidence.Aggregate(capability.Certainty, (weakest, item) => item.Certainty > weakest ? item.Certainty : weakest);
+        return new AnalysisDiagnostic(
+            StableIdentity.CreateDiagnosticId(new DiagnosticIdentityDescriptor(
+                ServiceUnsupportedDispatchCode, AnalysisStage.FrameworkModel, profileId, subject, Ordinal: 0)),
+            ServiceUnsupportedDispatchCode,
+            DiagnosticSeverity.Warning,
+            AnalysisStage.FrameworkModel,
+            "A compiler-proven service contract operation has no matching host-chain-proven endpoint registration.",
+            new DiagnosticLocation("core wcf service operation", profileId),
+            $"'{capability.ImplementationType}' proves the compiler-shape [ServiceContract]/[OperationContract] capability for '{capability.OperationKey}' with a real source body, but no exact IServiceBuilder.AddServiceEndpoint<{capability.ImplementationType}, {capability.ServiceContractType}>(Binding, string) call reachable through a proven active host chain was found.",
+            "No service operation entry point or execution wording was emitted for the unregistered or host-unreachable capability.",
+            "Register the implementation through the exact active host chain (generic-host construction, UseStartup<TStartup>, the selected Configure/UseServiceModel callback, and a matching AddService<TService>().AddServiceEndpoint<TService,TContract>(Binding,string) call), or remove the unused capability.",
+            certainty,
+            evidence: capability.Evidence,
+            internalDetail: subject);
     }
 
     private sealed record NormalizedEntry(
@@ -136,12 +234,14 @@ public static class ScenarioGraphBuilder
         string OperationKey,
         ScenarioActionKind ActionKind,
         ImmutableArray<EvidenceRef> Evidence,
-        HostedWorkerLifecycleFact? HostedWorker = null)
+        HostedWorkerLifecycleFact? HostedWorker = null,
+        ServiceOperationEntryPointFact? ServiceOperation = null)
     {
         public ScenarioRootKind RootKind => ActionKind switch
         {
             ScenarioActionKind.ConfiguredMethod => ScenarioRootKind.ConfiguredMethod,
             ScenarioActionKind.HostedWorker => ScenarioRootKind.HostedWorker,
+            ScenarioActionKind.ServiceOperation => ScenarioRootKind.ServiceOperation,
             _ => ScenarioRootKind.HttpEntryPoint,
         };
     }
@@ -179,6 +279,8 @@ public static class ScenarioGraphBuilder
             ? HostedWorkerPresentation(request.ProgramIndex, entryPoint.HostedWorker!)
             : entryPoint.ActionKind == ScenarioActionKind.MinimalApiHandler
             ? MinimalApiActionPresentation(request.ProgramIndex, entryPoint.RootMethod)
+            : entryPoint.ActionKind == ScenarioActionKind.ServiceOperation
+            ? ServiceOperationPresentation(entryPoint.ServiceOperation!)
             : ControllerActionPresentation(request.ProgramIndex, entryPoint.RootMethod);
         var actionNode = CreateNodeWithPresentation(
             profileId,
@@ -187,7 +289,7 @@ public static class ScenarioGraphBuilder
             $"action:{entryPoint.RootMethod.Value}",
             entryPoint.RootMethod,
             null,
-                 entryPoint.ActionKind == ScenarioActionKind.ConfiguredMethod ? "configured method" : entryPoint.ActionKind == ScenarioActionKind.HostedWorker ? "hosted worker lifecycle" : entryPoint.ActionKind == ScenarioActionKind.MinimalApiHandler ? "minimal API handler" : "controller action",
+                 entryPoint.ActionKind == ScenarioActionKind.ConfiguredMethod ? "configured method" : entryPoint.ActionKind == ScenarioActionKind.HostedWorker ? "hosted worker lifecycle" : entryPoint.ActionKind == ScenarioActionKind.MinimalApiHandler ? "minimal API handler" : entryPoint.ActionKind == ScenarioActionKind.ServiceOperation ? "CoreWCF service operation" : "controller action",
              actionPresentation with { ActionKind = entryPoint.ActionKind },
              entryPoint.Evidence);
         nodes.Add(actionNode);
@@ -2864,6 +2966,12 @@ public static class ScenarioGraphBuilder
                 ActionMethodName: methods[0].Name)
             : new ScenarioNodePresentation();
     }
+
+    private static ScenarioNodePresentation ServiceOperationPresentation(ServiceOperationEntryPointFact serviceOperation)
+        => new(
+            ContractTypeName: serviceOperation.ServiceContractType,
+            ImplementationTypeName: serviceOperation.ImplementationType,
+            ActionMethodName: serviceOperation.OperationName);
 
     private static ScenarioNodePresentation ConfiguredMethodPresentation(ProgramIndexSnapshot index, MethodId methodId)
     {

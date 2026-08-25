@@ -135,6 +135,35 @@ public sealed record FrameworkDispatchShapeDescriptor(
     ImmutableArray<FrameworkDispatchCandidateDescriptor> Candidates);
 
 /// <summary>
+/// Compiler-proven CoreWCF/WCF service-endpoint registration shape attached to an
+/// <c>IServiceBuilder.AddServiceEndpoint&lt;TService, TContract&gt;(Binding, string)</c> invocation.
+/// <see cref="ServiceType"/> and <see cref="ContractType"/> are the exact original identities of the two
+/// constructed generic type arguments (assembly, version, metadata name); <see cref="ServiceTypeSymbol"/>
+/// and <see cref="ContractTypeSymbol"/> are the exact Program Index symbol identities when the argument is
+/// a source-owned type, so a Scenario join can compare exact symbols instead of metadata-name strings.
+/// <see cref="BindingType"/> is the exact identity of the compiler-proven type of the binding argument;
+/// <see cref="Address"/> is the compiler-proven constant address string, or null when the address argument
+/// is not a compile-time constant. <see cref="HostChainProven"/> is true only when this exact invocation
+/// was proven reachable through the complete compiler-proven active host chain (generic-host construction
+/// and execution, <c>UseStartup&lt;TStartup&gt;</c> selection, the selected startup's own
+/// <c>Configure(IApplicationBuilder)</c> callback, its <c>UseServiceModel</c> callback body, and a matching
+/// <c>AddService&lt;TService&gt;</c> receiver) rather than merely found anywhere in source;
+/// <see cref="HostChainEvidence"/> carries the evidence for every link of that proof. A false
+/// <see cref="HostChainProven"/> means this invocation exists in source with the exact registration shape
+/// but is not proven reachable from an active host, so it must never promote a capability to an executable
+/// root.
+/// </summary>
+public sealed record FrameworkServiceEndpointShapeDescriptor(
+    FrameworkTypeIdentity ServiceType,
+    SymbolId? ServiceTypeSymbol,
+    FrameworkTypeIdentity ContractType,
+    SymbolId? ContractTypeSymbol,
+    FrameworkTypeIdentity BindingType,
+    string? Address,
+    bool HostChainProven,
+    ImmutableArray<EvidenceRef> HostChainEvidence = default);
+
+/// <summary>
 /// One compiler-proven step of an invocation receiver chain. The Roslyn adapter fills steps from the
 /// exact nested invocation operations of an expression; models verify each step against exact
 /// framework symbols. <see cref="NavigationMemberIdentity"/> carries the canonical identity of the
@@ -188,7 +217,8 @@ public sealed record OperationDescriptor(
     FrameworkRouteGroupDescriptor? RouteGroup = null,
     FrameworkDispatchShapeDescriptor? DispatchShape = null,
     FrameworkTypeIdentity? ConstructedType = null,
-    SymbolId? ConstructedTypeSymbol = null);
+    SymbolId? ConstructedTypeSymbol = null,
+    FrameworkServiceEndpointShapeDescriptor? ServiceEndpointShape = null);
 
 /// <summary>
 /// Exact, Roslyn-neutral identity of one named type. The controlled eligibility projector fills this
@@ -200,9 +230,22 @@ public sealed record FrameworkTypeIdentity(
     string MetadataName);
 
 /// <summary>
+/// One compiler-proven base-type-chain entry: the exact original identity plus, for a constructed
+/// generic base type (for example <c>ClientBase&lt;ICalculatorService&gt;</c>), the exact resolved
+/// identity of every constructed type argument in declaration order. This is what lets a model prove
+/// the *constructed* generic argument matches a specific admitted contract, rather than merely proving
+/// the open generic definition appears somewhere in the base-type chain.
+/// </summary>
+public sealed record FrameworkBaseTypeIdentity(
+    FrameworkTypeIdentity Identity,
+    ImmutableArray<FrameworkTypeIdentity> TypeArguments);
+
+/// <summary>
 /// Compiler-proven shape of one named type: kind, accessibility, abstract/static flags, generic
 /// arity, and the exact base-type chain. The projector supplies these facts only; MVC controller
-/// eligibility rules live in the modular framework model.
+/// eligibility rules live in the modular framework model. <see cref="BaseTypeChainWithArguments"/> is an
+/// additive companion to <see cref="BaseTypeChain"/> that also carries each base type's constructed
+/// generic type arguments; it defaults to an uninitialized array so existing callers compile unchanged.
 /// </summary>
 public sealed record FrameworkTypeShape(
     FrameworkTypeIdentity Identity,
@@ -212,7 +255,53 @@ public sealed record FrameworkTypeShape(
     bool IsStatic,
     int GenericArity,
     ImmutableArray<FrameworkTypeIdentity> BaseTypeChain,
-    ImmutableArray<FrameworkTypeIdentity> Interfaces = default);
+    ImmutableArray<FrameworkTypeIdentity> Interfaces = default,
+    ImmutableArray<FrameworkBaseTypeIdentity> BaseTypeChainWithArguments = default);
+
+/// <summary>
+/// One compiler-proven attribute application resolved to its exact original attribute class identity
+/// (assembly, assembly version, metadata name) rather than a display-name string, so a model can reject
+/// a same-qualified-name attribute defined in a foreign assembly. <see cref="TypeArguments"/> carries
+/// the exact resolved type identity of every <c>typeof(...)</c> constructor argument, in declaration
+/// order, for attributes whose meaning depends on a type argument (for example
+/// <c>[FaultContract(typeof(X))]</c>); it is empty when the attribute has no such argument.
+/// <see cref="Evidence"/> is the exact source evidence for this specific attribute application, so a
+/// model that already resolved the admitted exact identity never has to recover evidence later through a
+/// separate target-symbol-plus-metadata-name-string lookup (a lookup a foreign same-qualified-name
+/// attribute application on the same target could otherwise contaminate). It is an additive field that
+/// defaults to an uninitialized array so existing callers compile unchanged.
+/// </summary>
+public sealed record FrameworkAttributeApplicationIdentity(
+    FrameworkTypeIdentity AttributeType,
+    ImmutableArray<FrameworkTypeIdentity> TypeArguments,
+    ImmutableArray<EvidenceRef> Evidence = default);
+
+/// <summary>
+/// One compiler-proven interface member that a method implements, implicitly or explicitly. The
+/// eligibility projector fills this from <c>INamedTypeSymbol.FindImplementationForInterfaceMember</c>
+/// (implicit implementation) and <c>IMethodSymbol.ExplicitInterfaceImplementations</c> (explicit
+/// implementation); models never derive interface implementation from names or signatures written as
+/// strings. <see cref="InterfaceTypeSymbol"/> and <see cref="InterfaceMethodSymbol"/> are the same
+/// Program Index symbol identities used elsewhere. <see cref="InterfaceTypeAttributes"/> and
+/// <see cref="InterfaceMethodAttributes"/> are the exact resolved attribute-class identities applied to
+/// the interface type and interface method (for example <c>[ServiceContract]</c>/<c>[OperationContract]</c>),
+/// so a model matches by original assembly/version/metadata-name identity instead of a display-name
+/// string and never accepts a same-qualified-name attribute from a foreign assembly. <see cref="InterfaceType"/>,
+/// <see cref="InterfaceMethodMetadataName"/>, <see cref="GenericArity"/>, <see cref="Parameters"/>, and
+/// <see cref="ReturnType"/> are the exact interface method signature, so a model can additionally guard
+/// against a same-named lookalike overload.
+/// </summary>
+public sealed record FrameworkInterfaceMemberIdentity(
+    SymbolId InterfaceTypeSymbol,
+    SymbolId InterfaceMethodSymbol,
+    FrameworkTypeIdentity InterfaceType,
+    string InterfaceMethodMetadataName,
+    int GenericArity,
+    ImmutableArray<ParameterIdentityDescriptor> Parameters,
+    string ReturnType,
+    bool IsExplicitImplementation,
+    ImmutableArray<FrameworkAttributeApplicationIdentity> InterfaceTypeAttributes = default,
+    ImmutableArray<FrameworkAttributeApplicationIdentity> InterfaceMethodAttributes = default);
 
 /// <summary>
 /// Compiler-proven shape of one method plus its declaring type, bound to the exact indexed symbols.
@@ -221,7 +310,10 @@ public sealed record FrameworkTypeShape(
 /// <see cref="DeclaringTypeSymbol"/> to equal the indexed containing type before eligibility can
 /// support a root. Carried as the optional additive <see cref="SymbolDescriptor.MethodShape"/>;
 /// missing, mismatched, or incomplete shape input makes the model fail closed with an eligibility
-/// diagnostic and no root.
+/// diagnostic and no root. <see cref="ImplementedInterfaceMembers"/> is the additive exact
+/// interface-member-implementation mapping used by interface-contract-driven models (for example a
+/// service contract's operations); it defaults to an uninitialized array so existing callers compile
+/// unchanged, and a default or empty array means no interface member implementation was proven.
 /// </summary>
 public sealed record FrameworkMethodShape(
     SymbolId MethodSymbol,
@@ -231,7 +323,9 @@ public sealed record FrameworkMethodShape(
     bool IsStatic,
     bool IsAbstract,
     int GenericArity,
-    FrameworkTypeShape DeclaringType);
+    FrameworkTypeShape DeclaringType,
+    ImmutableArray<FrameworkInterfaceMemberIdentity> ImplementedInterfaceMembers = default,
+    ImmutableArray<FrameworkAttributeApplicationIdentity> DeclaringTypeAttributes = default);
 
 /// <summary>
 /// Framework-neutral facade over one symbol for model analysis. The Roslyn adapter constructs these;

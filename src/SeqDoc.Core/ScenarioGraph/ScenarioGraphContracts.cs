@@ -59,6 +59,7 @@ public enum ScenarioActionKind
     MinimalApiHandler,
     ConfiguredMethod,
     HostedWorker,
+    ServiceOperation,
 }
 
 /// <summary>Typed discriminator for the source of a scenario root.</summary>
@@ -67,6 +68,11 @@ public enum ScenarioRootKind
     HttpEntryPoint,
     ConfiguredMethod,
     HostedWorker,
+
+    // Added last to preserve the existing numeric values of every prior member; no persistence layer
+    // currently serializes ScenarioGraphSet/ScenarioRootKind (confirmed by a repository-wide search), so
+    // this is a purely additive, backward-compatible extension.
+    ServiceOperation,
 }
 
 /// <summary>

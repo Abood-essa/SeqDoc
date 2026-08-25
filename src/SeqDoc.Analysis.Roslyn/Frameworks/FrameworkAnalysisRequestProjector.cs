@@ -55,10 +55,11 @@ internal static class FrameworkAnalysisRequestProjector
     public static SymbolDescriptor? ProjectMethodSymbol(
         IMethodSymbol method,
         StableProjectId project,
-        ImmutableArray<EvidenceRef> evidence)
+        ImmutableArray<EvidenceRef> evidence,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents)
     {
         ArgumentNullException.ThrowIfNull(method);
-        var shape = FrameworkSymbolEligibilityProjector.ProjectMethodShape(method, project);
+        var shape = FrameworkSymbolEligibilityProjector.ProjectMethodShape(method, project, documents);
         if (shape is null)
         {
             return null;
@@ -97,6 +98,7 @@ internal static class FrameworkAnalysisRequestProjector
         CompilationProfileId? profile = null,
         CallbackBoundaryFactSet? callbackFacts = null,
         IReadOnlyDictionary<ILocalSymbol, IOperation>? localInitializers = null,
+        ImmutableDictionary<SyntaxNode, ImmutableArray<EvidenceRef>>? hostChainProof = null,
         CancellationToken dispatchCancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(call);
@@ -130,7 +132,76 @@ internal static class FrameworkAnalysisRequestProjector
             ConstructedTypeSymbol: project is { } projectId
                 && constructedTypeArgument is not null
                 ? RoslynProgramIndexExtractor.CreateSymbolId(constructedTypeArgument, projectId)
-                : null);
+                : null,
+            ServiceEndpointShape: ProjectServiceEndpointShape(call, project, hostChainProof));
+    }
+
+    /// <summary>
+    /// Projects the compiler-proven shape of an exact
+    /// <c>CoreWCF.Configuration.IServiceBuilder.AddServiceEndpoint&lt;TService, TContract&gt;(Binding, string)</c>
+    /// invocation (assembly <c>CoreWCF.Primitives</c>, version 1.9.0.0). Only this exact two-generic,
+    /// two-parameter overload is recognized; every other <c>AddServiceEndpoint</c> overload (additional
+    /// address/behavior parameters, <c>Uri</c>-typed address, or the non-generic <c>Type</c>-parameter
+    /// forms) is an unsupported shape and returns null rather than approximating registration evidence.
+    /// The address is captured only when the compiler proves it as a constant string.
+    /// <see cref="FrameworkServiceEndpointShapeDescriptor.HostChainProven"/> is true only when
+    /// <paramref name="hostChainProof"/> (the current project's <c>CoreWcfHostChainScanner</c> result)
+    /// proved this exact invocation reachable through the complete active CoreWCF host chain; a descriptor
+    /// is still returned when it is not proven, so an unsupported/unreachable registration can still be
+    /// distinguished from "not an AddServiceEndpoint call at all" for diagnostics, but its
+    /// <see cref="FrameworkServiceEndpointShapeDescriptor.HostChainProven"/> stays false.
+    /// </summary>
+    private static FrameworkServiceEndpointShapeDescriptor? ProjectServiceEndpointShape(
+        IInvocationOperation call,
+        StableProjectId? project,
+        ImmutableDictionary<SyntaxNode, ImmutableArray<EvidenceRef>>? hostChainProof)
+    {
+        var target = call.TargetMethod;
+        if (!IsExactAddServiceEndpoint(target)
+            || target.TypeArguments.Length != 2
+            || target.TypeArguments[0] is not INamedTypeSymbol serviceType
+            || target.TypeArguments[1] is not INamedTypeSymbol contractType)
+        {
+            return null;
+        }
+
+        var bindingArgument = call.Arguments.FirstOrDefault(argument => argument.Parameter?.Ordinal == 0)?.Value;
+        var addressArgument = call.Arguments.FirstOrDefault(argument => argument.Parameter?.Ordinal == 1)?.Value;
+        var bindingType = bindingArgument is null ? null : UnwrapAllConversionsAndParentheses(bindingArgument).Type as INamedTypeSymbol;
+        if (bindingType is null)
+        {
+            return null;
+        }
+
+        var address = addressArgument is not null
+            && UnwrapAllConversionsAndParentheses(addressArgument).ConstantValue is { HasValue: true, Value: string constantAddress }
+            ? constantAddress
+            : null;
+
+        var chainEvidence = ImmutableArray<EvidenceRef>.Empty;
+        var hostChainProven = hostChainProof is not null && hostChainProof.TryGetValue(call.Syntax, out chainEvidence);
+        return new FrameworkServiceEndpointShapeDescriptor(
+            FrameworkSymbolEligibilityProjector.ProjectTypeIdentity(serviceType),
+            project is { } serviceProject ? RoslynProgramIndexExtractor.CreateSymbolId(serviceType, serviceProject) : null,
+            FrameworkSymbolEligibilityProjector.ProjectTypeIdentity(contractType),
+            project is { } contractProject ? RoslynProgramIndexExtractor.CreateSymbolId(contractType, contractProject) : null,
+            FrameworkSymbolEligibilityProjector.ProjectTypeIdentity(bindingType),
+            address,
+            hostChainProven,
+            chainEvidence);
+    }
+
+    private static bool IsExactAddServiceEndpoint(IMethodSymbol target)
+    {
+        var definition = target.OriginalDefinition;
+        return definition.ContainingAssembly?.Identity.Name == "CoreWCF.Primitives"
+            && definition.ContainingAssembly.Identity.Version?.ToString() == "1.9.0.0"
+            && RoslynProgramIndexExtractor.GetMetadataName(definition.ContainingType) == "CoreWCF.Configuration.IServiceBuilder"
+            && definition.MetadataName == "AddServiceEndpoint"
+            && definition.Arity == 2
+            && definition.Parameters.Length == 2
+            && definition.Parameters[0].Type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) == "CoreWCF.Channels.Binding"
+            && definition.Parameters[1].Type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) == "System.String";
     }
 
     /// <summary>

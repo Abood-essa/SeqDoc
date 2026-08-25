@@ -850,6 +850,197 @@ internal static class ScenarioTestFactory
         };
     }
 
+    internal const string ServiceContractTypeName = "CoreWcfServices.ICalculatorService";
+    internal const string ServiceImplementationTypeName = "CoreWcfServices.CalculatorService";
+    internal const string ServiceOperationName = "Add";
+    internal const string ServiceOperationKeyValue = $"{ServiceContractTypeName}.{ServiceOperationName}";
+    internal static readonly SymbolId ServiceContractTypeSymbol = new($"symbol:v1:{ServiceContractTypeName}");
+    internal static readonly SymbolId ServiceImplementationTypeSymbol = new($"symbol:v1:{ServiceImplementationTypeName}");
+    internal static readonly SymbolId ServiceOperationSymbol = new($"symbol:v1:{ServiceContractTypeName}.{ServiceOperationName}");
+
+    // A dedicated service-implementation method identity, distinct from ActionMethod (a controller
+    // action): reusing ActionMethod would anchor the service-operation root to a controller's Method
+    // Flow instead of a real service implementation method, masking bugs in root identity, evidence
+    // propagation, and topology that depend on the actual admitted service method.
+    internal static readonly MethodId ServiceOperationMethod =
+        new($"method:v1:{ServiceImplementationTypeName}.{ServiceOperationName}");
+
+    internal static EntryPointId ServiceOperationEntryPoint => StableIdentity.CreateServiceOperationEntryPointId(
+        new ServiceOperationEntryPointIdentityDescriptor(Profile.Id, ServiceOperationMethod, ServiceOperationKeyValue));
+
+    private static ServiceOperationCapabilityFact CreateServiceCapabilityFact(CertaintyLevel certainty = CertaintyLevel.Exact)
+        => new()
+        {
+            Id = new BehaviorFactId("behavior-fact:v1:service-operation-capability:Add"),
+            Evidence = [certainty == CertaintyLevel.Exact ? SourceEvidence("service-operation-capability") : ConservativeEvidence("service-operation-capability")],
+            Certainty = certainty,
+            RootMethod = ServiceOperationMethod,
+            ServiceContractType = ServiceContractTypeName,
+            ServiceContractTypeSymbol = ServiceContractTypeSymbol,
+            ImplementationType = ServiceImplementationTypeName,
+            ImplementationTypeSymbol = ServiceImplementationTypeSymbol,
+            OperationName = ServiceOperationName,
+            OperationSymbol = ServiceOperationSymbol,
+            OperationKey = ServiceOperationKeyValue,
+        };
+
+    private static ServiceEndpointRegistrationFact CreateServiceRegistrationFact(CertaintyLevel certainty = CertaintyLevel.Exact)
+        => new()
+        {
+            Id = new BehaviorFactId("behavior-fact:v1:service-endpoint-registration:Add"),
+            Evidence = [certainty == CertaintyLevel.Exact ? SourceEvidence("service-endpoint-registration") : ConservativeEvidence("service-endpoint-registration")],
+            Certainty = certainty,
+            ImplementationType = ServiceImplementationTypeName,
+            ImplementationTypeSymbol = ServiceImplementationTypeSymbol,
+            ServiceContractType = ServiceContractTypeName,
+            ServiceContractTypeSymbol = ServiceContractTypeSymbol,
+            BindingType = "CoreWCF.BasicHttpBinding",
+            Address = "/CalculatorService/basicHttp",
+        };
+
+    /// <summary>
+    /// A minimal Program Index + Method Flow scoped to the CoreWCF service implementation method
+    /// (<see cref="ServiceOperationMethod"/>), independent of the GetMeaning controller/action fixture
+    /// <see cref="CreateGetRequest"/> builds. This is what anchors the service-operation scenario tests
+    /// to a real service-shaped root method identity and flow rather than a borrowed controller action.
+    /// </summary>
+    private static ScenarioAnalysisRequest CreateServiceBaseRequest()
+    {
+        var contractType = new SymbolId($"symbol:v1:{ServiceContractTypeName}");
+        var implementationType = new SymbolId($"symbol:v1:{ServiceImplementationTypeName}");
+        var index = CreateIndex(
+            ImmutableArray.Create(
+                CreateType(contractType, ServiceContractTypeName),
+                CreateType(implementationType, ServiceImplementationTypeName)),
+            ImmutableArray.Create(CreateMethod(ServiceOperationMethod, implementationType, ServiceOperationName)));
+
+        var entry = new EntryFlowNode(
+            StableIdentity.CreateFlowNodeId(new FlowNodeIdentityDescriptor(ServiceOperationMethod, "Entry", 0, 0, "entry")),
+            ServiceOperationMethod,
+            [SourceEvidence("service-operation-entry")],
+            CertaintyLevel.Exact);
+        var exit = new ExitFlowNode(
+            StableIdentity.CreateFlowNodeId(new FlowNodeIdentityDescriptor(ServiceOperationMethod, "Exit", int.MaxValue, int.MaxValue, "exit")),
+            ServiceOperationMethod,
+            [SourceEvidence("service-operation-exit")],
+            CertaintyLevel.Exact);
+        var flow = new MethodFlowSnapshot(
+            ServiceOperationMethod,
+            "service-operation-body-fingerprint",
+            [entry, exit],
+            [Edge(ServiceOperationMethod, 0, entry, exit, FlowEdgeKind.Normal, null)],
+            [],
+            [],
+            new LocalValueGraph([], []),
+            [],
+            null,
+            [],
+            "service-operation-flow-fingerprint");
+        var behavior = new BehaviorSnapshot(
+            1,
+            "test",
+            Profile,
+            index.IndexFingerprint,
+            [flow],
+            new CallGraph([], []),
+            new RtaFoundation([], HasExplicitRoots: true),
+            [],
+            [],
+            "service-operation-behavior-fingerprint");
+
+        return new ScenarioAnalysisRequest(
+            Profile,
+            index,
+            behavior,
+            new FrameworkAnalysisResult(true, [], [], [], [], [], []),
+            new SemanticFactSet(1, "test", Profile, index.IndexFingerprint, [], [], [], [], "semantic-test"),
+            new DependencyInjectionFactSet(1, "test", Profile, index.IndexFingerprint, [], [], [], "di-test"),
+            new StructuralResultFactSet(1, "test", Profile, index.IndexFingerprint, [], [], [], "structural-test"),
+            new NonGetSemanticFactSet(1, "test", Profile, index.IndexFingerprint, [], [], [], [], [], [], [], [], "non-get-test"));
+    }
+
+    /// <summary>
+    /// A CoreWCF service operation root, admitted by joining an independently proven capability fact
+    /// with a matching registration fact, anchored to <see cref="ServiceOperationMethod"/>'s own Program
+    /// Index entry and Method Flow: issue #7's model projects dispatch through the same default
+    /// Method-Flow-driven topology path a controller action already uses. No HTTP method or canonical
+    /// route ever backs this root.
+    /// </summary>
+    internal static ScenarioAnalysisRequest CreateServiceOperationRequest(
+        CertaintyLevel capabilityCertainty = CertaintyLevel.Exact,
+        CertaintyLevel registrationCertainty = CertaintyLevel.Exact)
+    {
+        var request = CreateServiceBaseRequest();
+        return request with
+        {
+            FrameworkFacts = new FrameworkAnalysisResult(
+                true,
+                [CreateServiceCapabilityFact(capabilityCertainty), CreateServiceRegistrationFact(registrationCertainty)],
+                [], [], [], [],
+                [new FrameworkModelDescriptor("seqdoc.corewcf.services", "2.0.0", "test", 110)],
+                request.Profile.Id,
+                request.ProgramIndex.IndexFingerprint),
+        };
+    }
+
+    private static ServiceEndpointRegistrationFact CreateSecondServiceRegistrationFact(CertaintyLevel certainty = CertaintyLevel.Exact)
+        => new()
+        {
+            Id = new BehaviorFactId("behavior-fact:v1:service-endpoint-registration:Add:second"),
+            Evidence = [SourceEvidence("service-endpoint-registration-second")],
+            Certainty = certainty,
+            ImplementationType = ServiceImplementationTypeName,
+            ImplementationTypeSymbol = ServiceImplementationTypeSymbol,
+            ServiceContractType = ServiceContractTypeName,
+            ServiceContractTypeSymbol = ServiceContractTypeSymbol,
+            BindingType = "CoreWCF.WSHttpBinding",
+            Address = "/CalculatorService/wsHttp",
+        };
+
+    /// <summary>
+    /// Two exact, independently proven endpoint registrations for the same (implementation, contract)
+    /// pair: proves exactly one root is admitted (never one per endpoint), both registrations' evidence
+    /// is unioned into it, and reversing the registration array's order never changes the admitted root,
+    /// its evidence, or its certainty.
+    /// </summary>
+    internal static ScenarioAnalysisRequest CreateServiceOperationRequestWithTwoRegistrations(bool reversed = false)
+    {
+        var request = CreateServiceBaseRequest();
+        var capability = CreateServiceCapabilityFact();
+        var first = CreateServiceRegistrationFact();
+        var second = CreateSecondServiceRegistrationFact();
+        return request with
+        {
+            FrameworkFacts = new FrameworkAnalysisResult(
+                true,
+                reversed ? [capability, second, first] : [capability, first, second],
+                [], [], [], [],
+                [new FrameworkModelDescriptor("seqdoc.corewcf.services", "2.0.0", "test", 110)],
+                request.Profile.Id,
+                request.ProgramIndex.IndexFingerprint),
+        };
+    }
+
+    /// <summary>
+    /// A compiler-proven service contract capability with no matching endpoint registration: proves the
+    /// unregistered-capability boundary (no executable root, no execution wording, a conservative
+    /// diagnostic instead).
+    /// </summary>
+    internal static ScenarioAnalysisRequest CreateUnregisteredServiceCapabilityRequest(CertaintyLevel capabilityCertainty = CertaintyLevel.Exact)
+    {
+        var request = CreateServiceBaseRequest();
+        return request with
+        {
+            FrameworkFacts = new FrameworkAnalysisResult(
+                true,
+                [CreateServiceCapabilityFact(capabilityCertainty)],
+                [], [], [], [],
+                [new FrameworkModelDescriptor("seqdoc.corewcf.services", "2.0.0", "test", 110)],
+                request.Profile.Id,
+                request.ProgramIndex.IndexFingerprint),
+        };
+    }
+
     internal static ScenarioAnalysisRequest CreateMinimalApiHandlerRequest()
     {
         var handlerRoot = new MethodId("method:v1:Program.Telecom");
