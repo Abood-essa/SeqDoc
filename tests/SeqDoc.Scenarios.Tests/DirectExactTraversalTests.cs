@@ -299,6 +299,7 @@ public sealed class DirectExactTraversalTests
         Assert.NotEmpty(rootGuarded.RootArmIds);
         var child = Assert.Single(expansion.Steps, step => step.Operation.Value == "operation:v1:child.first");
         Assert.DoesNotContain(expansion.Diagnostics, diagnostic => diagnostic.Code == "SC-DIRECT-GUARDED");
+
         Assert.Single(expansion.Steps, step => step.Operation.Value == "operation:v1:child.first");
         Assert.Contains(graph.Topology.Memberships, membership => membership.ScenarioNode == child.ScenarioNodeId
             && rootGuarded.RootArmIds.Contains(membership.Arm));
@@ -359,6 +360,42 @@ public sealed class DirectExactTraversalTests
         Assert.Equal(["operation:v1:root.first", "operation:v1:shared.first", "operation:v1:root.second", "operation:v1:shared.first"],
             expansion.Steps.Select(step => step.Operation.Value));
         Assert.DoesNotContain(expansion.Diagnostics, diagnostic => diagnostic.Code == "SC-DIRECT-GUARDED");
+
+        var plan = DocumentationPlanner.Plan(graph).Diagram;
+        var fragments = plan.Sequence.Fragments.SelectMany(AllFragments).ToArray();
+        var decisions = graph.Topology.Decisions
+            .Where(decision => decision.Condition == new OperationId("operation:v1:Shared.local-guard"))
+            .ToArray();
+        Assert.Equal(2, decisions.Length);
+        Assert.All(decisions, decision => Assert.False(string.IsNullOrWhiteSpace(decision.OccurrenceScope)));
+        var occurrenceFragments = decisions.Select(decision =>
+        {
+            var occurrenceStep = expansion.Steps.Single(step => step.Id == decision.OccurrenceScope);
+            var child = expansion.Steps.Single(step => step.ParentStepId == occurrenceStep.Id
+                && step.Operation.Value == "operation:v1:shared.first");
+            var arm = Assert.Single(graph.Topology.Arms, candidate => candidate.Decision == decision.Id && candidate.IsTrue);
+            Assert.Single(graph.Topology.Memberships,
+                candidate => candidate.Arm == arm.Id && candidate.ScenarioNode == child.ScenarioNodeId);
+            var edge = Assert.Single(graph.Edges, candidate => candidate.Target == child.ScenarioNodeId);
+            var messageId = new DiagramPlanElementId("diagram-element:v1:message:" + edge.Id.Value);
+            var fragment = Assert.Single(fragments, candidate => candidate.Key
+                == "decision:occurrence:v1:"
+                    + decision.Condition.Value.Length + ":" + decision.Condition.Value
+                    + decision.OccurrenceScope!.Length + ":" + decision.OccurrenceScope);
+            Assert.Contains(messageId, fragment.Arms.SelectMany(candidate => candidate.MessageRefs)
+                .Concat(fragment.Arms.SelectMany(candidate => AllMessageRefs(candidate.Fragments))));
+            return (fragment, arm, messageId);
+        }).ToArray();
+        Assert.Equal(2, occurrenceFragments.Length);
+        Assert.Equal(2, occurrenceFragments.Select(item => item.fragment.Id).Distinct().Count());
+        Assert.Equal(2, occurrenceFragments.Select(item => item.arm.Id).Distinct().Count());
+        Assert.Equal(2, occurrenceFragments.Select(item => item.fragment).SelectMany(fragment => fragment.Arms)
+            .SelectMany(arm => arm.Fragments)
+            .Where(fragment => fragment.Kind == DiagramFragmentKind.Break)
+            .Select(fragment => fragment.Id).Distinct().Count());
+        Assert.Equal(2, occurrenceFragments.Select(item => item.fragment).SelectMany(fragment => fragment.Arms)
+            .SelectMany(arm => arm.MessageRefs).Distinct().Count());
+        Assert.Equal(2, occurrenceFragments.Select(item => item.messageId).Distinct().Count());
     }
 
     [Fact]
@@ -371,6 +408,141 @@ public sealed class DirectExactTraversalTests
         Assert.Equal(normal.DirectCallExpansion!.Steps.Select(step => step.Id), reversed.DirectCallExpansion!.Steps.Select(step => step.Id));
         Assert.Equal(DirectExactTraversalFixture.Plan(normal), DirectExactTraversalFixture.Plan(reversed));
         Assert.Equal(normal.Diagnostics.Select(item => item.Code), reversed.Diagnostics.Select(item => item.Code));
+        Assert.Equal(DocumentationPlanner.Plan(normal).Diagram.DebugProjection,
+            DocumentationPlanner.Plan(reversed).Diagram.DebugProjection);
+    }
+
+    [Fact]
+    public void SwitchControlledChildAndDescendantsAreWithheldWhileSiblingAndIdentitiesRemainDeterministic()
+    {
+        var normal = DirectExactTraversalFixture.BuildGraph("switch-controlled-child");
+        var reversed = DirectExactTraversalFixture.BuildGraph("switch-controlled-child-reversed");
+        var normalPlan = DocumentationPlanner.Plan(normal).Diagram;
+        var reversedPlan = DocumentationPlanner.Plan(reversed).Diagram;
+        var withheldOperations = new[] { "operation:v1:child.first", "operation:v1:grandchild.first" };
+        var withheldNodeIds = normal.Nodes
+            .Where(node => node.Operation is { } operation && withheldOperations.Contains(operation.Value))
+            .Select(node => node.Id)
+            .ToHashSet();
+
+        var boundary = Assert.Single(normal.Diagnostics,
+            diagnostic => diagnostic.Code == "SC013"
+                && diagnostic.Detail.Contains("switch:", StringComparison.Ordinal));
+        Assert.NotEmpty(boundary.Evidence);
+        Assert.Equal(SeqDoc.Core.Evidence.CertaintyLevel.Exact, boundary.Certainty);
+
+        Assert.DoesNotContain(normal.DirectCallExpansion!.Steps, step => withheldOperations.Contains(step.Operation.Value));
+        Assert.DoesNotContain(normal.Nodes, node => node.Operation is { } operation && withheldOperations.Contains(operation.Value));
+        Assert.DoesNotContain(normal.Edges, edge => withheldNodeIds.Contains(edge.Source) || withheldNodeIds.Contains(edge.Target));
+        Assert.DoesNotContain(normal.Topology.Memberships, membership =>
+            normal.Nodes.Single(node => node.Id == membership.ScenarioNode).Operation is { } operation
+            && withheldOperations.Contains(operation.Value));
+        Assert.DoesNotContain(normalPlan.Messages, message => withheldOperations.Any(operation => message.Label.Contains(operation, StringComparison.Ordinal)));
+        Assert.Equal(1, normal.DirectCallExpansion.Steps.Count(step => step.Operation.Value == "operation:v1:root.first"));
+        var parentNode = Assert.Single(normal.Nodes, node => node.Operation?.Value == "operation:v1:root.first");
+        Assert.Single(normal.Edges, edge => edge.Kind == ScenarioEdgeKind.Call && edge.Target == parentNode.Id);
+        Assert.Equal(1, normalPlan.Messages.Count(message => message.Label == "root.first"));
+        Assert.Equal(1, normal.DirectCallExpansion.Steps.Count(step => step.Operation.Value == "operation:v1:root.second"));
+        Assert.Equal(1, normal.Nodes.Count(node => node.Operation?.Value == "operation:v1:root.second"));
+        Assert.Equal(1, normalPlan.Messages.Count(message => message.Label == "root.second"));
+        var graphDebug = normal.DebugProjection?.ToString() ?? string.Empty;
+        var diagramDebug = normalPlan.DebugProjection?.ToString() ?? string.Empty;
+        Assert.Contains("root.first", graphDebug, StringComparison.Ordinal);
+        Assert.Contains("root.first", diagramDebug, StringComparison.Ordinal);
+        Assert.DoesNotContain("child.first", diagramDebug, StringComparison.Ordinal);
+        Assert.DoesNotContain("grandchild.first", diagramDebug, StringComparison.Ordinal);
+        Assert.Contains("child.first", boundary.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("root.second", boundary.Detail, StringComparison.Ordinal);
+
+        Assert.Equal(normal.DebugProjection, reversed.DebugProjection);
+        Assert.Equal(normalPlan.DebugProjection, reversedPlan.DebugProjection);
+        Assert.Equal(normal.Diagnostics.Select(FormatDiagnostic), reversed.Diagnostics.Select(FormatDiagnostic));
+        Assert.Equal(normal.DirectCallExpansion.Steps.Select(step => step.Id), reversed.DirectCallExpansion!.Steps.Select(step => step.Id));
+        Assert.Equal(normal.Nodes.Select(node => node.Id), reversed.Nodes.Select(node => node.Id));
+        Assert.Equal(normal.Edges.Select(edge => edge.Id), reversed.Edges.Select(edge => edge.Id));
+    }
+
+    private static string FormatDiagnostic(ScenarioGraphDiagnostic diagnostic) =>
+        $"{diagnostic.Code}|{diagnostic.Detail}|{diagnostic.Certainty}|{string.Join(',', diagnostic.Evidence.Select(item => item.Id.Value))}";
+
+    private static IEnumerable<DiagramFragment> AllFragments(DiagramFragment fragment)
+    {
+        yield return fragment;
+        foreach (var nested in fragment.Fragments.SelectMany(AllFragments))
+        {
+            yield return nested;
+        }
+        foreach (var nested in fragment.Arms.SelectMany(arm => arm.Fragments).SelectMany(AllFragments))
+        {
+            yield return nested;
+        }
+    }
+
+    private static IEnumerable<DiagramPlanElementId> AllMessageRefs(IEnumerable<DiagramFragment> fragments)
+    {
+        foreach (var fragment in fragments)
+        {
+            foreach (var reference in fragment.MessageRefs)
+            {
+                yield return reference;
+            }
+
+            foreach (var arm in fragment.Arms)
+            {
+                foreach (var reference in arm.MessageRefs)
+                {
+                    yield return reference;
+                }
+
+                foreach (var reference in AllMessageRefs(arm.Fragments))
+                {
+                    yield return reference;
+                }
+            }
+
+            foreach (var reference in AllMessageRefs(fragment.Fragments))
+            {
+                yield return reference;
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData("missing-anchor", "SC011")]
+    [InlineData("conflicting-anchor", "SC012")]
+    [InlineData("loop-and-exception-child", "SC013")]
+    [InlineData("catch-placement", "SC013")]
+    [InlineData("finally-placement", "SC013")]
+    public void UnsupportedTopologyBoundariesWithholdOnlyTheUnprovableClaim(string partition, string diagnosticCode)
+    {
+        var request = partition switch
+        {
+            "missing-anchor" => ScenarioTestFactory.CreateMissingAnchorTopologyRequest(),
+            "conflicting-anchor" => ScenarioTestFactory.CreateDualPolarityConflictRequest(),
+            "loop-and-exception-child" => ScenarioTestFactory.CreateUnsupportedTopologyRequest(),
+            "catch-placement" => ScenarioTestFactory.CreateExceptionRegionTopologyRequest("Catch"),
+            "finally-placement" => ScenarioTestFactory.CreateFinallyTargetTopologyRequest(),
+            _ => throw new ArgumentOutOfRangeException(nameof(partition), partition, null),
+        };
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(request).Graphs);
+        Assert.Contains(graph.Diagnostics, diagnostic => diagnostic.Code == diagnosticCode);
+        if (diagnosticCode == "SC011")
+        {
+            var missing = Assert.Single(graph.Nodes,
+                node => node.Key == $"query:{ScenarioTestFactory.WorkItemMissingAnchorOperation.Value}");
+            Assert.DoesNotContain(graph.Topology.Memberships,
+                membership => membership.ScenarioNode == missing.Id);
+        }
+        else if (diagnosticCode == "SC012")
+        {
+            var save = Assert.Single(graph.Nodes, node => node.Key == $"mutation:{ScenarioTestFactory.WorkItemSaveOperation.Value}");
+            Assert.DoesNotContain(graph.Topology.Memberships, membership => membership.ScenarioNode == save.Id);
+        }
+        else
+        {
+            Assert.Contains(graph.Nodes, node => node.Kind == ScenarioNodeKind.EntityQuery);
+            Assert.Contains(graph.Topology.Terminals, terminal => terminal.Kind == ScenarioTerminalKind.Unknown);
+        }
     }
 
     [Fact]

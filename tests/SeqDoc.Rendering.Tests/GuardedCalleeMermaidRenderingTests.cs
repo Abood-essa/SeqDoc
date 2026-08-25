@@ -73,6 +73,124 @@ public sealed class GuardedCalleeMermaidRenderingTests
             "The root fragment must open before its nested fragment and both must precede the final message.");
     }
 
+    [Fact]
+    public void NullScopeServiceDecisionKeepsLegacyDiagramIdentity()
+    {
+        var plan = DocumentationPlanner.Plan(CreateNullScopeLegacyGraph()).Diagram;
+        var fragment = Assert.Single(plan.Sequence.Fragments, item => item.Key == "decision:operation:v1:legacy-condition");
+        var arm = Assert.Single(fragment.Arms, item => !item.IsElse);
+        Assert.Equal("decision:operation:v1:legacy-condition", fragment.Key);
+        Assert.Equal("decision:operation:v1:legacy-condition:arm:false", arm.Key);
+        Assert.Equal("diagram-element:v1:bfd95b808fa3e23dce5c5a1aeb74529f99b1faf535b68b4e7a7ea16530545cc6", fragment.Id.Value);
+        Assert.Equal("diagram-element:v1:dfdda9ec96e2b89f8ac9be591689397dc72e848f9f7ffad0f8fb0e6e10dbba0d", arm.Id.Value);
+    }
+
+    [Fact]
+    public void OccurrenceIdentitySeparatesDelimiterCollidingConditionScopeTuples()
+    {
+        var plan = DocumentationPlanner.Plan(CreateDelimiterCollisionGraph()).Diagram;
+        var fragments = plan.Sequence.Fragments.SelectMany(AllFragments).Where(item =>
+            (item.Kind is DiagramFragmentKind.Alt or DiagramFragmentKind.Opt)
+            && item.Key.StartsWith("decision:occurrence:v1:", StringComparison.Ordinal)).ToArray();
+        var distinctFragments = fragments.GroupBy(fragment => fragment.Key, StringComparer.Ordinal)
+            .Select(group => group.First()).ToArray();
+        Assert.Equal(2, distinctFragments.Length);
+        Assert.Equal(2, distinctFragments.Select(fragment => fragment.Id).Distinct().Count());
+        var arms = distinctFragments.SelectMany(fragment => fragment.Arms).Where(arm => !arm.IsElse).ToArray();
+        Assert.Equal(2, arms.Length);
+        Assert.Equal(2, arms.Select(item => item.Key).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(2, arms.Select(item => item.Id).Distinct().Count());
+        var breaks = distinctFragments.SelectMany(fragment => fragment.Arms)
+            .SelectMany(arm => arm.Fragments)
+            .SelectMany(AllFragments).Where(item => item.Kind == DiagramFragmentKind.Break).ToArray();
+        Assert.Equal(2, breaks.Length);
+        Assert.Equal(2, breaks.Select(item => item.Id).Distinct().Count());
+        var repeated = DocumentationPlanner.Plan(CreateDelimiterCollisionGraph()).Diagram;
+        Assert.Equal(plan.DebugProjection, repeated.DebugProjection);
+    }
+
+    private static IEnumerable<DiagramFragment> AllFragments(DiagramFragment fragment)
+    {
+        yield return fragment;
+        foreach (var nested in fragment.Fragments.SelectMany(child => AllFragments(child)))
+        {
+            yield return nested;
+        }
+        foreach (var nested in fragment.Arms.SelectMany(arm => arm.Fragments).SelectMany(child => AllFragments(child)))
+        {
+            yield return nested;
+        }
+    }
+
+    private static ScenarioGraph CreateNullScopeLegacyGraph()
+    {
+        var evidence = SourceEvidence("legacy-null-scope");
+        var entry = new EntryPointId("entry-point:v1:legacy");
+        var root = new MethodId("method:v1:Fixture.Root");
+        var child = new MethodId("method:v1:Fixture.Child");
+        var entryNode = new ScenarioNode(new("scenario-node:v1:entry"), ScenarioNodeKind.EntryPoint, entry.Value, root, null, "entry", [evidence], CertaintyLevel.Exact);
+        var actionNode = new ScenarioNode(new("scenario-node:v1:action"), ScenarioNodeKind.Action, "action:root", root, null, "action", [evidence], CertaintyLevel.Exact);
+        var callNode = new ScenarioNode(new("scenario-node:v1:call"), ScenarioNodeKind.MethodCall, "call:child", child, new OperationId("operation:v1:root.child"), "child", [evidence], CertaintyLevel.Exact);
+        var wording = new ScenarioPredicateWording(new SemanticFactId("semantic-fact:v1:legacy"),
+            new PredicateExpression(PredicateExpressionKind.BooleanTruth,
+                [new PredicateExpression(PredicateExpressionKind.SymbolValue, [], "System.Boolean", displayName: "enabled")], "System.Boolean"),
+            ScenarioPredicateWordingRole.Owner, [evidence], CertaintyLevel.Exact);
+        var decision = new ScenarioDecision(new("scenario-decision:v1:legacy"), root, new("flow-node:v1:legacy-decision"),
+            new("operation:v1:legacy-condition"), [evidence], CertaintyLevel.Exact, wording);
+        var trueArm = new ScenarioArm(new("scenario-arm:v1:legacy:true"), decision.Id, true, [evidence], CertaintyLevel.Exact);
+        var falseArm = new ScenarioArm(new("scenario-arm:v1:legacy:false"), decision.Id, false, [evidence], CertaintyLevel.Exact);
+        var topology = new ScenarioTopology([decision], [trueArm, falseArm],
+            [new ScenarioMembership(new("scenario-membership:v1:legacy"), trueArm.Id, callNode.Id, [evidence], CertaintyLevel.Exact)],
+            [new ScenarioArmTerminal(trueArm.Id, ScenarioTerminalKind.Rejoins, [evidence], CertaintyLevel.Exact),
+             new ScenarioArmTerminal(falseArm.Id, ScenarioTerminalKind.Terminates, [evidence], CertaintyLevel.Exact)]);
+        var edges = ImmutableArray.Create(
+            new ScenarioEdge(new("scenario-edge:v1:entry"), entryNode.Id, actionNode.Id, ScenarioEdgeKind.Entry, "entry", [evidence], CertaintyLevel.Exact),
+            new ScenarioEdge(new("scenario-edge:v1:call"), actionNode.Id, callNode.Id, ScenarioEdgeKind.Call, "call", [evidence], CertaintyLevel.Exact));
+        return new ScenarioGraph(entry, Profile.Id, root, HttpMethodKind.Unknown, "", "Fixture.Root()",
+            [entryNode, actionNode, callNode], edges, [], "legacy", topology, rootKind: ScenarioRootKind.ConfiguredMethod);
+    }
+
+    private static ScenarioGraph CreateDelimiterCollisionGraph()
+    {
+        var baseGraph = CreateNullScopeLegacyGraph();
+        var evidence = SourceEvidence("delimiter-collision");
+        var secondChild = new ScenarioNode(new ScenarioNodeId("scenario-node:v1:collision-call"), ScenarioNodeKind.MethodCall,
+            "call:collision", new MethodId("method:v1:Fixture.OtherChild"),
+            new OperationId("operation:v1:root.other"), "other", [evidence], CertaintyLevel.Exact);
+        var secondDecision = new ScenarioDecision(new ScenarioDecisionId("scenario-decision:v1:collision-second"), baseGraph.RootMethod,
+            new FlowNodeId("flow-node:v1:collision-second"), new OperationId("operation:v1:a"), [evidence], CertaintyLevel.Exact,
+            baseGraph.Topology.Decisions[0].PredicateWording, "b:occurrence:v1:c");
+        var firstDecision = new ScenarioDecision(baseGraph.Topology.Decisions[0].Id, baseGraph.RootMethod,
+            baseGraph.Topology.Decisions[0].ControllingFlowNode,
+            new OperationId("operation:v1:a:occurrence:v1:b"), [evidence], CertaintyLevel.Exact,
+            baseGraph.Topology.Decisions[0].PredicateWording, "c");
+        var firstTrue = new ScenarioArm(new ScenarioArmId("scenario-arm:v1:collision-first:true"), firstDecision.Id, true, [evidence], CertaintyLevel.Exact);
+        var firstFalse = new ScenarioArm(new ScenarioArmId("scenario-arm:v1:collision-first:false"), firstDecision.Id, false, [evidence], CertaintyLevel.Exact);
+        var secondTrue = new ScenarioArm(new ScenarioArmId("scenario-arm:v1:collision-second:true"), secondDecision.Id, true, [evidence], CertaintyLevel.Exact);
+        var secondFalse = new ScenarioArm(new ScenarioArmId("scenario-arm:v1:collision-second:false"), secondDecision.Id, false, [evidence], CertaintyLevel.Exact);
+        var memberships = ImmutableArray.Create(
+            new ScenarioMembership(new ScenarioMembershipId("scenario-membership:v1:collision-first"), firstTrue.Id,
+                baseGraph.Nodes[^1].Id, [evidence], CertaintyLevel.Exact),
+            new ScenarioMembership(new ScenarioMembershipId("scenario-membership:v1:collision-second"), secondTrue.Id,
+                secondChild.Id, [evidence], CertaintyLevel.Exact));
+        var topology = new ScenarioTopology(
+            [firstDecision, secondDecision],
+            [firstTrue, firstFalse, secondTrue, secondFalse],
+            memberships,
+            [
+                new ScenarioArmTerminal(firstTrue.Id, ScenarioTerminalKind.Rejoins, [evidence], CertaintyLevel.Exact),
+                new ScenarioArmTerminal(firstFalse.Id, ScenarioTerminalKind.Terminates, [evidence], CertaintyLevel.Exact),
+                new ScenarioArmTerminal(secondTrue.Id, ScenarioTerminalKind.Rejoins, [evidence], CertaintyLevel.Exact),
+                new ScenarioArmTerminal(secondFalse.Id, ScenarioTerminalKind.Terminates, [evidence], CertaintyLevel.Exact),
+            ]);
+        var secondEdge = new ScenarioEdge(new ScenarioEdgeId("scenario-edge:v1:collision-call"), baseGraph.Nodes[1].Id,
+            secondChild.Id, ScenarioEdgeKind.Call, "other", [evidence], CertaintyLevel.Exact);
+        return new ScenarioGraph(baseGraph.EntryPoint, baseGraph.Profile, baseGraph.RootMethod, baseGraph.HttpMethod,
+            baseGraph.CanonicalRoute, baseGraph.OperationKey, baseGraph.Nodes.Add(secondChild), baseGraph.Edges.Add(secondEdge),
+            baseGraph.Diagnostics, baseGraph.DebugProjection, topology, baseGraph.Composition, baseGraph.CallbackRegions,
+            baseGraph.HandlerTopology, baseGraph.DispatchHandlerExpansion, baseGraph.RootKind, baseGraph.DirectCallExpansion);
+    }
+
     /// <summary>
     /// Builds the nested-local-guards request: Root calls Child, Child guards and calls Grandchild,
     /// Grandchild guards and calls Leaf. Each single-call guard has an empty false arm represented

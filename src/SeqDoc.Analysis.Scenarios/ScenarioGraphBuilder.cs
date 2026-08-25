@@ -247,8 +247,43 @@ public static class ScenarioGraphBuilder
                 topologyNodes, diagnostics);
             directExpansion = InheritDirectCallMembership(configuredTopology, directExpansion);
             configuredTopology = AddDirectCallMemberships(configuredTopology, directExpansion, entryPoint.RootMethod, profileId);
-            configuredTopology = ComposeCalleeOccurrenceTopology(
+            var calleeTopology = ComposeCalleeOccurrenceTopology(
                 request, profileId, entryPointId, entryPoint, directExpansion, configuredTopology, diagnostics);
+            configuredTopology = calleeTopology.Topology;
+            if (!calleeTopology.WithheldOccurrenceIds.IsEmpty)
+            {
+                var parentByOccurrence = directExpansion.Steps
+                    .ToDictionary(step => step.Id, step => step.ParentStepId, StringComparer.Ordinal);
+                var withheldOccurrences = calleeTopology.WithheldOccurrenceIds
+                    .ToHashSet(StringComparer.Ordinal);
+                // Compute the complete transitive closure once. The same occurrence set is the
+                // authority for expansion, graph nodes/edges, and every occurrence-scoped topology
+                // claim; no consumer may accidentally use only the initially diagnosed occurrences.
+                foreach (var step in directExpansion.Steps)
+                {
+                    if (IsWithheldOccurrence(step, withheldOccurrences, parentByOccurrence))
+                    {
+                        withheldOccurrences.Add(step.Id);
+                    }
+                }
+                var withheldSteps = directExpansion.Steps
+                    .Where(step => withheldOccurrences.Contains(step.Id))
+                    .Select(step => step.Id)
+                    .ToHashSet(StringComparer.Ordinal);
+                var withheldNodes = directExpansion.Steps
+                    .Where(step => withheldSteps.Contains(step.Id))
+                    .Select(step => step.ScenarioNodeId)
+                    .ToHashSet();
+                nodes.RemoveAll(node => withheldNodes.Contains(node.Id));
+                edges.RemoveAll(edge => withheldNodes.Contains(edge.Source) || withheldNodes.Contains(edge.Target));
+                directExpansion = directExpansion with
+                {
+                    Steps = directExpansion.Steps
+                        .Where(step => !withheldSteps.Contains(step.Id))
+                        .ToImmutableArray()
+                };
+                configuredTopology = RemoveWithheldOccurrenceTopology(configuredTopology, withheldOccurrences, withheldNodes);
+            }
             return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, configuredTopology,
                 directCallExpansion: directExpansion);
         }
@@ -771,7 +806,45 @@ public static class ScenarioGraphBuilder
     /// join. Evidence is the canonical union of the call and control-dependence contributors each
     /// claim uses; certainty is the least confident contributor everywhere.
     /// </summary>
-    private static ScenarioTopology ComposeCalleeOccurrenceTopology(
+    private sealed record CalleeTopologyCompositionResult(
+        ScenarioTopology Topology,
+        ImmutableArray<string> WithheldOccurrenceIds);
+
+    private static bool IsWithheldOccurrence(
+        ScenarioDirectCallExpansionStep step,
+        HashSet<string> withheldOccurrences,
+        IReadOnlyDictionary<string, string?> parentByOccurrence)
+    {
+        for (string? current = step.Id; current is not null;)
+        {
+            if (withheldOccurrences.Contains(current))
+            {
+                return true;
+            }
+            current = parentByOccurrence.GetValueOrDefault(current);
+        }
+        return false;
+    }
+
+    private static ScenarioTopology RemoveWithheldOccurrenceTopology(ScenarioTopology topology,
+        HashSet<string> withheldOccurrences, HashSet<ScenarioNodeId> withheldNodes)
+    {
+        var decisions = topology.Decisions.Where(decision => decision.OccurrenceScope is null
+            || !withheldOccurrences.Contains(decision.OccurrenceScope)).ToImmutableArray();
+        var decisionIds = decisions.Select(decision => decision.Id).ToHashSet();
+        var arms = topology.Arms.Where(arm => decisionIds.Contains(arm.Decision)).ToImmutableArray();
+        var armIds = arms.Select(arm => arm.Id).ToHashSet();
+        return topology with
+        {
+            Decisions = decisions,
+            Arms = arms,
+            Memberships = topology.Memberships.Where(item => armIds.Contains(item.Arm)
+                && !withheldNodes.Contains(item.ScenarioNode)).ToImmutableArray(),
+            Terminals = topology.Terminals.Where(item => armIds.Contains(item.Arm)).ToImmutableArray()
+        };
+    }
+
+    private static CalleeTopologyCompositionResult ComposeCalleeOccurrenceTopology(
         ScenarioAnalysisRequest request,
         CompilationProfileId profileId,
         EntryPointId entryPointId,
@@ -782,7 +855,7 @@ public static class ScenarioGraphBuilder
     {
         if (!expansion.Steps.Any(step => step.IsComplete))
         {
-            return topology;
+            return new CalleeTopologyCompositionResult(topology, []);
         }
 
         var decisions = topology.Decisions.ToList();
@@ -801,14 +874,16 @@ public static class ScenarioGraphBuilder
         // the same unsupported shape must report one deterministic first-occurrence boundary
         // instead of N byte-identical diagnostics. Composition itself is never deduped.
         var emittedDiagnosticKeys = new HashSet<string>(StringComparer.Ordinal);
-        void EmitOnce(string code, string summary, string detail)
+        var withheldOccurrenceIds = new HashSet<string>(StringComparer.Ordinal);
+        void EmitOnce(string code, string summary, string detail,
+            ImmutableArray<EvidenceRef> evidence = default, CertaintyLevel? certainty = null)
         {
             if (!emittedDiagnosticKeys.Add(code + "\u001f" + detail))
             {
                 return;
             }
 
-            diagnostics.Add(CreateDiagnostic(profileId, entryPointId, code, summary, detail));
+            diagnostics.Add(CreateDiagnostic(profileId, entryPointId, code, summary, detail, evidence, certainty));
         }
 
         foreach (var step in expansion.Steps)
@@ -825,15 +900,6 @@ public static class ScenarioGraphBuilder
             }
 
             var flow = targetFlows[0];
-            var flowDecisions = flow.Nodes
-                .OfType<DecisionFlowNode>()
-                .OrderBy(node => node.Id.Value, StringComparer.Ordinal)
-                .ToArray();
-            if (flowDecisions.Length == 0)
-            {
-                continue;
-            }
-
             var flowNodesById = flow.Nodes
                 .GroupBy(node => node.Id)
                 .ToDictionary(group => group.Key, group => group.First());
@@ -846,6 +912,64 @@ public static class ScenarioGraphBuilder
                         .OrderBy(dependence => dependence.ControllingDecision.Value, StringComparer.Ordinal)
                         .ThenBy(dependence => dependence.ControlledOnTrue)
                         .ToImmutableArray());
+
+            var childSteps = expansion.Steps.Where(item => item.ParentStepId == step.Id).ToArray();
+            var unsupportedChildren = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var child in childSteps)
+            {
+                var childAnchors = anchorsByOperation.TryGetValue(child.Operation.Value, out var exactAnchors) ? exactAnchors : [];
+                var unsupportedTopology = childAnchors.Where(flowNodesById.ContainsKey)
+                    .Select(anchorId => flowNodesById[anchorId]).SelectMany(anchor =>
+                    {
+                        var loops = flow.Nodes.OfType<LoopNode>().Where(loop => loop.Body.Contains(anchor.Id)
+                            || (anchor is InvocationFlowNode invocationAnchor && !loop.BodyBlockOrdinals.IsDefaultOrEmpty
+                                && loop.BodyBlockOrdinals.Contains(invocationAnchor.BlockOrdinal))).ToArray();
+                        var regions = flow.Regions.Where(region =>
+                            (region.Kind is FlowRegionKind.Try or FlowRegionKind.Catch or FlowRegionKind.Filter or FlowRegionKind.Finally)
+                            && region.Nodes.Contains(anchor.Id)).ToArray();
+                        var switches = dependencesByControlled.GetValueOrDefault(anchor.Id, [])
+                            .SelectMany(dependence =>
+                            {
+                                if (!flowNodesById.TryGetValue(dependence.ControllingDecision, out var controlling)
+                                    || controlling is not DecisionFlowNode decision)
+                                {
+                                    return [];
+                                }
+
+                                return flow.Edges
+                                    .Where(edge => edge.Source == decision.Id
+                                        && edge.Kind is FlowEdgeKind.SwitchCase or FlowEdgeKind.SwitchDefault)
+                                    .OrderBy(edge => edge.Id.Value, StringComparer.Ordinal)
+                                    .Select(edge => (
+                                        Kind: "switch",
+                                        Id: $"{decision.Id.Value}:{edge.Id.Value}",
+                                        Evidence: Combine(dependence.Evidence, decision.Evidence, edge.Evidence),
+                                        Certainty: LeastConfident(dependence.Certainty,
+                                            Combine(dependence.Evidence, decision.Evidence, edge.Evidence),
+                                            decision.Certainty, edge.Certainty)));
+                            });
+                        return loops.Select(loop => (Kind: "loop", Id: loop.Id.Value, Evidence: loop.Evidence, Certainty: loop.Certainty))
+                            .Concat(regions.Select(region => (Kind: "exception", Id: region.Id.Value, Evidence: region.Evidence, Certainty: region.Certainty)))
+                            .Concat(switches);
+                    }).OrderBy(item => item.Kind, StringComparer.Ordinal).ThenBy(item => item.Id, StringComparer.Ordinal).ToArray();
+                if (unsupportedTopology.Length == 0)
+                {
+                    continue;
+                }
+                unsupportedChildren.Add(child.Id);
+                var anchorEvidence = childAnchors.Where(flowNodesById.ContainsKey).SelectMany(anchorId => flowNodesById[anchorId].Evidence).ToImmutableArray();
+                var boundaryEvidence = Combine(child.Evidence, anchorEvidence, Combine(unsupportedTopology.Select(item => item.Evidence).ToArray()));
+                withheldOccurrenceIds.Add(child.Id);
+                EmitOnce("SC013", "The direct child call has unsupported loop, switch, or exception topology; the child occurrence is withheld.",
+                    $"{flow.Method.Value}\u001f{string.Join("\u001f", unsupportedTopology.Select(item => item.Kind + ":" + item.Id))}",
+                    boundaryEvidence, LeastConfident(child.Certainty, boundaryEvidence, unsupportedTopology.Select(item => item.Certainty).ToArray()));
+            }
+
+            var flowDecisions = flow.Nodes.OfType<DecisionFlowNode>().OrderBy(node => node.Id.Value, StringComparer.Ordinal).ToArray();
+            if (flowDecisions.Length == 0)
+            {
+                continue;
+            }
 
             // One occurrence-scoped decision per controlling flow node, with the same evidence,
             // certainty, predicate wording, arm polarity, and terminal classification conventions
@@ -862,7 +986,7 @@ public static class ScenarioGraphBuilder
                     decision.Condition,
                     decision.Evidence,
                     decision.Certainty,
-                    PredicateWording(request, flow.Method, decision.Condition)));
+                    PredicateWording(request, flow.Method, decision.Condition), step.Id));
                 var trueArm = new ScenarioArm(
                     StableIdentity.CreateScenarioArmId(new ScenarioArmIdentityDescriptor(
                         profileId, entryPoint.RootMethod, decisionId, IsTrue: true)),
@@ -903,8 +1027,12 @@ public static class ScenarioGraphBuilder
             var callerLocalMemberships = localPlacementsByNode.TryGetValue(step.ScenarioNodeId.Value, out var placed)
                 ? placed
                 : [];
-            foreach (var child in expansion.Steps.Where(item => item.ParentStepId == step.Id))
+            foreach (var child in childSteps)
             {
+                if (unsupportedChildren.Contains(child.Id))
+                {
+                    continue;
+                }
                 // Inherited caller-local arms: the whole occurrence executes under these locally
                 // proven arms, so its child calls inherit them alongside their own local guards.
                 foreach (var callerMembership in callerLocalMemberships)
@@ -995,7 +1123,8 @@ public static class ScenarioGraphBuilder
             }
         }
 
-        return CanonicalizeTopology(decisions, arms, memberships, terminals);
+        return new CalleeTopologyCompositionResult(CanonicalizeTopology(decisions, arms, memberships, terminals),
+            withheldOccurrenceIds.Order(StringComparer.Ordinal).ToImmutableArray());
     }
 
     /// <summary>Creates one evidence-backed occurrence membership and records it.</summary>

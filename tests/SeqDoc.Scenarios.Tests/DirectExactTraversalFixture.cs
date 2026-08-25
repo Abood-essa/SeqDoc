@@ -96,6 +96,10 @@ internal static class DirectExactTraversalFixture
             case "conservative-nested-local-guards":
                 calls[grandchild] = [new("grandchild.first", leaf)];
                 break;
+            case "switch-controlled-child":
+            case "switch-controlled-child-reversed":
+                calls[grandchild] = [new("grandchild.first", leaf)];
+                break;
             case "duplicate-agreeing":
             case "duplicate-disagreeing":
                 calls[root] = [calls[root][0]];
@@ -287,7 +291,8 @@ internal static class DirectExactTraversalFixture
         }
 
         var localGuard = (method.Id == Method("Child")
-                && partition is ("inherited-arm-and-guarded-child" or "nested-local-guards" or "conservative-nested-local-guards"))
+                && partition is ("inherited-arm-and-guarded-child" or "nested-local-guards" or "conservative-nested-local-guards"
+                    or "switch-controlled-child" or "switch-controlled-child-reversed"))
             || (method.Id == Method("Shared")
                 && partition is ("shared-guarded-occurrences" or "shared-guarded-occurrences-reversed"))
             || (method.Id == Method("Grandchild")
@@ -337,7 +342,10 @@ internal static class DirectExactTraversalFixture
                         ? ImmutableArray.Create(ScenarioTestFactory.ConservativeEvidence("call-resolution"))
                         : [evidence],
                     conservativeDependence ? CertaintyLevel.Conservative : CertaintyLevel.Exact));
-                edges.Add(Edge(method.Id, decision, invocation, FlowEdgeKind.True, evidence));
+                edges.Add(Edge(method.Id, decision, invocation,
+                    partition is ("switch-controlled-child" or "switch-controlled-child-reversed")
+                        ? FlowEdgeKind.SwitchCase
+                        : FlowEdgeKind.True, evidence));
                 edges.Add(Edge(method.Id, invocation, exit, FlowEdgeKind.Normal, evidence));
             }
             else if (decision is not null)
@@ -365,7 +373,10 @@ internal static class DirectExactTraversalFixture
             var falseThrow = new ThrowFlowNode(
                 new($"flow-node:v1:{method.Id.Value}:false-throw"), method.Id, null, false, [evidence], CertaintyLevel.Exact);
             nodes.Add(falseThrow);
-            edges.Add(Edge(method.Id, decision, falseThrow, FlowEdgeKind.False, evidence));
+            edges.Add(Edge(method.Id, decision, falseThrow,
+                partition is ("switch-controlled-child" or "switch-controlled-child-reversed")
+                    ? FlowEdgeKind.SwitchDefault
+                    : FlowEdgeKind.False, evidence));
         }
         if (method.Id == Method("Child") && partition == "inherited-arm-and-guarded-child" && nodes.OfType<InvocationFlowNode>().SingleOrDefault() is { } guarded)
         {

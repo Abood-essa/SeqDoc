@@ -2271,7 +2271,14 @@ public static class DocumentationPlanner
             ? 0
             : 1;
 
-    private static string FragmentKey(ScenarioDecision decision) => "decision:" + decision.Condition.Value;
+    private static string FragmentKey(ScenarioDecision decision)
+        => decision.OccurrenceScope is null
+            ? "decision:" + decision.Condition.Value
+            : "decision:occurrence:v1:" + EncodeIdentityTuple(decision.Condition.Value, decision.OccurrenceScope);
+
+    private static string EncodeIdentityTuple(params string[] values)
+        => string.Concat(values.Select(value => value.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + ":" + value));
 
     private static string ArmKey(ScenarioDecision decision, ScenarioArm arm)
         => FragmentKey(decision) + ":arm:" + (arm.IsTrue ? "true" : "false");
