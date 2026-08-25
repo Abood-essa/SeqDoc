@@ -220,4 +220,62 @@ public sealed class StableIdentityTests
 
         Assert.StartsWith("behavior-fact:v1:", id.Value, StringComparison.Ordinal);
     }
+
+    private static ScenarioDecisionIdentityDescriptor CreateDecisionDescriptor(string? occurrenceScope = null)
+        => new(
+            Profile: new CompilationProfileId("profile:v1:test"),
+            RootMethod: new MethodId("method:v1:test.Root"),
+            Method: new MethodId("method:v1:test.Child"),
+            ControllingFlowNode: new FlowNodeId("flow-node:v1:test:decision"),
+            OccurrenceScope: occurrenceScope);
+
+    [Fact]
+    public void ScenarioDecisionIdentityWithNullOccurrenceScopeIsStableAndLegacy()
+    {
+        var first = StableIdentity.CreateScenarioDecisionId(CreateDecisionDescriptor());
+        var legacyShaped = StableIdentity.CreateScenarioDecisionId(CreateDecisionDescriptor() with
+        {
+            OccurrenceScope = null,
+        });
+
+        // Compatibility vector: a null occurrence scope must reproduce the legacy identity bytes
+        // on every platform, so this value is a locked contract and must not change.
+        Assert.Equal(first, legacyShaped);
+        Assert.StartsWith("scenario-decision:v1:", first.Value, StringComparison.Ordinal);
+        Assert.Equal(
+            "scenario-decision:v1:d5408bfa5224967dcf59fb7705cbe55756654356692a4a508eb75c5bbf2ecd34",
+            first.Value);
+    }
+
+    [Fact]
+    public void ScenarioDecisionIdentityChangesWhenOccurrenceScopeIsPopulated()
+    {
+        var nullScope = StableIdentity.CreateScenarioDecisionId(CreateDecisionDescriptor());
+        var scoped = StableIdentity.CreateScenarioDecisionId(CreateDecisionDescriptor(
+            "scenario-direct-call:v1:occurrence"));
+
+        Assert.NotEqual(nullScope, scoped);
+        // Compatibility vector for the populated scope shape; locked contract.
+        Assert.Equal(
+            StableIdentity.CreateScenarioDecisionId(CreateDecisionDescriptor(
+                "scenario-direct-call:v1:occurrence")),
+            scoped);
+    }
+
+    [Theory]
+    [InlineData("scope-a", "scope-b")]
+    [InlineData("scenario-direct-call:v1:one", "scenario-direct-call:v1:two")]
+    public void ScenarioDecisionIdentityIsScopedByOccurrenceButNeverByNonIdentityText(string leftScope, string rightScope)
+    {
+        var left = StableIdentity.CreateScenarioDecisionId(CreateDecisionDescriptor(leftScope));
+        var right = StableIdentity.CreateScenarioDecisionId(CreateDecisionDescriptor(rightScope));
+
+        // The occurrence scope participates; labels, source text, checkout paths, and visual order
+        // have no descriptor fields and can never participate. Distinct scopes never collapse.
+        Assert.NotEqual(left, right);
+        Assert.Equal(left, StableIdentity.CreateScenarioDecisionId(CreateDecisionDescriptor(leftScope)));
+        Assert.Equal(right, StableIdentity.CreateScenarioDecisionId(CreateDecisionDescriptor(rightScope)));
+        Assert.Throws<ArgumentException>(() => StableIdentity.CreateScenarioDecisionId(
+            CreateDecisionDescriptor(" ")));
+    }
 }

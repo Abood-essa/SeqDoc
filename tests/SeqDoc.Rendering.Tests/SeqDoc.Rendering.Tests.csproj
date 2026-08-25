@@ -3,6 +3,10 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\SeqDoc.Rendering.Markdown\SeqDoc.Rendering.Markdown.csproj" />
     <ProjectReference Include="..\..\src\SeqDoc.Core\SeqDoc.Core.csproj" />
+    <!-- The guarded callee topology acceptance test drives the production graph builder and
+         DocumentationPlanner end to end, so the analysis pipeline assemblies are required here. -->
+    <ProjectReference Include="..\..\src\SeqDoc.Analysis.Scenarios\SeqDoc.Analysis.Scenarios.csproj" />
+    <ProjectReference Include="..\..\src\SeqDoc.Application\SeqDoc.Application.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
