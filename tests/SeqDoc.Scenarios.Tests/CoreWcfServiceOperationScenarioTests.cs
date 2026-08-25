@@ -98,6 +98,46 @@ public sealed class CoreWcfServiceOperationScenarioTests
     }
 
     [Fact]
+    public void ConservativeRegistrationRetainsBothContributorsExactEvidenceIdsAndOwnCertainty()
+    {
+        // The exact underlying evidence ID of each contributing fact (not merely its artifact name) must
+        // survive into the admitted root's evidence, and a Conservative registration's own evidence item
+        // must keep its Conservative certainty even when unioned alongside an Exact capability's evidence
+        // (node-presentation certainty is a separate, pre-existing evidence-array mechanism this test does
+        // not assert on; the fact-level weakest-certainty rule is proven directly on
+        // ServiceOperationEntryPointFact/ScenarioTestFactory-level fixtures elsewhere).
+        var exactOnlyResult = ScenarioGraphBuilder.Build(ScenarioTestFactory.CreateServiceOperationRequest());
+        var exactCapabilityId = exactOnlyResult.Graphs
+            .Single(item => item.EntryPoint == ScenarioTestFactory.ServiceOperationEntryPoint)
+            .Nodes.Single(node => node.Kind == ScenarioNodeKind.Action)
+            .Evidence.Single(item => item.Artifact == "service-operation-capability").Id;
+
+        var request = ScenarioTestFactory.CreateServiceOperationRequest(
+            capabilityCertainty: CertaintyLevel.Exact,
+            registrationCertainty: CertaintyLevel.Conservative);
+        var result = ScenarioGraphBuilder.Build(request);
+
+        var graph = Assert.Single(result.Graphs, item => item.EntryPoint == ScenarioTestFactory.ServiceOperationEntryPoint);
+        var action = Assert.Single(graph.Nodes, node => node.Kind == ScenarioNodeKind.Action);
+
+        // The capability's own evidence ID is present by exact ID, not just artifact name.
+        Assert.Contains(action.Evidence, item => item.Id == exactCapabilityId);
+        Assert.Contains(action.Evidence, item => item.Artifact == "service-endpoint-registration" && item.Certainty == CertaintyLevel.Conservative);
+    }
+
+    [Fact]
+    public void ConservativeCapabilityWithoutRegistrationDegradesTheUnsupportedDispatchDiagnosticsCertainty()
+    {
+        var request = ScenarioTestFactory.CreateUnregisteredServiceCapabilityRequest(capabilityCertainty: CertaintyLevel.Conservative);
+
+        var result = ScenarioGraphBuilder.Build(request);
+
+        var diagnostic = Assert.Single(result.Diagnostics, item => item.Code == "SC-SERVICE-UNSUPPORTED-DISPATCH");
+        Assert.Equal(CertaintyLevel.Conservative, diagnostic.Certainty);
+        Assert.Contains(diagnostic.Evidence, item => item.Artifact == "service-operation-capability" && item.Certainty == CertaintyLevel.Conservative);
+    }
+
+    [Fact]
     public void TwoValidRegistrationsForTheSamePairAdmitExactlyOneRootWithUnionedEvidenceDeterministically()
     {
         var forward = ScenarioGraphBuilder.Build(ScenarioTestFactory.CreateServiceOperationRequestWithTwoRegistrations(reversed: false));

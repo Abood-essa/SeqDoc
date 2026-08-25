@@ -872,7 +872,7 @@ internal static class ScenarioTestFactory
         => new()
         {
             Id = new BehaviorFactId("behavior-fact:v1:service-operation-capability:Add"),
-            Evidence = [SourceEvidence("service-operation-capability")],
+            Evidence = [certainty == CertaintyLevel.Exact ? SourceEvidence("service-operation-capability") : ConservativeEvidence("service-operation-capability")],
             Certainty = certainty,
             RootMethod = ServiceOperationMethod,
             ServiceContractType = ServiceContractTypeName,
@@ -888,7 +888,7 @@ internal static class ScenarioTestFactory
         => new()
         {
             Id = new BehaviorFactId("behavior-fact:v1:service-endpoint-registration:Add"),
-            Evidence = [SourceEvidence("service-endpoint-registration")],
+            Evidence = [certainty == CertaintyLevel.Exact ? SourceEvidence("service-endpoint-registration") : ConservativeEvidence("service-endpoint-registration")],
             Certainty = certainty,
             ImplementationType = ServiceImplementationTypeName,
             ImplementationTypeSymbol = ServiceImplementationTypeSymbol,
@@ -1026,14 +1026,14 @@ internal static class ScenarioTestFactory
     /// unregistered-capability boundary (no executable root, no execution wording, a conservative
     /// diagnostic instead).
     /// </summary>
-    internal static ScenarioAnalysisRequest CreateUnregisteredServiceCapabilityRequest()
+    internal static ScenarioAnalysisRequest CreateUnregisteredServiceCapabilityRequest(CertaintyLevel capabilityCertainty = CertaintyLevel.Exact)
     {
         var request = CreateServiceBaseRequest();
         return request with
         {
             FrameworkFacts = new FrameworkAnalysisResult(
                 true,
-                [CreateServiceCapabilityFact()],
+                [CreateServiceCapabilityFact(capabilityCertainty)],
                 [], [], [], [],
                 [new FrameworkModelDescriptor("seqdoc.corewcf.services", "2.0.0", "test", 110)],
                 request.Profile.Id,
