@@ -82,6 +82,17 @@ public sealed record ConfiguredMethodEntryPointIdentityDescriptor(
     CompilationProfileId Profile,
     MethodId RootMethod);
 
+/// <summary>
+/// Identity for one admitted service-contract operation entry point. <see cref="OperationKey"/> is the
+/// exact service contract/operation identity key (analogous to <see cref="HttpEntryPointIdentityDescriptor"/>'s
+/// HTTP method plus canonical route), so the same root method under two distinct contract operations
+/// never collides and the same operation is always the same identity within one profile.
+/// </summary>
+public sealed record ServiceOperationEntryPointIdentityDescriptor(
+    CompilationProfileId Profile,
+    MethodId RootMethod,
+    string OperationKey);
+
 public sealed record HostedWorkerEntryPointIdentityDescriptor(
     CompilationProfileId Profile,
     SymbolId HostedType,
@@ -309,11 +320,20 @@ public sealed record ScenarioEdgeIdentityDescriptor(
 /// includes the entry point, labels, source text, checkout paths, traversal order, or failure-first
 /// display order.
 /// </summary>
+/// <remarks>
+/// The optional <paramref name="OccurrenceScope"/> scopes one callee-local decision to the exact
+/// direct-call expansion step occurrence that admitted it (the expansion step identity), so repeated
+/// and diamond-shaped calls to the same method receive distinct occurrence topology. Null means the
+/// legacy root/service topology scope and must reproduce the legacy identity byte-for-byte.
+/// Labels, source text, checkout paths, budgets, input enumeration, and visual order never
+/// participate.
+/// </remarks>
 public sealed record ScenarioDecisionIdentityDescriptor(
     CompilationProfileId Profile,
     MethodId RootMethod,
     MethodId Method,
-    FlowNodeId ControllingFlowNode);
+    FlowNodeId ControllingFlowNode,
+    string? OccurrenceScope = null);
 
 /// <summary>
 /// Describes one semantic true/false arm of a scenario decision scoped by compilation profile,

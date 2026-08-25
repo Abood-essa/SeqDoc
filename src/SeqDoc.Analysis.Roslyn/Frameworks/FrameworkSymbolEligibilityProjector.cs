@@ -22,7 +22,10 @@ internal static class FrameworkSymbolEligibilityProjector
     /// indexed symbols through the same Program Index identity helpers. Returns null when the method
     /// has no usable containing type, which callers must treat as incomplete eligibility input.
     /// </summary>
-    public static FrameworkMethodShape? ProjectMethodShape(IMethodSymbol method, StableProjectId project)
+    public static FrameworkMethodShape? ProjectMethodShape(
+        IMethodSymbol method,
+        StableProjectId project,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents)
     {
         ArgumentNullException.ThrowIfNull(method);
         var declaringType = method.ContainingType;
@@ -39,8 +42,130 @@ internal static class FrameworkSymbolEligibilityProjector
             IsStatic: method.IsStatic,
             IsAbstract: method.IsAbstract,
             GenericArity: method.Arity,
-            DeclaringType: ProjectTypeShape(declaringType));
+            DeclaringType: ProjectTypeShape(declaringType),
+            ImplementedInterfaceMembers: ProjectImplementedInterfaceMembers(method, declaringType, project, documents),
+            DeclaringTypeAttributes: ProjectAttributeIdentities(declaringType, documents));
     }
+
+    /// <summary>
+    /// Projects the exact set of interface members <paramref name="method"/> implements, implicit and
+    /// explicit. Implicit implementation is proven with
+    /// <see cref="INamedTypeSymbol.FindImplementationForInterfaceMember"/> over every interface the
+    /// declaring type carries (including inherited interfaces); explicit implementation is read
+    /// directly from <see cref="IMethodSymbol.ExplicitInterfaceImplementations"/>. Only ordinary
+    /// interface methods are considered; property/event accessors are out of scope for this projection.
+    /// </summary>
+    private static ImmutableArray<FrameworkInterfaceMemberIdentity> ProjectImplementedInterfaceMembers(
+        IMethodSymbol method,
+        INamedTypeSymbol declaringType,
+        StableProjectId project,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents)
+    {
+        var builder = ImmutableArray.CreateBuilder<FrameworkInterfaceMemberIdentity>();
+        var seen = new HashSet<(SymbolId InterfaceType, SymbolId InterfaceMethod)>();
+
+        foreach (var interfaceType in declaringType.AllInterfaces)
+        {
+            foreach (var interfaceMember in interfaceType.GetMembers().OfType<IMethodSymbol>())
+            {
+                if (interfaceMember.MethodKind != MethodKind.Ordinary)
+                {
+                    continue;
+                }
+
+                // FindImplementationForInterfaceMember resolves both implicit and explicit
+                // implementations to the same method, so a single resolution proves the member is
+                // implemented; ExplicitInterfaceImplementations then classifies which shape it is.
+                var implementation = declaringType.FindImplementationForInterfaceMember(interfaceMember);
+                if (implementation is null || !SymbolEqualityComparer.Default.Equals(implementation, method))
+                {
+                    continue;
+                }
+
+                var isExplicit = method.ExplicitInterfaceImplementations
+                    .Any(explicitMember => SymbolEqualityComparer.Default.Equals(explicitMember, interfaceMember));
+                AddInterfaceMember(builder, seen, interfaceType, interfaceMember, project, isExplicit, documents);
+            }
+        }
+
+        return builder
+            .OrderBy(item => item.InterfaceType.AssemblyIdentity, StringComparer.Ordinal)
+            .ThenBy(item => item.InterfaceType.MetadataName, StringComparer.Ordinal)
+            .ThenBy(item => item.InterfaceMethodMetadataName, StringComparer.Ordinal)
+            .ThenBy(item => item.GenericArity)
+            .ThenBy(item => item.InterfaceMethodSymbol.Value, StringComparer.Ordinal)
+            .ToImmutableArray();
+    }
+
+    private static void AddInterfaceMember(
+        ImmutableArray<FrameworkInterfaceMemberIdentity>.Builder builder,
+        HashSet<(SymbolId InterfaceType, SymbolId InterfaceMethod)> seen,
+        INamedTypeSymbol interfaceType,
+        IMethodSymbol interfaceMethod,
+        StableProjectId project,
+        bool isExplicit,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents)
+    {
+        var interfaceTypeSymbol = RoslynProgramIndexExtractor.CreateSymbolId(interfaceType, project);
+        var interfaceMethodSymbol = StableIdentity.CreateSymbolId(
+            RoslynProgramIndexExtractor.CreateMethodDescriptor(interfaceMethod, project));
+        if (!seen.Add((interfaceTypeSymbol, interfaceMethodSymbol)))
+        {
+            // The same interface member can be reached through more than one AllInterfaces path (for
+            // example diamond inheritance); the first proof is retained and duplicates are dropped.
+            return;
+        }
+
+        builder.Add(new FrameworkInterfaceMemberIdentity(
+            interfaceTypeSymbol,
+            interfaceMethodSymbol,
+            ProjectTypeIdentity(interfaceType),
+            interfaceMethod.MetadataName,
+            interfaceMethod.Arity,
+            interfaceMethod.Parameters
+                .Select(parameter => new ParameterIdentityDescriptor(
+                    RoslynProgramIndexExtractor.ToParameterRefKind(parameter.RefKind),
+                    DisplayType(parameter.Type)))
+                .ToImmutableArray(),
+            DisplayType(interfaceMethod.ReturnType),
+            isExplicit,
+            ProjectAttributeIdentities(interfaceType, documents),
+            ProjectAttributeIdentities(interfaceMethod, documents)));
+    }
+
+    /// <summary>
+    /// Projects the exact original attribute-class identity (assembly, assembly version, metadata name)
+    /// of every attribute applied to <paramref name="symbol"/>, resolved from the compiler's own
+    /// <see cref="AttributeData.AttributeClass"/> rather than a display-name string, so a model can
+    /// reject a same-qualified-name attribute defined in a foreign assembly. Each attribute's
+    /// <c>typeof(...)</c> constructor arguments are resolved the same way, in declaration order, for
+    /// attributes whose meaning depends on a type argument (for example <c>[FaultContract(typeof(X))]</c>).
+    /// The exact source evidence for this specific attribute application travels with the resolved
+    /// identity, so a model never has to recover it later through a separate target-symbol-plus-metadata-
+    /// name-string lookup that a foreign same-qualified-name attribute on the same target could
+    /// contaminate.
+    /// </summary>
+    private static ImmutableArray<FrameworkAttributeApplicationIdentity> ProjectAttributeIdentities(
+        ISymbol symbol,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents)
+        => symbol.GetAttributes()
+            .Where(attribute => attribute.AttributeClass is not null)
+            .Select(attribute => new FrameworkAttributeApplicationIdentity(
+                ProjectTypeIdentity(attribute.AttributeClass!),
+                attribute.ConstructorArguments
+                    .Where(argument => argument.Kind == TypedConstantKind.Type && argument.Value is INamedTypeSymbol)
+                    .Select(argument => ProjectTypeIdentity((INamedTypeSymbol)argument.Value!))
+                    .ToImmutableArray(),
+                attribute.ApplicationSyntaxReference is null
+                    ? ImmutableArray<EvidenceRef>.Empty
+                    : RoslynProgramIndexExtractor.CreateSyntaxEvidence(
+                        attribute.ApplicationSyntaxReference,
+                        attribute.AttributeClass!.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
+                        documents)))
+            .ToImmutableArray();
+
+    private static string DisplayType(ITypeSymbol type)
+        => type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat);
 
     /// <summary>
     /// Projects the compiler shape of one named type, including the exact base-type chain.
@@ -56,6 +181,7 @@ internal static class FrameworkSymbolEligibilityProjector
             IsStatic: type.IsStatic,
             GenericArity: type.Arity,
             BaseTypeChain: ProjectBaseTypeChain(type),
+            BaseTypeChainWithArguments: ProjectBaseTypeChainWithArguments(type),
             Interfaces: type.AllInterfaces
                 .Select(ProjectTypeIdentity)
                 .OrderBy(identity => identity.AssemblyIdentity, StringComparer.Ordinal)
@@ -120,6 +246,28 @@ internal static class FrameworkSymbolEligibilityProjector
         for (var current = type.BaseType; current is not null; current = current.BaseType)
         {
             builder.Add(ProjectTypeIdentity(current));
+        }
+
+        return builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// Projects the same base-type chain as <see cref="ProjectBaseTypeChain"/>, additionally carrying
+    /// each base type's exact constructed generic type arguments (for example
+    /// <c>ClientBase&lt;ICalculatorService&gt;</c> → <c>[ICalculatorService]</c>). A model needs this to
+    /// prove the constructed argument matches a specific admitted contract; the open generic definition
+    /// appearing in the chain alone does not prove that.
+    /// </summary>
+    private static ImmutableArray<FrameworkBaseTypeIdentity> ProjectBaseTypeChainWithArguments(INamedTypeSymbol type)
+    {
+        var builder = ImmutableArray.CreateBuilder<FrameworkBaseTypeIdentity>();
+        for (var current = type.BaseType; current is not null; current = current.BaseType)
+        {
+            builder.Add(new FrameworkBaseTypeIdentity(
+                ProjectTypeIdentity(current),
+                current.TypeArguments.OfType<INamedTypeSymbol>()
+                    .Select(ProjectTypeIdentity)
+                    .ToImmutableArray()));
         }
 
         return builder.ToImmutable();

@@ -7,6 +7,7 @@ using SeqDoc.Analysis.Scenarios;
 using SeqDoc.Application.Analysis;
 using SeqDoc.Application.Documentation;
 using SeqDoc.Core.Behavior;
+using SeqDoc.Core.Configuration;
 using SeqDoc.Core.DiagramPlan;
 using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Frameworks;
@@ -749,14 +750,129 @@ public sealed class BehaviorDocumentationFourFlowTests
 
     private sealed record FourFlowBundle(ScenarioGraphSet Graphs, ProfileAnalysisExtraction Extraction, BehaviorSnapshot Behavior);
 
-    private static async Task<FourFlowBundle> BuildAsync(string root)
+    [Fact]
+    public async Task ConfiguredSourceRootPlacesGuardedCallAndWithholdsUnsupportedLoopCall()
+    {
+        var bundle = await BuildAsync(FindRepositoryRoot(), includeConfiguredRoot: true);
+        var rootType = Assert.Single(bundle.Extraction.ProgramIndex.Types,
+            type => type.MetadataName == "BehaviorDocumentation.FourFlows.Services.ConfiguredRoot");
+        var childType = Assert.Single(bundle.Extraction.ProgramIndex.Types,
+            type => type.MetadataName == "BehaviorDocumentation.FourFlows.Services.GuardedChild");
+        var leafType = Assert.Single(bundle.Extraction.ProgramIndex.Types,
+            type => type.MetadataName == "BehaviorDocumentation.FourFlows.Services.GuardedLeaf");
+        var rootMethod = Assert.Single(bundle.Extraction.ProgramIndex.Methods,
+            method => method.ContainingType == rootType.Id && method.Name == "Execute"
+                && method.Parameters.Length == 1 && method.Parameters[0].FullyQualifiedType == "System.Boolean");
+        var childMethod = Assert.Single(bundle.Extraction.ProgramIndex.Methods,
+            method => method.ContainingType == childType.Id && method.Name == "Execute"
+                && method.Parameters.Length == 1 && method.Parameters[0].FullyQualifiedType == "System.Boolean");
+        var emitMethod = Assert.Single(bundle.Extraction.ProgramIndex.Methods,
+            method => method.ContainingType == leafType.Id && method.Name == "Emit" && method.Parameters.IsEmpty);
+        var noiseMethod = Assert.Single(bundle.Extraction.ProgramIndex.Methods,
+            method => method.ContainingType == leafType.Id && method.Name == "Noise" && method.Parameters.IsEmpty);
+        var tailMethod = Assert.Single(bundle.Extraction.ProgramIndex.Methods,
+            method => method.ContainingType == leafType.Id && method.Name == "Tail" && method.Parameters.IsEmpty);
+        var graph = Assert.Single(bundle.Graphs.Graphs, candidate => candidate.RootMethod == rootMethod.Id);
+        var plan = DocumentationPlanner.Plan(graph);
+        var mermaid = MermaidRenderer.Render(plan.Diagram);
+        var repeatedPlan = DocumentationPlanner.Plan(graph);
+        Assert.Equal(plan.Diagram.DebugProjection, repeatedPlan.Diagram.DebugProjection);
+        Assert.Equal(mermaid, MermaidRenderer.Render(repeatedPlan.Diagram));
+
+        var childFlow = Assert.Single(bundle.Behavior.MethodFlows, flow => flow.Method == childMethod.Id);
+        var childInvocations = childFlow.Nodes.OfType<InvocationFlowNode>().ToArray();
+        var emitInvocation = Assert.Single(childInvocations, invocation => invocation.Target == emitMethod.Id);
+        Assert.Contains(childInvocations, invocation => invocation.Target == noiseMethod.Id);
+        var emitDependence = Assert.Single(childFlow.ControlDependences,
+            dependence => dependence.ControlledNode == emitInvocation.Id);
+        var emitDecision = Assert.Single(childFlow.Nodes.OfType<DecisionFlowNode>(),
+            decision => decision.Id == emitDependence.ControllingDecision);
+        Assert.All(new FlowNode[] { emitDecision, emitInvocation }, node =>
+        {
+            Assert.NotEmpty(node.Evidence);
+            Assert.Equal(CertaintyLevel.Exact, node.Certainty);
+        });
+        Assert.Contains(bundle.Behavior.CallGraph.CallSites, site => site.ContainingMethod == childMethod.Id
+            && site.DeclaredTarget == emitMethod.Id && site.Resolution.Kind == CallResolutionKind.DirectExact);
+        Assert.Contains(bundle.Behavior.CallGraph.CallSites, site => site.ContainingMethod == childMethod.Id
+            && site.DeclaredTarget == noiseMethod.Id && site.Resolution.Kind == CallResolutionKind.DirectExact);
+        Assert.Contains(bundle.Extraction.PredicateSemanticFacts.Mappings, mapping =>
+            mapping.Method == childMethod.Id
+            && mapping.LoweredConditionOperations.Contains(emitDecision.Condition));
+        var emitNode = Assert.Single(graph.Nodes, node => node.Method == emitMethod.Id);
+        var emitEdge = Assert.Single(graph.Edges, edge => edge.Target == emitNode.Id && edge.Kind == ScenarioEdgeKind.Call);
+        var emitMessageId = new DiagramPlanElementId("diagram-element:v1:message:" + emitEdge.Id.Value);
+        var emit = Assert.Single(plan.Diagram.Messages, message => message.Id == emitMessageId);
+        Assert.DoesNotContain(plan.Diagram.Messages, message => message.Target == noiseMethod.Id.Value);
+        Assert.DoesNotContain(graph.Edges, edge => graph.Nodes.Any(node => node.Id == edge.Target && node.Method == noiseMethod.Id));
+        Assert.DoesNotContain(graph.DirectCallExpansion.Steps, step => step.TargetMethod == noiseMethod.Id);
+        var boundary = Assert.Single(graph.Diagnostics, diagnostic => diagnostic.Code == "SC013");
+        Assert.Equal("SC013", boundary.Code);
+        Assert.NotEmpty(boundary.Evidence);
+        Assert.Equal(boundary.Evidence.Max(item => item.Certainty), boundary.Certainty);
+        Assert.DoesNotContain(graph.Nodes, node => node.Method == noiseMethod.Id);
+        // Noise is a decision-free callee whose call-site is inside the unsupported loop. Its
+        // descendant must not survive as a flattened unconditional call: pruning is transitive,
+        // while the independent Emit sibling remains present.
+        Assert.DoesNotContain(graph.Nodes, node => node.Method == tailMethod.Id);
+        Assert.DoesNotContain(plan.Diagram.Messages, message => message.Target == tailMethod.Id.Value);
+
+        var emitFragment = AllFragments(plan.Diagram.Sequence.Fragments)
+            .Single(fragment => FragmentContainsMessage(fragment, emit.Id));
+        Assert.Contains(mermaid.Split('\n'), line => line.Contains("Emit", StringComparison.Ordinal));
+        Assert.DoesNotContain(mermaid, "Noise", StringComparison.Ordinal);
+        Assert.NotEmpty(emit.Evidence);
+        Assert.Equal(CertaintyLevel.Exact, emit.Certainty);
+        Assert.NotEmpty(emitFragment.Evidence);
+        Assert.Equal(new[] { emitDecision.Certainty, emitDependence.Certainty, emitInvocation.Certainty, emit.Certainty }.Max(), emitFragment.Certainty);
+        if (emitFragment.Kind == DiagramFragmentKind.Alt)
+        {
+            var emitArm = Assert.Single(emitFragment.Arms, arm => arm.MessageRefs.Contains(emit.Id));
+            Assert.NotEmpty(emitArm.Evidence);
+            Assert.Equal(new[] { emitDecision.Certainty, emitDependence.Certainty, emitInvocation.Certainty, emit.Certainty }.Max(), emitArm.Certainty);
+            var scenarioDecision = Assert.Single(graph.Topology.Decisions,
+                decision => decision.ControllingFlowNode == emitDecision.Id);
+            var scenarioArm = Assert.Single(graph.Topology.Arms,
+                arm => arm.Decision == scenarioDecision.Id && arm.IsTrue == emitDependence.ControlledOnTrue);
+            Assert.Contains(graph.Topology.Memberships,
+                membership => membership.Arm == scenarioArm.Id && membership.ScenarioNode == emitNode.Id);
+            Assert.Equal(emitDependence.ControlledOnTrue,
+                scenarioArm.IsTrue);
+            Assert.NotEmpty(scenarioArm.Evidence);
+            Assert.Equal(new[] { scenarioDecision.Certainty, scenarioArm.Certainty }.Max(), emitArm.Certainty);
+        }
+        Assert.DoesNotContain(plan.Diagram.Sequence.Elements, element => element.IsMessageRef && element.MessageRefId == emit.Id);
+        Assert.DoesNotContain(plan.Diagram.Sequence.MessageRefs, id => id == emit.Id);
+        Assert.Equal(1, AllFragmentMessageRefs(plan.Diagram.Sequence.Fragments).Count(id => id == emit.Id));
+        var renderedLines = mermaid.Split('\n');
+        string[] fragmentOpeners = ["alt", "opt"];
+        int fragmentStart = Array.FindIndex(renderedLines, line => fragmentOpeners.Any(opener =>
+            line.Contains($"{opener} {emitFragment.Label}", StringComparison.Ordinal)));
+        Assert.True(fragmentStart >= 0, $"The emitted fragment '{emitFragment.Label}' was not rendered.");
+        int armBoundary = -1;
+        for (int index = fragmentStart + 1; index < renderedLines.Length; index++)
+        {
+            if (renderedLines[index].Trim() is "else" or "end")
+            {
+                armBoundary = index;
+                break;
+            }
+        }
+        int emitLine = Array.FindIndex(renderedLines, line => line.Contains("Emit", StringComparison.Ordinal));
+        Assert.InRange(emitLine, fragmentStart + 1, armBoundary - 1);
+        Assert.DoesNotContain(plan.Diagram.Sequence.Elements, element =>
+            element.IsMessageRef && plan.Diagram.Messages.Single(message => message.Id == element.MessageRefId)
+                .Label.Contains("Noise", StringComparison.Ordinal));
+    }
+
+    private static async Task<FourFlowBundle> BuildAsync(string root, bool includeConfiguredRoot = false)
     {
         string target = Path.Combine(root, FixtureRelativePath.Replace('/', Path.DirectorySeparatorChar));
         var profile = CompilationProfile.Create(FixtureRelativePath, "Release", "net10.0");
-        return await BuildAsync(root, target, profile);
+        return await BuildAsync(root, target, profile, includeConfiguredRoot);
     }
 
-    private static async Task<FourFlowBundle> BuildAsync(string root, string target, CompilationProfile profile)
+    private static async Task<FourFlowBundle> BuildAsync(string root, string target, CompilationProfile profile, bool includeConfiguredRoot = false)
     {
         var extraction = await new RoslynProfileAnalysisExtractor().ExtractAsync(
             new CompilationAnalysisRequest(root, target, profile),
@@ -785,6 +901,14 @@ public sealed class BehaviorDocumentationFourFlowTests
                 extraction.Value.Symbols),
             CancellationToken.None);
 
+        var configuredRoots = includeConfiguredRoot
+            ? [extraction.Value.ProgramIndex.Methods.Single(method =>
+                method.ContainingType == extraction.Value.ProgramIndex.Types.Single(type =>
+                    type.MetadataName == "BehaviorDocumentation.FourFlows.Services.ConfiguredRoot").Id
+                && method.Name == "Execute"
+                && method.Parameters.Length == 1
+                && method.Parameters[0].FullyQualifiedType == "System.Boolean").Id]
+            : ImmutableArray<MethodId>.Empty;
         var graphs = ScenarioGraphBuilder.Build(new ScenarioAnalysisRequest(
             profile,
             extraction.Value.ProgramIndex,
@@ -794,9 +918,37 @@ public sealed class BehaviorDocumentationFourFlowTests
             extraction.Value.DependencyInjectionFacts,
             extraction.Value.StructuralResultFacts,
             extraction.Value.NonGetSemanticFacts,
-            PredicateSemanticFacts: extraction.Value.PredicateSemanticFacts));
+            PredicateSemanticFacts: extraction.Value.PredicateSemanticFacts,
+            ConfiguredRoots: configuredRoots));
         return new FourFlowBundle(graphs, extraction.Value, analysis.Value!);
     }
+
+    private static IEnumerable<DiagramFragment> AllFragments(IEnumerable<DiagramFragment> fragments)
+    {
+        foreach (var fragment in fragments)
+        {
+            yield return fragment;
+            foreach (var nested in AllFragments(fragment.Fragments))
+            {
+                yield return nested;
+            }
+
+            foreach (var nested in AllFragments(fragment.Arms.SelectMany(arm => arm.Fragments)))
+            {
+                yield return nested;
+            }
+        }
+    }
+
+    private static bool FragmentContainsMessage(DiagramFragment fragment, DiagramPlanElementId messageId)
+        => fragment.MessageRefs.Contains(messageId)
+            || fragment.Arms.Any(arm => arm.MessageRefs.Contains(messageId)
+                || arm.Fragments.Any(child => FragmentContainsMessage(child, messageId)))
+            || fragment.Fragments.Any(child => FragmentContainsMessage(child, messageId));
+
+    private static IEnumerable<DiagramPlanElementId> AllFragmentMessageRefs(IEnumerable<DiagramFragment> fragments)
+        => AllFragments(fragments).SelectMany(fragment => fragment.MessageRefs.Concat(
+            fragment.Arms.SelectMany(arm => arm.MessageRefs)));
 
     private static int PhraseIndex(WordingDocument wording, string key, string contains)
     {

@@ -129,6 +129,15 @@ public static class StableIdentity
         return new EntryPointId(Hash("entry-point:v1:", CanonicalIdentityJson.WriteHostedWorkerEntryPoint(descriptor)));
     }
 
+    public static EntryPointId CreateServiceOperationEntryPointId(ServiceOperationEntryPointIdentityDescriptor descriptor)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.Profile.Value, nameof(descriptor));
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.RootMethod.Value, nameof(descriptor));
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.OperationKey, nameof(descriptor));
+        return new EntryPointId(Hash("entry-point:v1:", CanonicalIdentityJson.WriteServiceOperationEntryPoint(descriptor)));
+    }
+
     public static string CreateScenarioDirectCallExpansionId(ScenarioDirectCallExpansionIdentityDescriptor descriptor)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
@@ -397,6 +406,11 @@ public static class StableIdentity
         ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.RootMethod.Value, nameof(descriptor));
         ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.Method.Value, nameof(descriptor));
         ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.ControllingFlowNode.Value, nameof(descriptor));
+        if (descriptor.OccurrenceScope is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.OccurrenceScope, nameof(descriptor));
+        }
+
         return new ScenarioDecisionId(Hash(
             "scenario-decision:v1:",
             CanonicalIdentityJson.WriteScenarioDecision(descriptor)));
@@ -689,6 +703,18 @@ internal static class CanonicalIdentityJson
         });
     }
 
+    public static string WriteServiceOperationEntryPoint(ServiceOperationEntryPointIdentityDescriptor descriptor)
+    {
+        return Write(writer =>
+        {
+            writer.WriteNumber("schemaVersion", 1);
+            writer.WriteString("profileId", descriptor.Profile.Value);
+            writer.WriteString("rootMethodId", descriptor.RootMethod.Value);
+            writer.WriteString("operationKey", descriptor.OperationKey);
+            writer.WriteString("kind", "ServiceOperation");
+        });
+    }
+
     public static string WriteScenarioDirectCallExpansion(ScenarioDirectCallExpansionIdentityDescriptor descriptor)
     {
         return Write(writer =>
@@ -969,6 +995,12 @@ internal static class CanonicalIdentityJson
             writer.WriteString("rootMethodId", descriptor.RootMethod.Value);
             writer.WriteString("methodId", descriptor.Method.Value);
             writer.WriteString("controllingFlowNodeId", descriptor.ControllingFlowNode.Value);
+            // The occurrence scope is written only when populated so null-scope descriptors
+            // reproduce the legacy identity JSON byte-for-byte (compatibility requirement).
+            if (descriptor.OccurrenceScope is not null)
+            {
+                writer.WriteString("occurrenceScope", descriptor.OccurrenceScope);
+            }
         });
     }
 

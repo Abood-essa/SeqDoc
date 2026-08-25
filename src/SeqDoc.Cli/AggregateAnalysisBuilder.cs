@@ -12,6 +12,7 @@ using SeqDoc.Core.Identity;
 using SeqDoc.Core.ProgramIndex;
 using SeqDoc.FrameworkModels;
 using SeqDoc.FrameworkModels.AspNetCore;
+using SeqDoc.FrameworkModels.CoreWcf;
 using SeqDoc.FrameworkModels.EntityFramework;
 using SeqDoc.FrameworkModels.FusionCache;
 using SeqDoc.FrameworkModels.MediatR;
@@ -50,6 +51,7 @@ internal sealed class AggregateAnalysisBuilder : IAnalysisBuilder
         [
             new AspNetCoreControllerModel(),
             new AspNetCoreMinimalApiModel(),
+            new CoreWcfServiceModel(),
             new EntityFrameworkQueryModel(),
             new FusionCacheGetOrSetModel(),
             new MediatRDispatchModel(),
