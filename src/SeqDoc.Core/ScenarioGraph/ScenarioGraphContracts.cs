@@ -329,8 +329,9 @@ public sealed record ScenarioPredicateWording
 /// <summary>
 /// One evidence-backed scenario decision derived from a controlling <c>DecisionFlowNode</c>. The
 /// identity follows architecture decision: compilation profile, root/containing method, and controlling flow-node
-/// identity only — never entry-point identity, labels, source text, traversal order, or display
-/// order. The record enforces the same evidence/certainty invariants as <see cref="ScenarioNode"/>:
+/// identity for root/service topology, with the optional exact direct-call occurrence scope as an additional
+/// identity input for callee-local decisions — never entry-point identity, labels, source text, traversal order,
+/// or display order. A null scope preserves legacy root/service identity. The record enforces the same evidence/certainty invariants as <see cref="ScenarioNode"/>:
 /// non-empty evidence, explicit certainty, and certainty never stronger than the strongest evidence.
 /// </summary>
 public sealed record ScenarioDecision
@@ -342,12 +343,17 @@ public sealed record ScenarioDecision
         OperationId condition,
         ImmutableArray<EvidenceRef> evidence,
         CertaintyLevel certainty,
-        ScenarioPredicateWording? predicateWording = null)
+        ScenarioPredicateWording? predicateWording = null,
+        string? occurrenceScope = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id.Value, nameof(id));
         ArgumentException.ThrowIfNullOrWhiteSpace(method.Value, nameof(method));
         ArgumentException.ThrowIfNullOrWhiteSpace(controllingFlowNode.Value, nameof(controllingFlowNode));
         ArgumentException.ThrowIfNullOrWhiteSpace(condition.Value, nameof(condition));
+        if (occurrenceScope is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(occurrenceScope, nameof(occurrenceScope));
+        }
         if (evidence.IsDefaultOrEmpty)
         {
             throw new ArgumentException("A scenario decision requires non-empty evidence.", nameof(evidence));
@@ -370,6 +376,7 @@ public sealed record ScenarioDecision
         Evidence = evidence;
         Certainty = certainty;
         PredicateWording = predicateWording;
+        OccurrenceScope = occurrenceScope;
     }
 
     public ScenarioDecisionId Id { get; }
@@ -385,6 +392,9 @@ public sealed record ScenarioDecision
     public CertaintyLevel Certainty { get; }
 
     public ScenarioPredicateWording? PredicateWording { get; }
+
+    /// <summary>Exact direct-call expansion-step identity for a callee-local decision; null for root/service topology.</summary>
+    public string? OccurrenceScope { get; }
 }
 
 /// <summary>

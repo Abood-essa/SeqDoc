@@ -406,6 +406,11 @@ public static class StableIdentity
         ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.RootMethod.Value, nameof(descriptor));
         ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.Method.Value, nameof(descriptor));
         ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.ControllingFlowNode.Value, nameof(descriptor));
+        if (descriptor.OccurrenceScope is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(descriptor.OccurrenceScope, nameof(descriptor));
+        }
+
         return new ScenarioDecisionId(Hash(
             "scenario-decision:v1:",
             CanonicalIdentityJson.WriteScenarioDecision(descriptor)));
@@ -990,6 +995,12 @@ internal static class CanonicalIdentityJson
             writer.WriteString("rootMethodId", descriptor.RootMethod.Value);
             writer.WriteString("methodId", descriptor.Method.Value);
             writer.WriteString("controllingFlowNodeId", descriptor.ControllingFlowNode.Value);
+            // The occurrence scope is written only when populated so null-scope descriptors
+            // reproduce the legacy identity JSON byte-for-byte (compatibility requirement).
+            if (descriptor.OccurrenceScope is not null)
+            {
+                writer.WriteString("occurrenceScope", descriptor.OccurrenceScope);
+            }
         });
     }
 
