@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "mode": "idle",
-  "activePlanPath": null,
-  "activeCheckpointPath": null,
-  "activeCheckpointId": null,
-  "nextAction": "The verified Issue #22 publication PR is next."
+  "activePlanPath": "docs/project/credit-transfer-plan.md",
+  "activeCheckpointPath": "docs/work/workers/P26",
+  "activeCheckpointId": "P26",
+  "nextAction": "PR #26 maintainer integration is closed after full verification. Push one bounded repair commit to the contributor branch, acknowledge the retained contributor work, merge the original PR, record the compact semantic-delivery workflow decision, then rebase and resume Issue #22."
 }

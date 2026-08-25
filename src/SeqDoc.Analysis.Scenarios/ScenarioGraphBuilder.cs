@@ -886,6 +886,14 @@ public static class ScenarioGraphBuilder
             diagnostics.Add(CreateDiagnostic(profileId, entryPointId, code, summary, detail, evidence, certainty));
         }
 
+        var flowsByMethod = request.Behavior.MethodFlows
+            .GroupBy(flow => flow.Method)
+            .ToDictionary(group => group.Key, group => group.ToArray());
+        var childStepsByParent = expansion.Steps
+            .Where(step => step.ParentStepId is not null)
+            .GroupBy(step => step.ParentStepId!, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+
         foreach (var step in expansion.Steps)
         {
             if (!step.IsComplete || step.IsCycleBoundary)
@@ -893,7 +901,9 @@ public static class ScenarioGraphBuilder
                 continue;
             }
 
-            var targetFlows = request.Behavior.MethodFlows.Where(flow => flow.Method == step.TargetMethod).Take(2).ToArray();
+            var targetFlows = flowsByMethod.TryGetValue(step.TargetMethod, out var matchingFlows)
+                ? matchingFlows.Take(2).ToArray()
+                : [];
             if (targetFlows.Length != 1)
             {
                 continue;
@@ -913,7 +923,7 @@ public static class ScenarioGraphBuilder
                         .ThenBy(dependence => dependence.ControlledOnTrue)
                         .ToImmutableArray());
 
-            var childSteps = expansion.Steps.Where(item => item.ParentStepId == step.Id).ToArray();
+            var childSteps = childStepsByParent.GetValueOrDefault(step.Id, []);
             var unsupportedChildren = new HashSet<string>(StringComparer.Ordinal);
             foreach (var child in childSteps)
             {
