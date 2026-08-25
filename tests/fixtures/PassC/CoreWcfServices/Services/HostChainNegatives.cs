@@ -1,6 +1,7 @@
 using CoreWCF;
 using CoreWCF.Configuration;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Hosting;
 
 namespace CoreWcfServices;
 
@@ -17,6 +18,32 @@ public static class UnusedRegistrationHelper
         {
             builder.AddService<CalculatorService>()
                 .AddServiceEndpoint<CalculatorService, ICalculatorService>(new BasicHttpBinding(), "/CalculatorService/deadHelper");
+        });
+    }
+}
+
+// Unexecuted full-host negative: this is a complete configured host chain, but the returned builder is
+// never Build/Run/RunAsync-consumed. Configuration alone must not prove that the service is executable.
+public static class UnbuiltHostChain
+{
+    public static IHostBuilder Create(string[] args)
+        => Host.CreateDefaultBuilder(args)
+            .ConfigureWebHostDefaults(webBuilder => webBuilder.UseStartup<UnbuiltStartup>());
+}
+
+public sealed class UnbuiltStartup
+{
+    public void ConfigureServices(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
+    {
+        services.AddServiceModelServices();
+    }
+
+    public void Configure(IApplicationBuilder app)
+    {
+        app.UseServiceModel(builder =>
+        {
+            builder.AddService<CalculatorService>()
+                .AddServiceEndpoint<CalculatorService, ICalculatorService>(new BasicHttpBinding(), "/CalculatorService/unbuilt");
         });
     }
 }

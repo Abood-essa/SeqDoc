@@ -294,6 +294,69 @@ public sealed class CoreWcfServiceModelTests
     }
 
     [Fact]
+    public async Task CapabilityAndFaultEvidenceUseOnlyExactTypedAttributesOnTheTarget()
+    {
+        var exactContract = CoreWcfTestIndexFactory.SourceEvidence("exact-contract");
+        var exactOperation = CoreWcfTestIndexFactory.SourceEvidence("exact-operation");
+        var exactFault = CoreWcfTestIndexFactory.SourceEvidence("exact-fault", CertaintyLevel.Conservative);
+        var contaminant = CoreWcfTestIndexFactory.SourceEvidence("foreign-same-qualified-attribute", CertaintyLevel.Unknown);
+        var faultType = new FrameworkTypeIdentity("CoreWcfServices", "1.0.0", "CoreWcfServices.NegativeSquareRootFault");
+
+        var index = CoreWcfTestIndexFactory.ToIndex(
+            [CoreWcfTestIndexFactory.ContractType(), CoreWcfTestIndexFactory.ImplementationType()],
+            [CoreWcfTestIndexFactory.InterfaceMethod("SquareRoot"), CoreWcfTestIndexFactory.ImplementationMethod("SquareRoot")],
+            [
+                CoreWcfTestIndexFactory.Attribute(CoreWcfTestIndexFactory.ContractSymbol, CoreWcfTestIndexFactory.CoreWcfServiceContractAttribute, [exactContract, contaminant]),
+                CoreWcfTestIndexFactory.Attribute(CoreWcfTestIndexFactory.InterfaceMethodSymbol("SquareRoot"), CoreWcfTestIndexFactory.CoreWcfOperationContractAttribute, [exactOperation, contaminant]),
+            ]);
+        var shape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "SquareRoot",
+            members: [CoreWcfTestIndexFactory.InterfaceMember(
+                "SquareRoot",
+                typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(evidence: [exactContract])],
+                methodAttributes:
+                [
+                    CoreWcfTestIndexFactory.OperationContractAttribute(evidence: [exactOperation]),
+                    CoreWcfTestIndexFactory.FaultContractAttribute(faultType, evidence: [exactFault]),
+                ])]);
+
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("SquareRoot", shape),
+            new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index),
+            CancellationToken.None);
+
+        Assert.True(result.Recognized);
+        var capability = Assert.Single(result.Facts.OfType<ServiceOperationCapabilityFact>());
+        var fault = Assert.Single(result.Facts.OfType<ServiceFaultContractFact>());
+        Assert.Equal(CertaintyLevel.Exact, capability.Certainty);
+        Assert.Equal(CertaintyLevel.Conservative, fault.Certainty);
+        Assert.Contains(capability.Evidence.Single().UnderlyingEvidence, evidence => evidence.Id.Value == exactContract.Id.Value);
+        Assert.Contains(capability.Evidence.Single().UnderlyingEvidence, evidence => evidence.Id.Value == exactOperation.Id.Value);
+        Assert.Contains(fault.Evidence.Single().UnderlyingEvidence, evidence => evidence.Id.Value == exactFault.Id.Value);
+        Assert.Equal(CertaintyLevel.Conservative, fault.Evidence.Single().Certainty);
+        Assert.DoesNotContain(capability.Evidence.Single().UnderlyingEvidence, evidence => evidence.Id.Value == contaminant.Id.Value);
+        Assert.DoesNotContain(fault.Evidence.Single().UnderlyingEvidence, evidence => evidence.Id.Value == contaminant.Id.Value);
+
+        var emptyEvidenceShape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "SquareRoot",
+            members: [CoreWcfTestIndexFactory.InterfaceMember(
+                "SquareRoot",
+                typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(evidence: ImmutableArray<EvidenceRef>.Empty)],
+                methodAttributes:
+                [
+                    CoreWcfTestIndexFactory.OperationContractAttribute(evidence: ImmutableArray<EvidenceRef>.Empty),
+                    CoreWcfTestIndexFactory.FaultContractAttribute(faultType, evidence: ImmutableArray<EvidenceRef>.Empty),
+                ])]);
+        var emptyEvidenceResult = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("SquareRoot", emptyEvidenceShape),
+            new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index),
+            CancellationToken.None);
+
+        Assert.False(emptyEvidenceResult.Recognized);
+        Assert.Empty(emptyEvidenceResult.Facts);
+    }
+
+    [Fact]
     public async Task ClientBaseDerivedTypeNeverAdmitsCapabilityButEmitsSourceClientBoundary()
     {
         var index = Index("Add", typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute()], methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute()]);
@@ -346,6 +409,83 @@ public sealed class CoreWcfServiceModelTests
         Assert.True(result.Recognized);
         var clientFact = Assert.Single(result.Facts.OfType<ServiceClientBoundaryFact>());
         Assert.Equal(ServiceClientKind.GeneratedClient, clientFact.ClientKind);
+    }
+
+    [Fact]
+    public async Task ClientBoundaryRequiresExactContractAndOperationEvidence()
+    {
+        var exactContract = CoreWcfTestIndexFactory.SourceEvidence("client-exact-contract", CertaintyLevel.Conservative);
+        var exactOperation = CoreWcfTestIndexFactory.SourceEvidence("client-exact-operation");
+        var contaminant = CoreWcfTestIndexFactory.SourceEvidence("client-foreign-same-qualified", CertaintyLevel.Unknown);
+        var index = Index("Add", typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute()], methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute()]);
+        var shape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "Add",
+            members:
+            [
+                CoreWcfTestIndexFactory.InterfaceMember(
+                    "Add",
+                    typeAttributes:
+                    [
+                        CoreWcfTestIndexFactory.ServiceContractAttribute(evidence: [exactContract]),
+                        new FrameworkAttributeApplicationIdentity(
+                            new FrameworkTypeIdentity("Foreign.Assembly", "1.0.0.0", CoreWcfTestIndexFactory.CoreWcfServiceContractAttribute),
+                            [], [contaminant]),
+                    ],
+                    methodAttributes:
+                    [
+                        CoreWcfTestIndexFactory.OperationContractAttribute(evidence: [exactOperation]),
+                        new FrameworkAttributeApplicationIdentity(
+                            new FrameworkTypeIdentity("Foreign.Assembly", "1.0.0.0", CoreWcfTestIndexFactory.CoreWcfOperationContractAttribute),
+                            [], [contaminant]),
+                    ]),
+            ],
+            declaringType: CoreWcfTestIndexFactory.EligibleImplementationTypeShape(clientBaseDerived: true));
+
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("Add", shape),
+            new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index),
+            CancellationToken.None);
+
+        var client = Assert.Single(result.Facts.OfType<ServiceClientBoundaryFact>());
+        var underlying = client.Evidence.Single().UnderlyingEvidence;
+        Assert.Contains(underlying, evidence => evidence.Id == exactContract.Id);
+        Assert.Contains(underlying, evidence => evidence.Id == exactOperation.Id);
+        Assert.DoesNotContain(underlying, evidence => evidence.Id == contaminant.Id);
+        Assert.Equal(CertaintyLevel.Conservative, client.Certainty);
+
+        var emptyEvidenceShape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "Add",
+            members:
+            [
+                CoreWcfTestIndexFactory.InterfaceMember(
+                    "Add",
+                    typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(evidence: ImmutableArray<EvidenceRef>.Empty)],
+                    methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(evidence: ImmutableArray<EvidenceRef>.Empty)]),
+            ],
+            declaringType: CoreWcfTestIndexFactory.EligibleImplementationTypeShape(clientBaseDerived: true));
+        var emptyEvidenceResult = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("Add", emptyEvidenceShape),
+            new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index),
+            CancellationToken.None);
+        Assert.Empty(emptyEvidenceResult.Facts.OfType<ServiceClientBoundaryFact>());
+    }
+
+    [Fact]
+    public async Task GeneratedClientWithEmptyMarkerEvidenceFailsClosed()
+    {
+        var index = Index("Add", typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute()], methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute()]);
+        var shape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "Add",
+            declaringType: CoreWcfTestIndexFactory.EligibleImplementationTypeShape(
+                metadataName: "CoreWcfServices.CalculatorGeneratedClient", clientBaseDerived: true),
+            declaringTypeAttributes: [CoreWcfTestIndexFactory.GeneratedCodeAttribute(ImmutableArray<EvidenceRef>.Empty)]);
+
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("Add", shape),
+            new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index),
+            CancellationToken.None);
+
+        Assert.Empty(result.Facts.OfType<ServiceClientBoundaryFact>());
     }
 
     [Fact]

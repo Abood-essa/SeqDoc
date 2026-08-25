@@ -56,7 +56,7 @@ internal static class CoreWcfTestIndexFactory
 
     public static MethodId ImplementationMethodId(string name) => new($"method:v1:CoreWcfServices.CalculatorService.{name}");
 
-    public static EvidenceRef SourceEvidence(string symbol)
+    public static EvidenceRef SourceEvidence(string symbol, CertaintyLevel certainty = CertaintyLevel.Exact)
         => new(
             new EvidenceId($"evidence:v1:{symbol}"),
             EvidenceKind.Source,
@@ -64,16 +64,19 @@ internal static class CoreWcfTestIndexFactory
             new SourceRange(DocumentId, new SourcePosition(10, 0), new SourcePosition(10, 30)),
             symbol,
             detail: null,
-            CertaintyLevel.Exact);
+            certainty);
 
-    public static ProgramAttributeApplication Attribute(SymbolId target, string attributeType)
+    public static ProgramAttributeApplication Attribute(
+        SymbolId target,
+        string attributeType,
+        ImmutableArray<EvidenceRef> evidence = default)
         => new(
             $"attribute:v1:{attributeType}|{target.Value}",
             target,
             attributeType,
             $"{attributeType}.ctor",
             [],
-            [SourceEvidence(attributeType)]);
+            evidence.IsDefault ? [SourceEvidence(attributeType)] : evidence);
 
     public static ProgramProject Project()
         => new(ProjectId, "CoreWcfServices", ProjectRelativePath, Profile.Id, "net10.0", ProjectKind.Library, "project-build:v1:test", [], [SourceEvidence("project")]);
@@ -207,26 +210,36 @@ internal static class CoreWcfTestIndexFactory
     }
 
     /// <summary>Exact ServiceContract/OperationContract/FaultContract attribute identities for either admitted family.</summary>
-    public static FrameworkAttributeApplicationIdentity ServiceContractAttribute(bool coreWcf = true)
+    public static FrameworkAttributeApplicationIdentity ServiceContractAttribute(
+        bool coreWcf = true,
+        ImmutableArray<EvidenceRef> evidence = default)
         => coreWcf
-            ? new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(CoreWcfAssembly, CoreWcfAssemblyVersion, CoreWcfServiceContractAttribute), [])
-            : new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, SystemServiceModelServiceContractAttribute), []);
+            ? new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(CoreWcfAssembly, CoreWcfAssemblyVersion, CoreWcfServiceContractAttribute), [], evidence.IsDefault ? [SourceEvidence(CoreWcfServiceContractAttribute)] : evidence)
+            : new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, SystemServiceModelServiceContractAttribute), [], evidence.IsDefault ? [SourceEvidence(SystemServiceModelServiceContractAttribute)] : evidence);
 
-    public static FrameworkAttributeApplicationIdentity OperationContractAttribute(bool coreWcf = true)
+    public static FrameworkAttributeApplicationIdentity OperationContractAttribute(
+        bool coreWcf = true,
+        ImmutableArray<EvidenceRef> evidence = default)
         => coreWcf
-            ? new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(CoreWcfAssembly, CoreWcfAssemblyVersion, CoreWcfOperationContractAttribute), [])
-            : new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, SystemServiceModelOperationContractAttribute), []);
+            ? new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(CoreWcfAssembly, CoreWcfAssemblyVersion, CoreWcfOperationContractAttribute), [], evidence.IsDefault ? [SourceEvidence(CoreWcfOperationContractAttribute)] : evidence)
+            : new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, SystemServiceModelOperationContractAttribute), [], evidence.IsDefault ? [SourceEvidence(SystemServiceModelOperationContractAttribute)] : evidence);
 
-    public static FrameworkAttributeApplicationIdentity FaultContractAttribute(FrameworkTypeIdentity faultType, bool coreWcf = true)
+    public static FrameworkAttributeApplicationIdentity FaultContractAttribute(
+        FrameworkTypeIdentity faultType,
+        bool coreWcf = true,
+        ImmutableArray<EvidenceRef> evidence = default)
         => coreWcf
-            ? new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(CoreWcfAssembly, CoreWcfAssemblyVersion, CoreWcfFaultContractAttribute), [faultType])
-            : new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, SystemServiceModelFaultContractAttribute), [faultType]);
+            ? new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(CoreWcfAssembly, CoreWcfAssemblyVersion, CoreWcfFaultContractAttribute), [faultType], evidence.IsDefault ? [SourceEvidence(CoreWcfFaultContractAttribute)] : evidence)
+            : new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, SystemServiceModelFaultContractAttribute), [faultType], evidence.IsDefault ? [SourceEvidence(SystemServiceModelFaultContractAttribute)] : evidence);
 
     public static FrameworkAttributeApplicationIdentity ForeignAssemblyServiceContractAttribute()
         => new(new FrameworkTypeIdentity("Foreign.Assembly", "1.0.0.0", CoreWcfServiceContractAttribute), []);
 
-    public static FrameworkAttributeApplicationIdentity GeneratedCodeAttribute()
-        => new(new FrameworkTypeIdentity(CoreLibAssembly, CoreLibAssemblyVersion, GeneratedCodeAttributeMetadataName), []);
+    public static FrameworkAttributeApplicationIdentity GeneratedCodeAttribute(ImmutableArray<EvidenceRef> evidence = default)
+        => new(
+            new FrameworkTypeIdentity(CoreLibAssembly, CoreLibAssemblyVersion, GeneratedCodeAttributeMetadataName),
+            [],
+            evidence.IsDefault ? [SourceEvidence(GeneratedCodeAttributeMetadataName)] : evidence);
 
     public static FrameworkInterfaceMemberIdentity InterfaceMember(
         string name,

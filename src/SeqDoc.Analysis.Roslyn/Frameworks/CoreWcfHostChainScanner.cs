@@ -30,6 +30,8 @@ internal static class CoreWcfHostChainScanner
     private const string AspNetCoreHostingAbstractionsAssembly = "Microsoft.AspNetCore.Hosting.Abstractions";
     private const string AspNetCoreHttpAbstractionsAssembly = "Microsoft.AspNetCore.Http.Abstractions";
     private const string CoreWcfAssembly = "CoreWCF.Primitives";
+    private const string FrameworkVersion = "10.0.0.0";
+    private const string CoreWcfVersion = "1.9.0.0";
 
     private const string HostType = "Microsoft.Extensions.Hosting.Host";
     private const string HostBuilderType = "Microsoft.Extensions.Hosting.IHostBuilder";
@@ -58,12 +60,19 @@ internal static class CoreWcfHostChainScanner
 
         foreach (var (startupType, startupEvidence) in admittedStartups)
         {
-            var configureMethod = startupType.GetMembers("Configure")
+            var configureMethods = startupType.GetMembers("Configure")
                 .OfType<IMethodSymbol>()
-                .FirstOrDefault(candidate =>
+                .Where(candidate =>
                     !candidate.IsStatic
+                    && candidate.MethodKind == MethodKind.Ordinary
+                    && !candidate.IsAbstract
+                    && SymbolEqualityComparer.Default.Equals(candidate.ContainingType, startupType)
+                    && candidate.Arity == 0
                     && candidate.Parameters.Length == 1
-                    && IsExactType(candidate.Parameters[0].Type, AspNetCoreHttpAbstractionsAssembly, ApplicationBuilderType));
+                    && candidate.ReturnsVoid
+                    && IsExactType(candidate.Parameters[0].Type, AspNetCoreHttpAbstractionsAssembly, FrameworkVersion, ApplicationBuilderType))
+                .ToArray();
+            var configureMethod = configureMethods.Length == 1 ? configureMethods[0] : null;
             if (configureMethod is null)
             {
                 continue;
@@ -140,18 +149,29 @@ internal static class CoreWcfHostChainScanner
         IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents)
     {
         var admitted = new Dictionary<INamedTypeSymbol, ImmutableArray<EvidenceRef>>(SymbolEqualityComparer.Default);
-        foreach (var tree in compilation.SyntaxTrees)
+        var entryPoint = compilation.GetEntryPoint(CancellationToken.None);
+        if (entryPoint is null || entryPoint.Locations.Any(location => !location.IsInSource))
         {
+            return admitted;
+        }
+
+        foreach (var reference in entryPoint.DeclaringSyntaxReferences)
+        {
+            var tree = reference.SyntaxTree;
             if (!documents.ContainsKey(tree))
             {
                 continue;
             }
 
             var model = compilation.GetSemanticModel(tree);
-            foreach (var invocationSyntax in tree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>())
+            if (model.GetOperation(reference.GetSyntax()) is not { } entryPointOperation)
             {
-                if (model.GetOperation(invocationSyntax) is not IInvocationOperation configureCall
-                    || !IsExactConfigureWebHostDefaults(configureCall.TargetMethod))
+                continue;
+            }
+
+            foreach (var configureCall in EnumerateInvocations(entryPointOperation))
+            {
+                if (!IsExactConfigureWebHostDefaults(configureCall.TargetMethod))
                 {
                     continue;
                 }
@@ -168,8 +188,15 @@ internal static class CoreWcfHostChainScanner
                     continue;
                 }
 
+                if (!TryFindTerminal(configureCall, entryPointOperation, out var buildCall, out var terminalCall))
+                {
+                    continue;
+                }
+
                 var chainEvidence = CreateEvidence(createBuilderCall.Syntax, documents)
                     .Concat(CreateEvidence(configureCall.Syntax, documents))
+                    .Concat(CreateEvidence(buildCall.Syntax, documents))
+                    .Concat(CreateEvidence(terminalCall.Syntax, documents))
                     .ToImmutableArray();
                 foreach (var useStartupCall in EnumerateInvocations(lambdaOperation))
                 {
@@ -196,7 +223,28 @@ internal static class CoreWcfHostChainScanner
     }
 
     private static IEnumerable<IInvocationOperation> EnumerateInvocations(IOperation root)
-        => root.DescendantsAndSelf().OfType<IInvocationOperation>();
+    {
+        var pending = new Stack<IOperation>();
+        pending.Push(root);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            if (current is IAnonymousFunctionOperation or ILocalFunctionOperation && !ReferenceEquals(current, root))
+            {
+                continue;
+            }
+
+            if (current is IInvocationOperation invocation)
+            {
+                yield return invocation;
+            }
+
+            foreach (var child in current.ChildOperations.Reverse())
+            {
+                pending.Push(child);
+            }
+        }
+    }
 
     private static IOperation? GetArgument(IInvocationOperation call, int ordinal)
         => call.Arguments.FirstOrDefault(argument => argument.Parameter?.Ordinal == ordinal)?.Value;
@@ -239,84 +287,178 @@ internal static class CoreWcfHostChainScanner
         IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents)
         => RoslynProgramIndexExtractor.CreateSyntaxEvidence(reference, symbol, documents);
 
+    private static bool TryFindTerminal(
+        IInvocationOperation configureCall,
+        IOperation entryPointOperation,
+        out IInvocationOperation buildCall,
+        out IInvocationOperation terminalCall)
+    {
+        buildCall = null!;
+        terminalCall = null!;
+        foreach (var candidate in EnumerateInvocations(entryPointOperation))
+        {
+            if (!IsExactTerminal(candidate.TargetMethod))
+            {
+                continue;
+            }
+
+            if (UnwrapAllConversionsAndParentheses(GetArgument(candidate, ordinal: 0)) is not IInvocationOperation build
+                || !IsExactBuild(build.TargetMethod))
+            {
+                continue;
+            }
+
+            if (UnwrapAllConversionsAndParentheses(build.Instance) is not IInvocationOperation receiver
+                || !IsExactConfigureWebHostDefaults(receiver.TargetMethod)
+                || !ReferenceEquals(receiver.Syntax, configureCall.Syntax))
+            {
+                continue;
+            }
+
+            buildCall = build;
+            terminalCall = candidate;
+            return true;
+        }
+
+        return false;
+    }
+
     private static bool IsExactConfigureWebHostDefaults(IMethodSymbol target)
     {
         var definition = target.OriginalDefinition;
-        return definition.ContainingAssembly?.Identity.Name == AspNetCoreAssembly
+        return IsExactAssembly(definition, AspNetCoreAssembly, FrameworkVersion)
             && RoslynProgramIndexExtractor.GetMetadataName(definition.ContainingType) == GenericHostBuilderExtensionsType
             && definition.MetadataName == "ConfigureWebHostDefaults"
             && definition.Arity == 0
             && definition.Parameters.Length == 2
-            && IsExactType(definition.Parameters[0].Type, HostingAbstractionsAssembly, HostBuilderType);
+            && IsExactType(definition.Parameters[0].Type, HostingAbstractionsAssembly, FrameworkVersion, HostBuilderType)
+            && IsExactActionOfWebHostBuilder(definition.Parameters[1].Type)
+            && IsExactType(definition.ReturnType, HostingAbstractionsAssembly, FrameworkVersion, HostBuilderType);
     }
 
     private static bool IsExactCreateDefaultBuilder(IMethodSymbol target)
     {
         var definition = target.OriginalDefinition;
-        return definition.ContainingAssembly?.Identity.Name == HostingAssembly
+        return IsExactAssembly(definition, HostingAssembly, FrameworkVersion)
             && RoslynProgramIndexExtractor.GetMetadataName(definition.ContainingType) == HostType
             && definition.MetadataName == "CreateDefaultBuilder"
             && definition.Arity == 0
             && definition.Parameters.Length == 1
-            && definition.Parameters[0].Type is IArrayTypeSymbol { ElementType.SpecialType: SpecialType.System_String };
+            && IsExactStringArray(definition.Parameters[0].Type)
+            && IsExactType(definition.ReturnType, HostingAbstractionsAssembly, FrameworkVersion, HostBuilderType);
     }
 
     private static bool IsExactUseStartup(IMethodSymbol target)
     {
         var definition = target.OriginalDefinition;
-        return definition.ContainingAssembly?.Identity.Name == AspNetCoreHostingAssembly
+        return IsExactAssembly(definition, AspNetCoreHostingAssembly, FrameworkVersion)
             && RoslynProgramIndexExtractor.GetMetadataName(definition.ContainingType) == WebHostBuilderExtensionsType
             && definition.MetadataName == "UseStartup"
             && definition.Arity == 1
             && definition.Parameters.Length == 1
-            && IsExactType(definition.Parameters[0].Type, AspNetCoreHostingAbstractionsAssembly, WebHostBuilderType);
+            && IsExactType(definition.Parameters[0].Type, AspNetCoreHostingAbstractionsAssembly, FrameworkVersion, WebHostBuilderType)
+            && IsExactType(definition.ReturnType, AspNetCoreHostingAbstractionsAssembly, FrameworkVersion, WebHostBuilderType);
     }
 
     private static bool IsExactUseServiceModel(IMethodSymbol target)
     {
         var definition = target.OriginalDefinition;
-        return definition.ContainingAssembly?.Identity.Name == CoreWcfAssembly
+        return IsExactAssembly(definition, CoreWcfAssembly, CoreWcfVersion)
             && RoslynProgramIndexExtractor.GetMetadataName(definition.ContainingType) == ServiceModelApplicationBuilderExtensionsType
             && definition.MetadataName == "UseServiceModel"
             && definition.Arity == 0
             && definition.Parameters.Length == 2
-            && IsExactType(definition.Parameters[0].Type, AspNetCoreHttpAbstractionsAssembly, ApplicationBuilderType)
-            && IsExactActionOfServiceBuilder(definition.Parameters[1].Type);
+            && IsExactType(definition.Parameters[0].Type, AspNetCoreHttpAbstractionsAssembly, FrameworkVersion, ApplicationBuilderType)
+            && IsExactActionOfServiceBuilder(definition.Parameters[1].Type)
+            && IsExactType(definition.ReturnType, AspNetCoreHttpAbstractionsAssembly, FrameworkVersion, ApplicationBuilderType);
     }
 
-    // System.Action<T>'s exact compile-time containing assembly varies by target framework/reference
-    // assembly facade (the same reason GeneratedCodeAttribute's compile-time assembly differs from its
-    // run-time one); the security-relevant fact here is the constructed type argument identity, which is
-    // checked exactly, so the delegate's own namespace/name/arity is enough to anchor it.
+    // Require both the finite exact core facade identity of System.Action<T> and its exact constructed
+    // framework type argument. IsExactCoreType admits the supported compile-time facade assemblies and
+    // pinned framework version instead of allowing a namespace/name/arity lookalike delegate.
     private static bool IsExactActionOfServiceBuilder(ITypeSymbol type)
-        => type is INamedTypeSymbol { MetadataName: "Action`1", Arity: 1 } action
-            && action.ContainingNamespace.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) == "System"
-            && IsExactType(action.TypeArguments[0], CoreWcfAssembly, ServiceBuilderType);
+        => type is INamedTypeSymbol { Arity: 1 } action
+            && IsExactCoreType(action, FrameworkVersion, "System.Action`1")
+            && IsExactType(action.TypeArguments[0], CoreWcfAssembly, CoreWcfVersion, ServiceBuilderType);
+
+    private static bool IsExactActionOfWebHostBuilder(ITypeSymbol type)
+        => type is INamedTypeSymbol { Arity: 1 } action
+            && IsExactCoreType(action, FrameworkVersion, "System.Action`1")
+            && IsExactType(action.TypeArguments[0], AspNetCoreHostingAbstractionsAssembly, FrameworkVersion, WebHostBuilderType);
+
+    private static bool IsExactBuild(IMethodSymbol target)
+    {
+        var definition = target.OriginalDefinition;
+        return IsExactAssembly(definition, HostingAbstractionsAssembly, FrameworkVersion)
+            && RoslynProgramIndexExtractor.GetMetadataName(definition.ContainingType) == HostBuilderType
+            && definition.MetadataName == "Build"
+            && definition.Arity == 0
+            && definition.Parameters.Length == 0
+            && IsExactType(definition.ReturnType, HostingAbstractionsAssembly, FrameworkVersion, "Microsoft.Extensions.Hosting.IHost");
+    }
+
+    private static bool IsExactTerminal(IMethodSymbol target)
+    {
+        var definition = target.OriginalDefinition;
+        if (!IsExactAssembly(definition, HostingAbstractionsAssembly, FrameworkVersion)
+            || RoslynProgramIndexExtractor.GetMetadataName(definition.ContainingType) != "Microsoft.Extensions.Hosting.HostingAbstractionsHostExtensions"
+            || definition.Arity != 0
+            || definition.Parameters.Length == 0
+            || !IsExactType(definition.Parameters[0].Type, HostingAbstractionsAssembly, FrameworkVersion, "Microsoft.Extensions.Hosting.IHost"))
+        {
+            return false;
+        }
+
+        return (definition.MetadataName == "Run"
+            && definition.Parameters.Length == 1
+            && definition.ReturnsVoid)
+            || (definition.MetadataName == "RunAsync"
+                && definition.Parameters.Length == 2
+                && IsExactCoreType(definition.Parameters[1].Type, FrameworkVersion, "System.Threading.CancellationToken")
+                && IsExactCoreType(definition.ReturnType, FrameworkVersion, "System.Threading.Tasks.Task"));
+    }
 
     private static bool IsExactAddService(IMethodSymbol target)
     {
         var definition = target.OriginalDefinition;
-        return definition.ContainingAssembly?.Identity.Name == CoreWcfAssembly
+        return IsExactAssembly(definition, CoreWcfAssembly, CoreWcfVersion)
             && RoslynProgramIndexExtractor.GetMetadataName(definition.ContainingType) == ServiceBuilderType
             && definition.MetadataName == "AddService"
             && definition.Arity == 1
-            && definition.Parameters.Length == 0;
+            && definition.Parameters.Length == 0
+            && IsExactType(definition.ReturnType, CoreWcfAssembly, CoreWcfVersion, ServiceBuilderType);
     }
 
     private static bool IsExactAddServiceEndpoint(IMethodSymbol target)
     {
         var definition = target.OriginalDefinition;
-        return definition.ContainingAssembly?.Identity.Name == CoreWcfAssembly
+        return IsExactAssembly(definition, CoreWcfAssembly, CoreWcfVersion)
             && RoslynProgramIndexExtractor.GetMetadataName(definition.ContainingType) == ServiceBuilderType
             && definition.MetadataName == "AddServiceEndpoint"
             && definition.Arity == 2
             && definition.Parameters.Length == 2
-            && definition.Parameters[0].Type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) == "CoreWCF.Channels.Binding"
-            && definition.Parameters[1].Type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) == "System.String";
+            && IsExactType(definition.Parameters[0].Type, CoreWcfAssembly, CoreWcfVersion, "CoreWCF.Channels.Binding")
+            && IsExactCoreType(definition.Parameters[1].Type, FrameworkVersion, "System.String")
+            && IsExactType(definition.ReturnType, CoreWcfAssembly, CoreWcfVersion, ServiceBuilderType);
     }
 
-    private static bool IsExactType(ITypeSymbol type, string assembly, string metadataName)
+    private static bool IsExactAssembly(IMethodSymbol method, string assembly, string version)
+        => method.ContainingAssembly?.Identity.Name == assembly
+            && method.ContainingAssembly.Identity.Version?.ToString() == version;
+
+    private static bool IsExactType(ITypeSymbol type, string assembly, string version, string metadataName)
         => type is INamedTypeSymbol named
             && named.ContainingAssembly?.Identity.Name == assembly
+            && named.ContainingAssembly.Identity.Version?.ToString() == version
+            && RoslynProgramIndexExtractor.GetMetadataName(named) == metadataName;
+
+    private static bool IsExactStringArray(ITypeSymbol type)
+        => type is IArrayTypeSymbol { Rank: 1, ElementType: { } element }
+            && IsExactCoreType(element, FrameworkVersion, "System.String");
+
+    private static bool IsExactCoreType(ITypeSymbol type, string version, string metadataName)
+        => type is INamedTypeSymbol named
+            && named.ContainingAssembly?.Identity.Version?.ToString() == version
+            && named.ContainingAssembly.Identity.Name is "System.Private.CoreLib" or "System.Runtime" or "System.Runtime.Extensions"
             && RoslynProgramIndexExtractor.GetMetadataName(named) == metadataName;
 }

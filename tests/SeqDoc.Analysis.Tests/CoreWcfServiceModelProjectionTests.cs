@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Diagnostics;
 using Microsoft.CodeAnalysis;
 using SeqDoc.Analysis.Behavior;
 using SeqDoc.Analysis.Roslyn;
@@ -119,6 +120,29 @@ public sealed class CoreWcfServiceModelProjectionTests
     }
 
     [Fact]
+    public async Task ConfiguredHostChainWithoutBuildOrRunProducesNoRegistrationOrRoot()
+    {
+        var (programIndex, behavior, framework, profile) = await BuildPipelineInputsAsync();
+
+        // The fixture contains both the executed Program chain and a complete, same-shaped chain that
+        // only returns an IHostBuilder. The latter must not promote configuration into registration or
+        // an executable service-operation root.
+        var registrations = framework.Facts.OfType<ServiceEndpointRegistrationFact>().ToArray();
+        Assert.Single(registrations);
+        Assert.DoesNotContain(registrations, fact => fact.Address == "/CalculatorService/unbuilt");
+
+        var graphSet = ScenarioGraphBuilder.Build(new ScenarioAnalysisRequest(
+            profile, programIndex, behavior, framework,
+            new SeqDoc.Core.Semantics.SemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], "semantic-test"),
+            new SeqDoc.Core.Semantics.DependencyInjectionFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], "di-test"),
+            new SeqDoc.Core.Semantics.StructuralResultFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], "structural-test"),
+            new SeqDoc.Core.Semantics.NonGetSemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], [], [], [], [], "non-get-test")));
+
+        Assert.DoesNotContain(graphSet.Graphs, graph => graph.RootMethod.Value.Contains("UnbuiltStartup", StringComparison.Ordinal));
+        Assert.Contains(graphSet.Graphs, graph => graph.OperationKey == $"{CalculatorContractMetadataName}.Add");
+    }
+
+    [Fact]
     public async Task ClientBaseConstructedForOneContractNeverEmitsABoundaryForASeparatelyImplementedContract()
     {
         var (aggregate, _) = await AnalyzeFixtureAsync();
@@ -135,6 +159,129 @@ public sealed class CoreWcfServiceModelProjectionTests
         Assert.DoesNotContain(
             aggregate.Facts.OfType<ServiceOperationCapabilityFact>(),
             fact => fact.ImplementationType == "CoreWcfServices.MismatchedContractClient" && fact.ServiceContractType == CalculatorContractMetadataName);
+    }
+
+    [Fact]
+    public async Task RealRoslynCoexistenceKeepsForeignSameQualifiedAttributesOutOfTheDiagram()
+    {
+        var temporaryRoot = Path.Combine(Path.GetTempPath(), $"seqdoc-corewcf-coexistence-{Guid.NewGuid():N}");
+        try
+        {
+            var sourceRoot = Path.Combine(FindRepositoryRoot(), "tests", "fixtures", "PassC", "CoreWcfServices");
+            CopyFixture(sourceRoot, temporaryRoot);
+            var repositoryRoot = FindRepositoryRoot();
+            foreach (var fileName in new[] { "Directory.Build.props", "Directory.Packages.props", "NuGet.config", "global.json" })
+            {
+                var sourceFile = Path.Combine(repositoryRoot, fileName);
+                if (File.Exists(sourceFile))
+                {
+                    File.Copy(sourceFile, Path.Combine(temporaryRoot, fileName));
+                }
+            }
+            Directory.CreateDirectory(Path.Combine(temporaryRoot, "foreign"));
+            File.WriteAllText(Path.Combine(temporaryRoot, "foreign", "ForeignAttributes.csproj"), """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+                </Project>
+                """);
+            File.WriteAllText(Path.Combine(temporaryRoot, "foreign", "Attributes.cs"), """
+                namespace CoreWCF;
+                [System.AttributeUsage(System.AttributeTargets.Interface | System.AttributeTargets.Method)]
+                public sealed class ServiceContractAttribute : System.Attribute { }
+                [System.AttributeUsage(System.AttributeTargets.Method)]
+                public sealed class OperationContractAttribute : System.Attribute { }
+                """);
+            File.WriteAllText(Path.Combine(temporaryRoot, "Coexistence.cs"), """
+                extern alias foreign;
+                using CoreWCF;
+                using Microsoft.Extensions.Hosting;
+                namespace CoreWcfServices;
+                [ServiceContract]
+                [foreign::CoreWCF.ServiceContract]
+                public interface ICoexistenceService
+                {
+                    [OperationContract]
+                    [foreign::CoreWCF.OperationContract]
+                    string Echo(string value);
+                }
+                public sealed class CoexistenceService : ICoexistenceService
+                {
+                    public string Echo(string value) => value;
+                }
+                """);
+
+            var projectFile = Path.Combine(temporaryRoot, "CoreWcfServices.csproj");
+            var project = File.ReadAllText(projectFile)
+                .Replace("</Project>", "<ItemGroup><Compile Remove=\"foreign/**/*.cs\" /><Reference Include=\"ForeignAttributes\"><HintPath>foreign/bin/Release/net10.0/ForeignAttributes.dll</HintPath><Aliases>foreign</Aliases></Reference></ItemGroup></Project>");
+            File.WriteAllText(projectFile, project);
+            var startupFile = Path.Combine(temporaryRoot, "Startup.cs");
+            File.WriteAllText(startupFile, File.ReadAllText(startupFile).Replace(
+                "});\n    }\n}",
+                "builder.AddService<CoexistenceService>()\n                .AddServiceEndpoint<CoexistenceService, ICoexistenceService>(new BasicHttpBinding(), \"/Coexistence\");\n        });\n    }\n}"));
+
+            await RunDotnetAsync(temporaryRoot, "build foreign/ForeignAttributes.csproj -c Release --nologo");
+            await RunDotnetAsync(temporaryRoot, "restore CoreWcfServices.csproj --nologo --force");
+            await RunDotnetAsync(temporaryRoot, "build CoreWcfServices.csproj -c Release --no-restore --nologo");
+            var request = new CompilationAnalysisRequest(
+                temporaryRoot,
+                projectFile,
+                CompilationProfile.Create("CoreWcfServices.csproj", "Release", "net10.0"));
+            var extractionResult = await new RoslynProfileAnalysisExtractor().ExtractAsync(request, CancellationToken.None);
+            Assert.True(extractionResult.IsSuccess, string.Join(Environment.NewLine, extractionResult.Diagnostics.Select(d => d.TechnicalCause)));
+            var extraction = extractionResult.Value!;
+            var behaviorResult = await new BehaviorAnalyzer().AnalyzeAsync(
+                new BehaviorAnalysisRequest(extraction.ProgramIndex, extraction.BehaviorInput), CancellationToken.None);
+            Assert.True(behaviorResult.IsSuccess);
+            var framework = await new FrameworkModelHost([new CoreWcfServiceModel()]).AnalyzeAsync(new FrameworkAnalysisRequest(
+                new FrameworkDetectionContext(request.Profile, extraction.ProgramIndex),
+                new FrameworkAnalysisContext(request.Profile, extraction.ProgramIndex), extraction.Operations, extraction.Symbols), CancellationToken.None);
+            var coexistenceCapability = Assert.Single(framework.Facts.OfType<ServiceOperationCapabilityFact>(),
+                fact => fact.ImplementationType == "CoreWcfServices.CoexistenceService");
+            var coexistenceMethod = Assert.Single(extraction.Symbols,
+                symbol => symbol.MetadataName == "Echo"
+                    && symbol.MethodShape?.DeclaringType.Identity.MetadataName == "CoreWcfServices.CoexistenceService");
+            var coexistenceMember = Assert.Single(coexistenceMethod.MethodShape!.ImplementedInterfaceMembers,
+                member => member.InterfaceType.MetadataName == "CoreWcfServices.ICoexistenceService"
+                    && member.InterfaceMethodMetadataName == "Echo");
+            var genuineApplications = coexistenceMember.InterfaceTypeAttributes
+                .Concat(coexistenceMember.InterfaceMethodAttributes)
+                .Where(application => application.AttributeType.AssemblyIdentity == "CoreWCF.Primitives")
+                .ToArray();
+            var foreignApplications = coexistenceMember.InterfaceTypeAttributes
+                .Concat(coexistenceMember.InterfaceMethodAttributes)
+                .Where(application => application.AttributeType.AssemblyIdentity == "ForeignAttributes")
+                .ToArray();
+            Assert.Equal(2, genuineApplications.Length);
+            Assert.Equal(2, foreignApplications.Length);
+            var genuineIds = genuineApplications.SelectMany(application => application.Evidence).Select(evidence => evidence.Id).ToHashSet();
+            var foreignIds = foreignApplications.SelectMany(application => application.Evidence).Select(evidence => evidence.Id).ToHashSet();
+            Assert.NotEmpty(genuineIds);
+            Assert.NotEmpty(foreignIds);
+            Assert.Empty(genuineIds.Intersect(foreignIds));
+            var capabilityUnderlying = coexistenceCapability.Evidence.Single().UnderlyingEvidence;
+            Assert.All(genuineIds, id => Assert.Contains(capabilityUnderlying, evidence => evidence.Id == id));
+            Assert.All(foreignIds, id => Assert.DoesNotContain(capabilityUnderlying, evidence => evidence.Id == id));
+            Assert.Equal(CertaintyLevel.Exact, coexistenceCapability.Certainty);
+
+            var graphSet = ScenarioGraphBuilder.Build(new ScenarioAnalysisRequest(
+                request.Profile, extraction.ProgramIndex, behaviorResult.Value!, framework,
+                new SeqDoc.Core.Semantics.SemanticFactSet(1, "test", request.Profile, extraction.ProgramIndex.IndexFingerprint, [], [], [], [], "semantic-test"),
+                new SeqDoc.Core.Semantics.DependencyInjectionFactSet(1, "test", request.Profile, extraction.ProgramIndex.IndexFingerprint, [], [], [], "di-test"),
+                new SeqDoc.Core.Semantics.StructuralResultFactSet(1, "test", request.Profile, extraction.ProgramIndex.IndexFingerprint, [], [], [], "structural-test"),
+                new SeqDoc.Core.Semantics.NonGetSemanticFactSet(1, "test", request.Profile, extraction.ProgramIndex.IndexFingerprint, [], [], [], [], [], [], [], [], "non-get-test")));
+            var graph = Assert.Single(graphSet.Graphs, graph => graph.OperationKey == "CoreWcfServices.ICoexistenceService.Echo");
+            Assert.Equal(ScenarioRootKind.ServiceOperation, graph.RootKind);
+            var plan = DocumentationPlanner.Plan(graph);
+            Assert.NotEmpty(plan.Diagram.Messages);
+            Assert.DoesNotContain(plan.Diagram.Messages, message => message.Label.Contains("foreign", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            if (Directory.Exists(temporaryRoot))
+            {
+                Directory.Delete(temporaryRoot, recursive: true);
+            }
+        }
     }
 
     [Fact]
@@ -211,6 +358,42 @@ public sealed class CoreWcfServiceModelProjectionTests
             root,
             Path.Combine(root, FixtureRelativePath.Replace('/', Path.DirectorySeparatorChar)),
             CompilationProfile.Create(FixtureRelativePath, "Release", "net10.0"));
+    }
+
+    private static void CopyFixture(string sourceDirectory, string destinationRoot)
+    {
+        Directory.CreateDirectory(destinationRoot);
+        foreach (var file in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(sourceDirectory, file);
+            if (relative is "Directory.Build.props" or "packages.lock.json"
+                || relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(part => part is "bin" or "obj-custom"))
+            {
+                continue;
+            }
+
+            var destination = Path.Combine(destinationRoot, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(file, destination);
+        }
+    }
+
+    private static async Task RunDotnetAsync(string workingDirectory, string arguments)
+    {
+        using var process = Process.Start(new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = arguments,
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        })!;
+        var output = await process.StandardOutput.ReadToEndAsync();
+        var error = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        Assert.True(process.ExitCode == 0, $"{output}\n{error}");
     }
 
     private static string FindRepositoryRoot()

@@ -154,3 +154,61 @@ Verification after this pass: `CoreWcfServiceOperation` (Scenarios.Tests) 8/8 (w
 Scenarios.Tests 173/173 (was 171/171); FrameworkModels.Tests, Wording.Tests, Core.Tests, and Analysis.Tests
 unaffected by this pass's changes (only `ScenarioTestFactory.cs`/`CoreWcfServiceOperationScenarioTests.cs`
 touched) and were not re-run in full given no production or shared-fixture code changed.
+
+### P33M maintainer takeover repair trace
+
+Preserved the contributor implementation and merged `origin/main` at `520f6f1` without rewriting history. Repaired
+only the declared scanner/model paths: active host admission now requires the exact `Build` followed by supported
+`Run`/`RunAsync` on the same operation chain, with Build and terminal evidence; framework links compare the restored
+assembly/version/signature identities; and service/fault evidence is selected from the exact typed attribute records
+for the admitted family rather than a metadata-name Program Index re-query. The preserved red claims cover the dead
+full-host negative and exact typed evidence coexistence. Focused verification passed: Analysis 11/11, FrameworkModels
+24/24, Scenarios 8/8, Wording 1/1, Core 2/2. The repair additionally fails closed for empty exact contract or
+operation evidence (and suppresses empty-evidence faults), gives hand-built exact attributes deterministic source
+evidence unless emptiness is explicitly supplied, requires an ordinary non-abstract Configure candidate, and binds
+the terminal's IHost argument to the exact Build receiver of the selected ConfigureWebHostDefaults operation rather
+than any nested Build syntax. The restore-only `tests/SeqDoc.Rendering.Tests/packages.lock.json` change was removed.
+No budget exception; final gate remains intentionally unrun.
+
+The final P33M self-review repair added two exactness corrections:
+
+| Finding | Production repair | Producer/boundary test | Observable assertion | Residual boundary |
+|---|---|---|---|---|
+| Fault certainty ignored the exact `[FaultContract]` application's own evidence. | `CoreWcfServiceModel` now computes each fault's certainty as the weakest capability certainty plus that exact typed fault application's evidence, and uses it for both model evidence and `ServiceFaultContractFact.Certainty`. | `CapabilityAndFaultEvidenceUseOnlyExactTypedAttributesOnTheTarget` (extended) | Exact contract/operation contributors produce an Exact capability, while Conservative fault evidence independently lowers the fault fact and its model evidence; foreign evidence remains excluded and empty evidence remains withheld. | None open. |
+| `Action<T>` callback identity was admitted by namespace/name/arity alone. | `IsExactActionOfServiceBuilder` and `IsExactActionOfWebHostBuilder` now require `IsExactCoreType` for the finite, versioned `System.Action` facade before checking the exact constructed argument. | Existing host-chain producer coverage and focused Analysis tests | The active host-chain proof continues to admit the exact restored callback identities while lookalike callback identities fail closed. | None open. |
+
+Verification after this final self-review repair: the declared focused command passed — Analysis 11/11,
+FrameworkModels 24/24, Scenarios 8/8, Wording 1/1, and Core 2/2; Release solution build succeeded with 0 warnings
+and 0 errors; `git diff --check` passed. No budget exception; final gate remains intentionally unrun. Candidate is
+ready for independent review.
+
+### Repair rerun 1: P33M-F1–F3
+
+| Finding | Disposition | Production repair | Producer/boundary test | Observable assertion | Residual boundary |
+|---|---|---|---|---|---|
+| P33M-F1 — nested/uninvoked entry-point callback host chains are admitted | Fixed | `CoreWcfHostChainScanner` now starts only at `Compilation.GetEntryPoint(CancellationToken.None)`, requires source ownership, excludes nested anonymous/local-function bodies during entry-point, startup-callback, and service-model scans, and binds Build/Run discovery to that same operation tree. | `CoreWcfServiceModelProjectionTests.ConfiguredHostChainWithoutBuildOrRunProducesNoRegistrationOrRoot`; updated `Program.cs` uninvoked local-function chain | Only the executed Startup chain produces registration/root evidence; `UnbuiltStartup` and its nested complete chain remain absent. | Unsupported entry-point forms remain fail-closed when Roslyn exposes no source-owned syntax/body. |
+| P33M-F2 — client boundaries omit or fail to require exact contract, operation, and generated-marker evidence | Fixed | `CoreWcfServiceModel` now requires nonempty exact typed ServiceContract/OperationContract evidence for every ClientBase member, includes both evidence sets in boundary evidence and weakest certainty, rejects empty generated-marker evidence, and prevents client-shaped types falling through to service capability. | `CoreWcfServiceModelTests.ClientBoundaryRequiresExactContractAndOperationEvidence`; `GeneratedClientWithEmptyMarkerEvidenceFailsClosed`; existing source/generated producer assertions | Empty required evidence produces no client or capability facts; realistic source/generated clients remain admitted with correct classification and evidence. | Other unsupported client metadata remains outside this model scope. |
+| P33M-F3 — real Roslyn producer coexistence proof absent and trace overstated it | Fixed | Added a runtime-only temporary foreign assembly, restored/built before extraction, and referenced its DLL under the `foreign` metadata alias; copied repository package/build/SDK identity files needed for the relocated fixture and excluded foreign build sources from the main project. | `CoreWcfServiceModelProjectionTests.RealRoslynCoexistenceKeepsForeignSameQualifiedAttributesOutOfTheDiagram` | Real Roslyn extraction through FrameworkModelHost, ScenarioGraphBuilder, and DocumentationPlanner emits the genuine capability/root/diagram while foreign same-qualified evidence is absent. | Temporary project artifacts are deleted after assertion; no checked-in project or package was added. |
+
+Repair rerun 1 focused verification passed: Release solution build 0 warnings/0 errors; Analysis 12/12, FrameworkModels
+26/26, Scenarios 8/8, Wording 1/1, and Core 2/2. The earlier F3 temporary-project failure was repaired by excluding
+the foreign source tree from the main SDK project and using a built foreign DLL with an explicit metadata alias; the
+final producer test now passes. No budget exception; final full gate remains intentionally unrun. Findings F1–F3 are
+fixed and the candidate is returned to `ReviewRequired`.
+
+### Repair rerun 1 self-review correction
+
+The self-review found two evidence-proof gaps before disposition. Client boundary construction now carries each
+admitted member's exact contract family through deduplication and filters ServiceContract/OperationContract evidence
+by that family before canonical deduplication, ordering, and weakest-certainty calculation. The existing client
+evidence test now supplies foreign same-qualified application evidence and proves it is absent while exact IDs and
+the conservative exact contributor remain. The real Roslyn coexistence test now locates the exact implemented
+interface member, partitions its applications by `CoreWCF.Primitives` and `ForeignAttributes`, records actual producer
+evidence IDs, and proves genuine IDs are retained, foreign IDs are absent, certainty remains the weakest genuine
+contributor, and the service-operation root/diagram remains admitted. The initial focused rerun exposed the test's
+contaminant mistakenly attached to an exact application; that test was corrected to use distinct foreign applications,
+then rerun successfully.
+
+Verification after correction: `dotnet test SeqDoc.slnx --no-restore --nologo --filter "FullyQualifiedName~CoreWcf"`
+passed Analysis 12/12, FrameworkModels 26/26, Scenarios 8/8, Wording 1/1, and Core 2/2; `git diff --check` passed.
+No budget exception; final gate remains intentionally unrun. Candidate is returned to `ReviewRequired`.

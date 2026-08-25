@@ -173,14 +173,27 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         var clientMembers = admittedMembers
             .Where(entry => IsClientBaseDerivedForContract(shape.DeclaringType, entry.Member.InterfaceType))
             .ToArray();
-        if (clientMembers.Length > 0)
+        if (HasClientBase(shape.DeclaringType))
         {
-            var clientKind = HasGeneratedCodeMarker(shape.DeclaringTypeAttributes)
-                ? ServiceClientKind.GeneratedClient
-                : ServiceClientKind.SourceClient;
-            var generatedMarkerEvidence = clientKind == ServiceClientKind.GeneratedClient
+            if (clientMembers.Length == 0 || clientMembers.Any(entry => !HasRequiredClientAttributeEvidence(entry.Member, entry.Family)))
+            {
+                return new ModelResult(false, diagnostics:
+                    [CoreWcfServiceModelDiagnostics.EligibilityShapeUnavailable(profileId, $"{method.Id.Value}\u001fclient-evidence-unavailable")]);
+            }
+
+            var hasGeneratedMarker = HasGeneratedCodeMarker(shape.DeclaringTypeAttributes);
+            var generatedMarkerEvidence = hasGeneratedMarker
                 ? FindGeneratedCodeMarkerEvidence(shape.DeclaringTypeAttributes)
                 : ImmutableArray<EvidenceRef>.Empty;
+            if (hasGeneratedMarker && generatedMarkerEvidence.IsDefaultOrEmpty)
+            {
+                return new ModelResult(false, diagnostics:
+                    [CoreWcfServiceModelDiagnostics.EligibilityShapeUnavailable(profileId, $"{method.Id.Value}\u001fgenerated-marker-evidence-unavailable")]);
+            }
+
+            var clientKind = hasGeneratedMarker
+                ? ServiceClientKind.GeneratedClient
+                : ServiceClientKind.SourceClient;
             // AnalyzeMethod runs once per admitting method on the client type (for example once per
             // ClientBase<T> method the interface declares), so the fact is anchored to this method's own
             // symbol rather than the declaring type alone: a type-level anchor would make every admitting
@@ -188,11 +201,12 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
             // ServiceClientBoundaryFact is not a GeneralBehaviorFact the host's exact-payload dedup never
             // applies, so the repeated identity would report as a genuine conflict and admit none of them.
             var clientFacts = clientMembers
-                .Select(entry => entry.Member)
-                .DistinctBy(member => member.InterfaceType.MetadataName, StringComparer.Ordinal)
-                .OrderBy(member => member.InterfaceType.MetadataName, StringComparer.Ordinal)
-                .Select((member, ordinal) => (BehaviorFact)BuildClientBoundaryFact(
-                    type, symbol.Id, symbol.Certainty, symbol.Evidence, generatedMarkerEvidence, member, clientKind, profileId, ordinal))
+                .DistinctBy(entry => (entry.Member.InterfaceType.MetadataName, entry.Family))
+                .OrderBy(entry => entry.Member.InterfaceType.MetadataName, StringComparer.Ordinal)
+                .ThenBy(entry => entry.Family)
+                .Select((entry, ordinal) => (BehaviorFact)BuildClientBoundaryFact(
+                    type, symbol.Id, symbol.Certainty, symbol.Evidence, generatedMarkerEvidence,
+                    entry.Member, entry.Family, clientKind, profileId, ordinal))
                 .ToImmutableArray();
             return new ModelResult(true, facts: clientFacts);
         }
@@ -223,8 +237,18 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
                 [CoreWcfServiceModelDiagnostics.OperationImplementationUnavailable(profileId, method.Id.Value)]);
         }
 
-        var contractEvidence = FindAttributeEvidence(index, member.InterfaceTypeSymbol, ServiceContractMetadataName(family));
-        var operationEvidence = FindAttributeEvidence(index, member.InterfaceMethodSymbol, OperationContractMetadataName(family));
+        var contractEvidence = member.InterfaceTypeAttributes
+            .Where(attribute => ServiceContractFamily(attribute.AttributeType) == family)
+            .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence)
+            .DistinctBy(item => item.Id.Value)
+            .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
+            .ToImmutableArray();
+        var operationEvidence = member.InterfaceMethodAttributes
+            .Where(attribute => OperationContractFamily(attribute.AttributeType) == family)
+            .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence)
+            .DistinctBy(item => item.Id.Value)
+            .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
+            .ToImmutableArray();
         if (contractEvidence.IsDefaultOrEmpty || operationEvidence.IsDefaultOrEmpty)
         {
             return new ModelResult(false, diagnostics:
@@ -265,7 +289,8 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         var faultAttributes = member.InterfaceMethodAttributes.IsDefault
             ? Enumerable.Empty<FrameworkAttributeApplicationIdentity>()
             : member.InterfaceMethodAttributes
-                .Where(attribute => FaultContractFamily(attribute.AttributeType) == family)
+                .Where(attribute => FaultContractFamily(attribute.AttributeType) == family
+                    && !attribute.Evidence.IsDefaultOrEmpty)
                 .OrderBy(attribute => attribute.AttributeType.MetadataName, StringComparer.Ordinal);
         foreach (var faultAttribute in faultAttributes)
         {
@@ -282,6 +307,7 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
                     .DistinctBy(item => item.Id.Value)
                     .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
                     .ToImmutableArray();
+                var faultCertainty = WeakestCertainty(effectiveCertainty, faultAttributeEvidence);
                 facts.Add(new ServiceFaultContractFact
                 {
                     Id = CreateBehaviorFactId(profileId, "service-fault-contract", new SymbolBehaviorFactAnchor(type.Project, symbol.Id), faultOrdinal++),
@@ -290,8 +316,8 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
                     OperationSymbol = member.InterfaceMethodSymbol,
                     FaultType = faultType.MetadataName,
                     FaultTypeIdentity = faultType,
-                    Evidence = CreateModelEvidence($"service-fault-contract:{operationKey}:{faultType.MetadataName}", faultUnderlyingEvidence, effectiveCertainty),
-                    Certainty = effectiveCertainty,
+                    Evidence = CreateModelEvidence($"service-fault-contract:{operationKey}:{faultType.MetadataName}", faultUnderlyingEvidence, faultCertainty),
+                    Certainty = faultCertainty,
                 });
             }
         }
@@ -403,6 +429,26 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
                 && baseType.TypeArguments.Length == 1
                 && baseType.TypeArguments[0] == contract);
 
+    private static bool HasClientBase(FrameworkTypeShape type)
+        => !type.BaseTypeChainWithArguments.IsDefault
+            && type.BaseTypeChainWithArguments.Any(baseType =>
+                baseType.Identity.AssemblyIdentity == Identity.SystemServiceModelAssembly
+                && baseType.Identity.AssemblyVersion == Identity.SystemServiceModelAssemblyVersion
+                && baseType.Identity.MetadataName == Identity.ClientBaseMetadataName
+                && !baseType.TypeArguments.IsDefault
+                && baseType.TypeArguments.Length == 1);
+
+    private static bool HasRequiredClientAttributeEvidence(FrameworkInterfaceMemberIdentity member, ContractFamily family)
+    {
+        var contractEvidence = member.InterfaceTypeAttributes
+            .Where(attribute => ServiceContractFamily(attribute.AttributeType) == family)
+            .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence);
+        var operationEvidence = member.InterfaceMethodAttributes
+            .Where(attribute => OperationContractFamily(attribute.AttributeType) == family)
+            .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence);
+        return contractEvidence.Any() && operationEvidence.Any();
+    }
+
     private static bool HasGeneratedCodeMarker(ImmutableArray<FrameworkAttributeApplicationIdentity> declaringTypeAttributes)
         => !declaringTypeAttributes.IsDefault
             && declaringTypeAttributes.Any(attribute =>
@@ -450,19 +496,6 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
 
     private static string OperationContractMetadataName(ContractFamily family)
         => family == ContractFamily.CoreWcf ? Identity.CoreWcfOperationContractAttribute : Identity.SystemServiceModelOperationContractAttribute;
-
-    /// <summary>
-    /// Finds the source evidence for the exact Program Index attribute application matching
-    /// <paramref name="target"/> and <paramref name="metadataName"/>. The strict identity decision
-    /// (which family, which assembly) has already been made from
-    /// <see cref="FrameworkInterfaceMemberIdentity"/>'s exact attribute-class identities; this lookup
-    /// only recovers the evidence for the attribute this model already proved is the admitted one.
-    /// </summary>
-    private static ImmutableArray<EvidenceRef> FindAttributeEvidence(ProgramIndexSnapshot index, SymbolId target, string metadataName)
-        => index.Attributes
-            .Where(attribute => attribute.Target == target && attribute.AttributeType == metadataName)
-            .SelectMany(attribute => attribute.Evidence)
-            .ToImmutableArray();
 
     /// <summary>
     /// The effective certainty is always the weakest (highest-ordinal, per <see cref="CertaintyLevel"/>'s
@@ -516,12 +549,19 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         ImmutableArray<EvidenceRef> triggeringMethodEvidence,
         ImmutableArray<EvidenceRef> generatedMarkerEvidence,
         FrameworkInterfaceMemberIdentity member,
+        ContractFamily family,
         ServiceClientKind clientKind,
         CompilationProfileId profileId,
         int ordinal)
     {
         var underlyingEvidence = type.Evidence
             .Concat(triggeringMethodEvidence.IsDefault ? [] : triggeringMethodEvidence)
+            .Concat(member.InterfaceTypeAttributes
+                .Where(attribute => ServiceContractFamily(attribute.AttributeType) == family)
+                .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence))
+            .Concat(member.InterfaceMethodAttributes
+                .Where(attribute => OperationContractFamily(attribute.AttributeType) == family)
+                .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence))
             .Concat(generatedMarkerEvidence.IsDefault ? [] : generatedMarkerEvidence)
             .DistinctBy(item => item.Id.Value)
             .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
