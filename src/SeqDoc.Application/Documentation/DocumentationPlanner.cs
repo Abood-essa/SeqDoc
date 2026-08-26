@@ -698,6 +698,16 @@ public static class DocumentationPlanner
         // message array verbatim; the fragment tree reuses the same edge order so every message
         // reference and arm partition stay deterministic.
         var orderedMessageRefs = new List<(ScenarioNodeId Node, DiagramPlanElementId Ref)>();
+        var topologyWithheldPersistenceNodes = graph.Nodes
+            .Where(node => node.Kind is ScenarioNodeKind.EntityQuery
+                or ScenarioNodeKind.StateAssignment
+                or ScenarioNodeKind.EntityMutation)
+            .Where(node => !graph.Topology.Memberships.Any(item => item.ScenarioNode == node.Id))
+            .Where(node => node.Operation is { } operation
+                && graph.Diagnostics.Any(diagnostic => diagnostic.Code is "SC011" or "SC012" or "SC013"
+                    && diagnostic.Detail.Contains($"\u001f{operation.Value}\u001f", StringComparison.Ordinal)))
+            .Select(node => node.Id)
+            .ToHashSet();
         foreach (var edge in graph.Edges
                      .OrderBy(edge => DirectCallOrder(graph, edge))
                      .ThenBy(edge => EdgeOrderKey(edge).Segment)
@@ -706,6 +716,10 @@ public static class DocumentationPlanner
                      .ThenBy(edge => edge.Id.Value, StringComparer.Ordinal))
         {
             if (filter.HiddenEdges.Contains(edge.Id))
+            {
+                continue;
+            }
+            if (topologyWithheldPersistenceNodes.Contains(edge.Target))
             {
                 continue;
             }
@@ -3453,7 +3467,7 @@ public static class DocumentationPlanner
         var presentation = graph.Nodes.FirstOrDefault(node => node.Id == edge.Target)?.Presentation;
         if (presentation?.MutationKind is EntityFrameworkMutationKind.SaveChangesAsync or EntityFrameworkMutationKind.SaveChanges)
         {
-            return "Save changes";
+            return "calls SaveChanges";
         }
 
         return null;
@@ -3769,10 +3783,10 @@ public static class DocumentationPlanner
         var presentation = node.Presentation;
         if (presentation is not null && !string.IsNullOrWhiteSpace(presentation.DbContextTypeName))
         {
-            return $"The service calls SaveChanges: saves changes to {ShortTypeName(presentation.DbContextTypeName)}.";
+            return $"The service calls SaveChanges on {ShortTypeName(presentation.DbContextTypeName)}.";
         }
 
-        return $"The service calls SaveChanges: {node.Detail}.";
+        return "The service calls SaveChanges.";
     }
 
     private static ImmutableArray<EvidenceRef> SourceEvidenceFallback(ScenarioGraph graph)

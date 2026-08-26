@@ -232,6 +232,38 @@ public sealed class EfCoreScenarioProjectionTests
         Assert.Equal(EntityFrameworkMutationKind.SaveChangesAsync, persistenceNodes[2].Presentation?.MutationKind);
     }
 
+    [Theory]
+    [InlineData("missing-anchor", "SC011")]
+    [InlineData("duplicate-agreeing-anchor", "SC011")]
+    [InlineData("dual-polarity-conflict", "SC012")]
+    [InlineData("unsupported-placement", "SC013")]
+    public void PersistenceBoundaryAmbiguityWithholdsOnlyAffectedClaimAndKeepsSibling(
+        string partition, string diagnosticCode)
+    {
+        var request = partition switch
+        {
+            "missing-anchor" => ScenarioTestFactory.CreateMissingAnchorTopologyRequest(),
+            "duplicate-agreeing-anchor" => ScenarioTestFactory.CreateDuplicateAnchorTopologyRequest(agreeing: true),
+            "dual-polarity-conflict" => ScenarioTestFactory.CreateDualPolarityConflictRequest(),
+            "unsupported-placement" => ScenarioTestFactory.CreateUnsupportedTopologyRequest(),
+            _ => throw new ArgumentOutOfRangeException(nameof(partition), partition, null),
+        };
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(request).Graphs);
+        var query = Assert.Single(graph.Nodes, node => node.Kind == ScenarioNodeKind.EntityQuery);
+        var save = Assert.Single(graph.Nodes, node => node.Kind == ScenarioNodeKind.EntityMutation
+            && node.Presentation?.MutationKind == EntityFrameworkMutationKind.SaveChangesAsync);
+        var affected = partition is "missing-anchor" or "duplicate-agreeing-anchor" ? query : save;
+        var sibling = partition is "missing-anchor" or "duplicate-agreeing-anchor" ? save : query;
+
+        Assert.Contains(graph.Diagnostics, item => item.Code == diagnosticCode);
+        Assert.Contains(graph.Nodes, item => item.Id == sibling.Id);
+        Assert.DoesNotContain(graph.Topology.Memberships, item => item.ScenarioNode == affected.Id);
+
+        var plan = SeqDoc.Application.Documentation.DocumentationPlanner.Plan(graph);
+        var affectedLabel = affected == save ? "calls SaveChanges" : "Find at most one Gadget";
+        Assert.DoesNotContain(plan.Diagram.Messages, message => message.Label == affectedLabel);
+    }
+
     [Fact]
     public void ForeignProfileIdProducesNoPersistenceNodes()
     {
@@ -260,7 +292,8 @@ public sealed class EfCoreScenarioProjectionTests
         var result = ScenarioGraphBuilder.Build(request);
         var graph = Assert.Single(result.Graphs);
 
-        Assert.Empty(graph.Nodes.Where(n => n.Kind is ScenarioNodeKind.EntityMutation or ScenarioNodeKind.StateAssignment or ScenarioNodeKind.EntityQuery));
+        Assert.Empty(graph.Nodes.Where(n => n.Kind is ScenarioNodeKind.EntityMutation or ScenarioNodeKind.StateAssignment));
+        Assert.Contains(graph.Nodes, n => n.Kind == ScenarioNodeKind.EntityQuery);
     }
 
     [Fact]
@@ -291,7 +324,126 @@ public sealed class EfCoreScenarioProjectionTests
         var result = ScenarioGraphBuilder.Build(request);
         var graph = Assert.Single(result.Graphs);
 
-        Assert.Empty(graph.Nodes.Where(n => n.Kind is ScenarioNodeKind.EntityMutation or ScenarioNodeKind.StateAssignment or ScenarioNodeKind.EntityQuery));
+        Assert.Empty(graph.Nodes.Where(n => n.Kind is ScenarioNodeKind.EntityMutation or ScenarioNodeKind.StateAssignment));
+        Assert.Contains(graph.Nodes, n => n.Kind == ScenarioNodeKind.EntityQuery);
+    }
+
+    [Fact]
+    public void ForeignFrameworkFactsAreWithheldWhileValidSiblingFactsRemainDeterministic()
+    {
+        var baseRequest = ScenarioTestFactory.CreateGetRequest();
+        var mutation = new EntityFrameworkMutationFact
+        {
+            Id = new BehaviorFactId("ef-mut:sibling"),
+            Method = ScenarioTestFactory.ServiceMethod,
+            Operation = new OperationId("op:mut:sibling"),
+            MutationKind = EntityFrameworkMutationKind.SaveChanges,
+            SequenceOrdinal = 1,
+            DbContextType = "GetMeaning.Data.GadgetDbContext",
+            EntityType = string.Empty,
+            Evidence = [CreateEvidence("DbContext.SaveChanges")],
+            Certainty = CertaintyLevel.Exact,
+        };
+        var valid = baseRequest with
+        {
+            NonGetSemanticFacts = baseRequest.NonGetSemanticFacts with
+            {
+                EntityFrameworkMutations = [mutation],
+            },
+        };
+        var foreign = valid with
+        {
+            FrameworkFacts = valid.FrameworkFacts with { ProfileId = ScenarioTestFactory.ForeignProfile.Id },
+        };
+
+        var forward = ScenarioGraphBuilder.Build(foreign);
+        var reversed = ScenarioGraphBuilder.Build(foreign with
+        {
+            NonGetSemanticFacts = foreign.NonGetSemanticFacts with
+            {
+                EntityFrameworkMutations = foreign.NonGetSemanticFacts.EntityFrameworkMutations.Reverse().ToImmutableArray(),
+            },
+        });
+        var forwardGraph = Assert.Single(forward.Graphs);
+        Assert.Single(forwardGraph.Nodes, node => node.Kind == ScenarioNodeKind.EntityMutation);
+        Assert.DoesNotContain(forwardGraph.Nodes, node => node.Kind == ScenarioNodeKind.EntityQuery);
+        Assert.Equal(forward.DebugProjection, reversed.DebugProjection);
+    }
+
+    [Theory]
+    [InlineData("framework-missing-profile")]
+    [InlineData("framework-foreign-profile")]
+    [InlineData("framework-missing-fingerprint")]
+    [InlineData("framework-foreign-fingerprint")]
+    [InlineData("nonget-missing-profile")]
+    [InlineData("nonget-foreign-profile")]
+    [InlineData("nonget-missing-fingerprint")]
+    [InlineData("nonget-foreign-fingerprint")]
+    public void MissingAndForeignPersistenceIdentityWithholdsOnlyUnboundFacts(string partition)
+    {
+        var baseRequest = ScenarioTestFactory.CreateGetRequest();
+        var mutation = new EntityFrameworkMutationFact
+        {
+            Id = new BehaviorFactId("ef-mut:partition"),
+            Method = ScenarioTestFactory.ServiceMethod,
+            Operation = new OperationId("op:mut:partition"),
+            MutationKind = EntityFrameworkMutationKind.SaveChanges,
+            SequenceOrdinal = 1,
+            DbContextType = "GetMeaning.Data.GadgetDbContext",
+            EntityType = string.Empty,
+            Evidence = [CreateEvidence("DbContext.SaveChanges")],
+            Certainty = CertaintyLevel.Exact,
+        };
+        var observation = new SourceObservationSemanticFact(
+            new SemanticFactId("observation:partition"),
+            ScenarioTestFactory.ServiceMethod,
+            new OperationId("op:observation:partition"),
+            SourceObservationKind.Note,
+            "EF boundary",
+            [CreateEvidence("raw-sql")],
+            CertaintyLevel.Exact);
+        var nonGet = baseRequest.NonGetSemanticFacts with
+        {
+            EntityFrameworkMutations = [mutation],
+            SourceObservations = [observation],
+        };
+        var request = baseRequest with { NonGetSemanticFacts = nonGet };
+        request = partition switch
+        {
+            "framework-missing-profile" => request with { FrameworkFacts = request.FrameworkFacts with { ProfileId = null } },
+            "framework-foreign-profile" => request with { FrameworkFacts = request.FrameworkFacts with { ProfileId = ScenarioTestFactory.ForeignProfile.Id } },
+            "framework-missing-fingerprint" => request with { FrameworkFacts = request.FrameworkFacts with { ProgramIndexFingerprint = null } },
+            "framework-foreign-fingerprint" => request with { FrameworkFacts = request.FrameworkFacts with { ProgramIndexFingerprint = "foreign" } },
+            "nonget-missing-profile" => request with { NonGetSemanticFacts = nonGet with { Profile = null! } },
+            "nonget-foreign-profile" => request with { NonGetSemanticFacts = nonGet with { Profile = ScenarioTestFactory.ForeignProfile } },
+            "nonget-missing-fingerprint" => request with { NonGetSemanticFacts = nonGet with { ProgramIndexFingerprint = "" } },
+            "nonget-foreign-fingerprint" => request with { NonGetSemanticFacts = nonGet with { ProgramIndexFingerprint = "foreign" } },
+            _ => throw new ArgumentOutOfRangeException(nameof(partition), partition, null),
+        };
+
+        var forward = ScenarioGraphBuilder.Build(request);
+        var reversed = ScenarioGraphBuilder.Build(request with
+        {
+            NonGetSemanticFacts = request.NonGetSemanticFacts with
+            {
+                EntityFrameworkMutations = request.NonGetSemanticFacts.EntityFrameworkMutations.Reverse().ToImmutableArray(),
+                SourceObservations = request.NonGetSemanticFacts.SourceObservations.Reverse().ToImmutableArray(),
+            },
+        });
+        var graph = Assert.Single(forward.Graphs);
+        var reversedGraph = Assert.Single(reversed.Graphs);
+        Assert.Equal(forward.DebugProjection, reversed.DebugProjection);
+        if (partition.StartsWith("framework", StringComparison.Ordinal))
+        {
+            Assert.Contains(graph.Nodes, node => node.Kind == ScenarioNodeKind.EntityMutation);
+            Assert.DoesNotContain(graph.Nodes, node => node.Kind == ScenarioNodeKind.EntityQuery);
+        }
+        else
+        {
+            Assert.Contains(graph.Nodes, node => node.Kind == ScenarioNodeKind.EntityQuery);
+            Assert.DoesNotContain(graph.Nodes, node => node.Kind == ScenarioNodeKind.EntityMutation);
+            Assert.DoesNotContain(graph.Nodes, node => node.Kind == ScenarioNodeKind.SourceObservation);
+        }
     }
 
     [Fact]
@@ -384,7 +536,7 @@ public sealed class EfCoreScenarioProjectionTests
         // rather than leaking as an unconditional top-level diagram message
         var plan = SeqDoc.Application.Documentation.DocumentationPlanner.Plan(graph);
         Assert.Contains(plan.Diagram.Diagnostics, d => d.Code == "DP002");
-        Assert.DoesNotContain(plan.Diagram.Messages, m => m.Label == "Save changes");
+        Assert.DoesNotContain(plan.Diagram.Messages, m => m.Label == "calls SaveChanges");
 
         // When exact owner wording is supplied, verify diagram renders the save message inside the fragment arm
         var wordedGraph = ScenarioTestFactory.WithExactOwnerWording(graph);
@@ -490,6 +642,6 @@ public sealed class EfCoreScenarioProjectionTests
 
         // Verify Diagram Plan reflects distinct mutations and save
         var plan = SeqDoc.Application.Documentation.DocumentationPlanner.Plan(graph);
-        Assert.Contains(plan.Diagram.Messages, m => m.Label == "Save changes");
+        Assert.Contains(plan.Diagram.Messages, m => m.Label == "calls SaveChanges");
     }
 }

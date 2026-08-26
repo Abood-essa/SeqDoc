@@ -19,6 +19,14 @@ public sealed class EfCoreExtractionTests
     private const string FourFlowsServiceMetadataName = "BehaviorDocumentation.FourFlows.Services.WidgetService";
     private const string GetMeaningFixtureRelativePath = "tests/fixtures/BehaviorDocumentation/GetMeaning/GetMeaning.csproj";
     private const string GetMeaningServiceMetadataName = "BehaviorDocumentation.GetMeaning.Services.GadgetService";
+    private static readonly string[] SupportedMutationEntityTypes =
+    [
+        "BehaviorDocumentation.GetMeaning.Models.Gadget",
+        "BehaviorDocumentation.GetMeaning.Models.Category",
+        "BehaviorDocumentation.GetMeaning.Models.Gadget",
+        "BehaviorDocumentation.GetMeaning.Models.Category",
+        "",
+    ];
 
     [Fact]
     public async Task ExtractFourFlowsServiceProducesCompletePersistenceFacts()
@@ -315,7 +323,124 @@ public sealed class EfCoreExtractionTests
         var observations = extraction.NonGetSemanticFacts.SourceObservations
             .Where(fact => fact.Method == rawSqlMethod.Id)
             .ToArray();
-        Assert.Empty(observations);
+        Assert.Equal(2, observations.Length);
+        Assert.Equal(extraction.ProgramIndex.Profile.Id, extraction.NonGetSemanticFacts.Profile.Id);
+        Assert.All(observations, observation => Assert.NotEqual(default, observation.AnchorOperation));
+        Assert.Equal(["FromSqlRaw", "ExecuteSqlRawAsync"], observations.Select(GetRawSqlFamily));
+        Assert.All(observations, observation =>
+        {
+            Assert.Equal(SourceObservationKind.Note, observation.Kind);
+            Assert.Contains("source boundary", observation.Text, StringComparison.Ordinal);
+            Assert.DoesNotContain("SELECT", observation.Text, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("UPDATE", observation.Text, StringComparison.OrdinalIgnoreCase);
+            Assert.NotEmpty(observation.Evidence);
+            Assert.Equal(CertaintyLevel.Conservative, observation.Certainty);
+        });
+
+        var repeated = await ExtractSuccessfullyAsync(GetMeaningFixtureRelativePath);
+        var repeatedObservations = repeated.NonGetSemanticFacts.SourceObservations
+            .Where(fact => fact.Method == rawSqlMethod.Id)
+            .ToArray();
+        Assert.Equal(observations.Select(fact => fact.Id), repeatedObservations.Select(fact => fact.Id));
+        Assert.Equal(extraction.NonGetSemanticFacts.Profile.Id, repeated.NonGetSemanticFacts.Profile.Id);
+
+        var lookalikeType = Assert.Single(extraction.ProgramIndex.Types, type => type.MetadataName == "BehaviorDocumentation.GetMeaning.Services.LookalikeCaller");
+        var lookalikeMethod = Assert.Single(extraction.ProgramIndex.Methods, method =>
+            method.ContainingType == lookalikeType.Id && method.Name == "CallFakeMethodsAsync");
+        Assert.Empty(extraction.NonGetSemanticFacts.SourceObservations.Where(fact => fact.Method == lookalikeMethod.Id));
+    }
+
+    [Fact]
+    public async Task ReducedExtensionSyntaxProducesOnlyItsTwoSourceObservations()
+    {
+        var extraction = await ExtractSuccessfullyAsync(GetMeaningFixtureRelativePath);
+        var relationalProbeType = Assert.Single(
+            extraction.ProgramIndex.Types,
+            type => type.MetadataName == "BehaviorDocumentation.GetMeaning.Data.RelationalProbe");
+        var method = Assert.Single(
+            extraction.ProgramIndex.Methods,
+            item => item.ContainingType == relationalProbeType.Id && item.Name == "RunAsync");
+        var observations = extraction.NonGetSemanticFacts.SourceObservations.Where(item => item.Method == method.Id).ToArray();
+
+        Assert.Equal(2, observations.Length);
+        Assert.Equal(["FromSqlRaw", "ExecuteSqlRawAsync"], observations.Select(GetRawSqlFamily));
+        Assert.All(observations, item => Assert.NotEmpty(item.Evidence));
+        var lookalike = Assert.Single(extraction.ProgramIndex.Methods, item => item.Name == "CallFakeMethodsAsync");
+        Assert.Empty(extraction.NonGetSemanticFacts.SourceObservations.Where(item => item.Method == lookalike.Id));
+    }
+
+    [Fact]
+    public async Task GetMeaningSupportedTerminalOverloadsAreAdmittedAndOrdered()
+    {
+        var extraction = await ExtractSuccessfullyAsync(GetMeaningFixtureRelativePath);
+        var framework = await ComposeAsync(extraction);
+        var serviceType = Assert.Single(extraction.ProgramIndex.Types, type => type.MetadataName == GetMeaningServiceMetadataName);
+        var methods = extraction.ProgramIndex.Methods.Where(method => method.ContainingType == serviceType.Id).ToArray();
+
+        var expected = new[]
+        {
+            (Name: "GetByIdAsync", Terminal: EntityFrameworkQueryOperatorKind.SingleOrDefaultAsync),
+            (Name: "FindFirstSupportedAsync", Terminal: EntityFrameworkQueryOperatorKind.FirstOrDefaultAsync),
+            (Name: "CountSupportedAsync", Terminal: EntityFrameworkQueryOperatorKind.CountAsync),
+        };
+
+        foreach (var item in expected)
+        {
+            var method = Assert.Single(methods, method => method.Name == item.Name);
+            var fact = Assert.Single(framework.Facts.OfType<EntityFrameworkQueryFact>(), fact => fact.Method == method.Id);
+            Assert.Equal(item.Terminal, fact.Chain[^1].OperatorKind);
+            Assert.Equal("BehaviorDocumentation.GetMeaning.Models.Gadget", fact.EntityType);
+            Assert.NotEmpty(fact.Evidence);
+            Assert.Equal(CertaintyLevel.Exact, fact.Certainty);
+            Assert.Single(extraction.NonGetSemanticFacts.EfOperationSequence,
+                sequence => sequence.Operation == fact.Operation
+                    && sequence.Kind == EfOperationSequenceKind.QueryTerminal);
+        }
+    }
+
+    [Fact]
+    public async Task SupportedMutationOverloadsRetainDistinctEntitiesAndSourceChronology()
+    {
+        var extraction = await ExtractSuccessfullyAsync(GetMeaningFixtureRelativePath);
+        var serviceType = Assert.Single(extraction.ProgramIndex.Types, type => type.MetadataName == GetMeaningServiceMetadataName);
+        var method = Assert.Single(extraction.ProgramIndex.Methods, item =>
+            item.ContainingType == serviceType.Id && item.Name == "CreateWithAllSupportedMutationsAsync");
+
+        var mutations = extraction.NonGetSemanticFacts.EntityFrameworkMutations
+            .Where(fact => fact.Method == method.Id)
+            .OrderBy(fact => fact.SequenceOrdinal)
+            .ToArray();
+
+        Assert.Equal(
+            new[]
+            {
+                EntityFrameworkMutationKind.Add,
+                EntityFrameworkMutationKind.Add,
+                EntityFrameworkMutationKind.RemoveRange,
+                EntityFrameworkMutationKind.Clear,
+                EntityFrameworkMutationKind.SaveChangesAsync,
+            },
+            mutations.Select(fact => fact.MutationKind));
+        Assert.Equal(SupportedMutationEntityTypes, mutations.Select(fact => fact.EntityType));
+        Assert.All(mutations, fact =>
+        {
+            Assert.NotEmpty(fact.Evidence);
+            Assert.Equal(CertaintyLevel.Exact, fact.Certainty);
+        });
+    }
+
+    [Fact]
+    public async Task UnsupportedSaveOverloadsDoNotSuppressAnAcceptedSiblingMutation()
+    {
+        var extraction = await ExtractSuccessfullyAsync(GetMeaningFixtureRelativePath);
+        var serviceType = Assert.Single(extraction.ProgramIndex.Types, type => type.MetadataName == GetMeaningServiceMetadataName);
+        var unsupported = Assert.Single(extraction.ProgramIndex.Methods, item => item.ContainingType == serviceType.Id && item.Name == "CreateWithUnsupportedSaveOverloads");
+        var accepted = Assert.Single(extraction.ProgramIndex.Methods, item => item.ContainingType == serviceType.Id && item.Name == "CreateWithSyncSave");
+
+        var unsupportedMutations = extraction.NonGetSemanticFacts.EntityFrameworkMutations.Where(item => item.Method == unsupported.Id).ToArray();
+        Assert.Single(unsupportedMutations);
+        Assert.Equal(EntityFrameworkMutationKind.Add, unsupportedMutations[0].MutationKind);
+        Assert.Contains(extraction.NonGetSemanticFacts.EntityFrameworkMutations, item => item.Method == accepted.Id && item.MutationKind == EntityFrameworkMutationKind.SaveChanges);
     }
 
     [Fact]
@@ -408,5 +533,20 @@ public sealed class EfCoreExtractionTests
 
         return directory?.FullName
             ?? throw new InvalidOperationException("Could not locate repository root.");
+    }
+
+    private static string GetRawSqlFamily(SourceObservationSemanticFact observation)
+    {
+        if (observation.Text.Contains("FromSqlRaw", StringComparison.Ordinal))
+        {
+            return "FromSqlRaw";
+        }
+
+        if (observation.Text.Contains("ExecuteSqlRawAsync", StringComparison.Ordinal))
+        {
+            return "ExecuteSqlRawAsync";
+        }
+
+        return observation.Text;
     }
 }

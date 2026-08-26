@@ -14,6 +14,10 @@ public interface IGadgetService
 
     Task<GadgetResult<Gadget>> FindByLabelAsync();
 
+    Task<GadgetResult<Gadget>> FindFirstSupportedAsync(int id);
+
+    Task<int> CountSupportedAsync(int id);
+
     GadgetResult<Gadget> CreateWithSyncSave(Gadget gadget);
 
     Task<GadgetResult<Gadget>> RawSqlProbeAsync(int id);
@@ -56,6 +60,20 @@ public sealed class GadgetService(GadgetDbContext context) : IGadgetService
 
     public async Task<GadgetResult<Gadget>> RawSqlProbeAsync(int id)
     {
+        var result = await Microsoft.EntityFrameworkCore.RelationalQueryableExtensions.FromSqlRaw(
+                context.Gadgets,
+                "SELECT * FROM Gadgets WHERE Id = {0}",
+                id)
+            .SingleOrDefaultAsync(item => item.Id == id);
+        await Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRawAsync(
+            context.Database,
+            "UPDATE Gadgets SET Label = 'raw' WHERE Id = {0}",
+            id);
+        return result is not null ? GadgetResult<Gadget>.Success(result) : GadgetResult<Gadget>.NotFound("None");
+    }
+
+    public async Task<GadgetResult<Gadget>> RawSqlReducedSyntaxProbeAsync(int id)
+    {
         var result = await context.Gadgets
             .FromSqlRaw("SELECT * FROM Gadgets WHERE Id = {0}", id)
             .SingleOrDefaultAsync(item => item.Id == id);
@@ -73,6 +91,20 @@ public sealed class GadgetService(GadgetDbContext context) : IGadgetService
             ? GadgetResult<Gadget>.NotFound("Gadget was not found")
             : GadgetResult<Gadget>.Success(gadget);
     }
+
+    public async Task<GadgetResult<Gadget>> FindFirstSupportedAsync(int id)
+    {
+        var gadget = await context.Gadgets
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == id, CancellationToken.None);
+
+        return gadget is null
+            ? GadgetResult<Gadget>.NotFound("Gadget was not found")
+            : GadgetResult<Gadget>.Success(gadget);
+    }
+
+    public async Task<int> CountSupportedAsync(int id)
+        => await context.Gadgets.CountAsync(item => item.Id == id, CancellationToken.None);
 
     public async Task<GadgetResult<Gadget>> FindByTokenAsync(Guid token)
     {
@@ -118,16 +150,34 @@ public sealed class GadgetService(GadgetDbContext context) : IGadgetService
         return GadgetResult<Gadget>.Success(gadget);
     }
 
+    public async Task<GadgetResult<Gadget>> CreateWithUnsupportedSaveOverloads(Gadget gadget)
+    {
+        context.Gadgets.Add(gadget);
+        context.SaveChanges(true);
+        await context.SaveChangesAsync(true, CancellationToken.None);
+        return GadgetResult<Gadget>.Success(gadget);
+    }
+
+    public async Task<GadgetResult<Gadget>> CreateWithAllSupportedMutationsAsync(Gadget gadget, Category category)
+    {
+        context.Gadgets.Add(gadget);
+        context.Categories.Add(category);
+        context.Gadgets.RemoveRange([gadget]);
+        context.Categories.Local.Clear();
+        await context.SaveChangesAsync(CancellationToken.None);
+        return GadgetResult<Gadget>.Success(gadget);
+    }
+
     public GadgetResult<Gadget> CreateIfTarget(int id, int targetId)
     {
-        if (id == targetId)
+        if (id <= 0)
         {
-            var gadget = new Gadget();
-            context.Gadgets.Add(gadget);
-            context.SaveChanges();
-            return GadgetResult<Gadget>.Success(gadget);
+            return GadgetResult<Gadget>.NotFound("Ignored");
         }
 
-        return GadgetResult<Gadget>.NotFound("Ignored");
+        var gadget = new Gadget();
+        context.Gadgets.Add(gadget);
+        context.SaveChanges();
+        return GadgetResult<Gadget>.Success(gadget);
     }
 }
