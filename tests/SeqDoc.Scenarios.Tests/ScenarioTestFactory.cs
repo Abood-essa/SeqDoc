@@ -387,7 +387,9 @@ internal static class ScenarioTestFactory
             [],
             [],
             [],
-            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)]);
+            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)],
+            Profile.Id,
+            index.IndexFingerprint);
 
         var registrations = ambiguousDiTargets
             ? ImmutableArray.Create(
@@ -846,7 +848,9 @@ internal static class ScenarioTestFactory
                 true,
                 [fact],
                 [], [], [], [],
-                [new FrameworkModelDescriptor("seqdoc.aspnetcore.minimal-api", "1.0.0", "test", 101)]),
+                [new FrameworkModelDescriptor("seqdoc.aspnetcore.minimal-api", "1.0.0", "test", 101)],
+                request.Profile.Id,
+                request.ProgramIndex.IndexFingerprint),
         };
     }
 
@@ -952,7 +956,7 @@ internal static class ScenarioTestFactory
             Profile,
             index,
             behavior,
-            new FrameworkAnalysisResult(true, [], [], [], [], [], []),
+            new FrameworkAnalysisResult(true, [], [], [], [], [], [], Profile.Id, index.IndexFingerprint),
             new SemanticFactSet(1, "test", Profile, index.IndexFingerprint, [], [], [], [], "semantic-test"),
             new DependencyInjectionFactSet(1, "test", Profile, index.IndexFingerprint, [], [], [], "di-test"),
             new StructuralResultFactSet(1, "test", Profile, index.IndexFingerprint, [], [], [], "structural-test"),
@@ -1444,7 +1448,9 @@ internal static class ScenarioTestFactory
             [],
             [],
             [],
-            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)]);
+            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)],
+            Profile.Id,
+            index.IndexFingerprint);
 
         var semanticFacts = new SemanticFactSet(
             1,
@@ -1713,7 +1719,9 @@ internal static class ScenarioTestFactory
                 : factMode == "foreign-diagnostic-operation"
                     ? [UnsupportedFusionCacheDiagnostic(new OperationId("operation:v1:foreign-fusion-cache"))]
                     : [],
-            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)]);
+            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)],
+            baseRequest.Profile.Id,
+            baseRequest.ProgramIndex.IndexFingerprint);
 
         var boundary = new CallbackBoundaryFact(
             FusionCacheBoundaryId,
@@ -2089,7 +2097,9 @@ internal static class ScenarioTestFactory
             [],
             [],
             [],
-            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)]);
+            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)],
+            Profile.Id,
+            index.IndexFingerprint);
 
         var semanticFacts = new SemanticFactSet(
             1,
@@ -2257,7 +2267,9 @@ internal static class ScenarioTestFactory
             [],
             [],
             [],
-            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)]);
+            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)],
+            Profile.Id,
+            index.IndexFingerprint);
 
         var semanticFacts = new SemanticFactSet(
             1,
@@ -2431,7 +2443,9 @@ internal static class ScenarioTestFactory
             [],
             [],
             [],
-            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)]);
+            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)],
+            Profile.Id,
+            index.IndexFingerprint);
 
         var semanticFacts = new SemanticFactSet(
             1,
@@ -2626,7 +2640,9 @@ internal static class ScenarioTestFactory
             [],
             [],
             [],
-            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)]);
+            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)],
+            Profile.Id,
+            index.IndexFingerprint);
 
         var semanticFacts = new SemanticFactSet(
             1,
@@ -2838,7 +2854,9 @@ internal static class ScenarioTestFactory
             [],
             [],
             [],
-            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)]);
+            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)],
+            Profile.Id,
+            index.IndexFingerprint);
 
         var semanticFacts = new SemanticFactSet(
             1,
@@ -3055,7 +3073,9 @@ internal static class ScenarioTestFactory
             [],
             [],
             [],
-            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)]);
+            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)],
+            Profile.Id,
+            index.IndexFingerprint);
 
         var semanticFacts = new SemanticFactSet(
             1,
@@ -3289,7 +3309,9 @@ internal static class ScenarioTestFactory
             [],
             [],
             [],
-            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)]);
+            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)],
+            Profile.Id,
+            index.IndexFingerprint);
 
         var addMutation = new EntityFrameworkMutationFact
         {
@@ -3518,7 +3540,9 @@ internal static class ScenarioTestFactory
             [],
             [],
             [],
-            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)]);
+            [new FrameworkModelDescriptor("seqdoc.entityframework.queries", "1.0.0", "test", 1)],
+            Profile.Id,
+            index.IndexFingerprint);
 
         var semanticFacts = new SemanticFactSet(
             1,

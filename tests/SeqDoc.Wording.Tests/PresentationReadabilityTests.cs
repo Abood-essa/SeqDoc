@@ -131,7 +131,7 @@ public sealed class PresentationReadabilityTests
             .ToArray();
 
         Assert.DoesNotContain("mutates tracked entities", dataMessages);
-        string[] mutations = dataMessages.Where(label => label != "Save changes").ToArray();
+        string[] mutations = dataMessages.Where(label => label != "calls SaveChanges").ToArray();
         Assert.Equal(3, mutations.Length);
         Assert.Equal(3, mutations.Distinct(StringComparer.Ordinal).Count());
         Assert.Contains(
@@ -145,7 +145,7 @@ public sealed class PresentationReadabilityTests
             label => label.Contains("add", StringComparison.OrdinalIgnoreCase) && label.Contains("Ticket", StringComparison.Ordinal));
         // The save message is the exact sentence-case kind-specific label, never the lowercase
         // generic "persists changes" edge detail of the graph.
-        Assert.Contains("Save changes", dataMessages);
+        Assert.Contains("calls SaveChanges", dataMessages);
     }
 
     [Fact]

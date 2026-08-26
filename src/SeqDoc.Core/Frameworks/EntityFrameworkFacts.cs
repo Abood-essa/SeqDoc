@@ -124,6 +124,7 @@ public enum EntityFrameworkMutationKind
     RemoveRange,
     Clear,
     SaveChangesAsync,
+    SaveChanges,
 }
 
 /// <summary>

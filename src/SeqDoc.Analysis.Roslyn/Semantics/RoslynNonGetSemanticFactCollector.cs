@@ -30,6 +30,7 @@ internal sealed class RoslynNonGetSemanticFactCollector
     internal const string ControllerBaseMetadataName = "Microsoft.AspNetCore.Mvc.ControllerBase";
 
     private const string EntityFrameworkCoreAssembly = "Microsoft.EntityFrameworkCore";
+    private const string EntityFrameworkCoreRelationalAssembly = "Microsoft.EntityFrameworkCore.Relational";
     private const string DbSetMetadataName = "Microsoft.EntityFrameworkCore.DbSet`1";
     private const string LocalViewMetadataName = "Microsoft.EntityFrameworkCore.ChangeTracking.LocalView`1";
     private const string DbContextMetadataName = "Microsoft.EntityFrameworkCore.DbContext";
@@ -187,6 +188,12 @@ internal sealed class RoslynNonGetSemanticFactCollector
         string? targetMember,
         ImmutableArray<EvidenceRef> evidence)
     {
+        if (kind == EntityFrameworkMutationKind.Unknown && dbContextType == "RawSql")
+        {
+            AddSourceObservation(method, operation, SourceObservationKind.Note,
+                $"EF {targetMember ?? "relational SQL"} source boundary.", evidence);
+            return;
+        }
         int ordinal = NextSourceOrdinal(method);
         _mutations.Add(new EntityFrameworkMutationDraft(
             method,
@@ -531,8 +538,11 @@ internal sealed class RoslynNonGetSemanticFactCollector
             return false;
         }
 
+        var original = (target.ReducedFrom ?? target).OriginalDefinition;
+        containing = original.ContainingType as INamedTypeSymbol ?? containing;
+
         var metadataName = RoslynProgramIndexExtractor.GetMetadataName(containing);
-        if (target.MetadataName == "Clear")
+        if (original.MetadataName == "Clear")
         {
             // A tracked-collection clear is admitted on the EF LocalView (Local.Clear) and on the BCL
             // collection navigations (List<T>.Clear / ICollection<T>.Clear) that EF change tracking
@@ -541,7 +551,12 @@ internal sealed class RoslynNonGetSemanticFactCollector
             // (property/field reference) of an entity, never an unrelated local collection.
             if (metadataName == LocalViewMetadataName)
             {
-                if (!TryResolveCollectionEntity(call, out entityType))
+                if (original.ContainingAssembly?.Identity.Name != EntityFrameworkCoreAssembly
+                    || !IsEfCoreVersion(original.ContainingAssembly)
+                    || original.Arity != 0
+                    || original.Parameters.Length != 0
+                    || original.ReturnType.SpecialType != SpecialType.System_Void
+                    || !TryResolveCollectionEntity(call, out entityType))
                 {
                     return false;
                 }
@@ -567,44 +582,69 @@ internal sealed class RoslynNonGetSemanticFactCollector
             return true;
         }
 
-        if (target.ContainingAssembly?.Identity.Name != EntityFrameworkCoreAssembly)
+        var containingAssembly = original.ContainingAssembly?.Identity.Name;
+        if (string.IsNullOrWhiteSpace(containingAssembly)
+            || !IsEfCoreVersion(original.ContainingAssembly))
         {
             return false;
         }
 
-        switch (target.MetadataName)
+        switch (original.MetadataName)
         {
             case "Add":
-            case "RemoveRange":
-                if (metadataName != DbSetMetadataName)
+                if (!IsExactDbSetAdd(target) || !TryResolveDbSetEntity(call, out entityType, out dbContextType))
                 {
                     return false;
                 }
 
-                // Only the exact DbSet Add and RemoveRange vocabulary is admitted. AddRange and
-                // Remove are unsupported shapes and never misclassified as Add or RemoveRange.
-                kind = target.MetadataName == "RemoveRange"
-                    ? EntityFrameworkMutationKind.RemoveRange
-                    : EntityFrameworkMutationKind.Add;
-                if (!TryResolveDbSetEntity(call, out entityType, out dbContextType))
-                {
-                    return false;
-                }
-
+                kind = EntityFrameworkMutationKind.Add;
                 break;
-            case "SaveChangesAsync":
-                if (metadataName != DbContextMetadataName)
+            case "RemoveRange":
+                if (!IsExactDbSetRemoveRange(target) || !TryResolveDbSetEntity(call, out entityType, out dbContextType))
                 {
                     return false;
                 }
 
-                kind = EntityFrameworkMutationKind.SaveChangesAsync;
+                kind = EntityFrameworkMutationKind.RemoveRange;
+                break;
+            case "SaveChanges":
+                if (!IsExactSaveChanges(target))
+                {
+                    return false;
+                }
+
                 dbContextType = ResolveReceiverType(call);
                 if (string.IsNullOrWhiteSpace(dbContextType))
                 {
                     return false;
                 }
 
+                kind = EntityFrameworkMutationKind.SaveChanges;
+                break;
+            case "SaveChangesAsync":
+                if (!IsExactSaveChangesAsync(target))
+                {
+                    return false;
+                }
+
+                dbContextType = ResolveReceiverType(call);
+                if (string.IsNullOrWhiteSpace(dbContextType))
+                {
+                    return false;
+                }
+
+                kind = EntityFrameworkMutationKind.SaveChangesAsync;
+                break;
+            case "FromSqlRaw":
+            case "ExecuteSqlRawAsync":
+                if (!IsExactRawSql(original, out var rawFamily))
+                {
+                    return false;
+                }
+
+                kind = EntityFrameworkMutationKind.Unknown;
+                dbContextType = "RawSql";
+                targetMember = rawFamily;
                 break;
             default:
                 return false;
@@ -613,19 +653,250 @@ internal sealed class RoslynNonGetSemanticFactCollector
         return true;
     }
 
-    /// <summary>Recognizes one exact EF query terminal (SingleOrDefaultAsync or CountAsync).</summary>
+    /// <summary>Recognizes one exact EF query terminal (SingleOrDefaultAsync, FirstOrDefaultAsync, or CountAsync).</summary>
     public static bool TryMatchQueryTerminal(IMethodSymbol target, out string terminalName)
     {
         terminalName = string.Empty;
-        if (target is null
-            || target.ContainingAssembly?.Identity.Name != EntityFrameworkCoreAssembly
-            || RoslynProgramIndexExtractor.GetMetadataName(target.ContainingType) != QueryableExtensionsMetadataName)
+        if (target is null)
         {
             return false;
         }
 
-        terminalName = target.MetadataName;
-        return terminalName is "SingleOrDefaultAsync" or "CountAsync";
+        var original = target.OriginalDefinition;
+        if (original.ContainingAssembly?.Identity.Name != EntityFrameworkCoreAssembly
+            || !IsEfCoreVersion(original.ContainingAssembly)
+            || RoslynProgramIndexExtractor.GetMetadataName(original.ContainingType) != QueryableExtensionsMetadataName
+            || !original.IsExtensionMethod
+            || !original.IsGenericMethod
+            || original.Arity != 1)
+        {
+            return false;
+        }
+
+        var tSource = original.TypeParameters[0];
+        terminalName = original.MetadataName;
+        switch (terminalName)
+        {
+            case "SingleOrDefaultAsync":
+            case "FirstOrDefaultAsync":
+                if (!IsExactTaskReturn(original.ReturnType, tSource))
+                {
+                    terminalName = string.Empty;
+                    return false;
+                }
+
+                break;
+            case "CountAsync":
+                if (!IsExactTaskReturn(original.ReturnType, SpecialType.System_Int32))
+                {
+                    terminalName = string.Empty;
+                    return false;
+                }
+
+                break;
+            default:
+                terminalName = string.Empty;
+                return false;
+        }
+
+        var hasPredicate = terminalName != "CountAsync" || original.Parameters.Length == 3;
+        if ((terminalName == "CountAsync" && original.Parameters.Length is not (2 or 3))
+            || (terminalName != "CountAsync" && original.Parameters.Length != 3)
+            || original.Parameters.Any(parameter => parameter.RefKind != RefKind.None)
+            || !IsExactQueryableParameter(original.Parameters[0], tSource))
+        {
+            terminalName = string.Empty;
+            return false;
+        }
+
+        if (!hasPredicate)
+        {
+            if (!IsCancellationToken(original.Parameters[1]))
+            {
+                terminalName = string.Empty;
+                return false;
+            }
+        }
+        else
+        {
+            if (!IsPredicateExpression(original.Parameters[1], tSource) || !IsCancellationToken(original.Parameters[2]))
+            {
+                terminalName = string.Empty;
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsExactQueryableParameter(IParameterSymbol parameter, ITypeSymbol elementType)
+        => parameter.Type is INamedTypeSymbol queryable
+            && queryable.IsGenericType
+            && queryable.TypeArguments.Length == 1
+            && RoslynProgramIndexExtractor.GetMetadataName(queryable.OriginalDefinition) == "System.Linq.IQueryable`1"
+            && SymbolEqualityComparer.Default.Equals(queryable.TypeArguments[0], elementType);
+
+    private static bool IsExactTaskReturn(ITypeSymbol returnType, ITypeSymbol expectedType)
+        => returnType is INamedTypeSymbol task
+            && task.IsGenericType
+            && task.TypeArguments.Length == 1
+            && task.OriginalDefinition.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) == "System.Threading.Tasks.Task<TResult>"
+            && SymbolEqualityComparer.Default.Equals(task.TypeArguments[0], expectedType);
+
+    private static bool IsExactTaskReturn(ITypeSymbol returnType, SpecialType expectedType)
+        => returnType is INamedTypeSymbol task
+            && task.IsGenericType
+            && task.TypeArguments.Length == 1
+            && task.OriginalDefinition.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) == "System.Threading.Tasks.Task<TResult>"
+            && task.TypeArguments[0].SpecialType == expectedType;
+
+    private static bool IsExactSaveChanges(IMethodSymbol target)
+    {
+        var original = target.OriginalDefinition;
+        if (original.ContainingAssembly?.Identity.Name != EntityFrameworkCoreAssembly
+            || !IsEfCoreVersion(original.ContainingAssembly)
+            || RoslynProgramIndexExtractor.GetMetadataName(original.ContainingType) != DbContextMetadataName
+            || original.ReturnType.SpecialType != SpecialType.System_Int32)
+        {
+            return false;
+        }
+
+        return original.Parameters.Length == 0;
+    }
+
+    private static bool IsExactSaveChangesAsync(IMethodSymbol target)
+    {
+        var original = target.OriginalDefinition;
+        if (original.ContainingAssembly?.Identity.Name != EntityFrameworkCoreAssembly
+            || !IsEfCoreVersion(original.ContainingAssembly)
+            || RoslynProgramIndexExtractor.GetMetadataName(original.ContainingType) != DbContextMetadataName
+            || original.ReturnType is not INamedTypeSymbol taskType
+            || taskType.Name != "Task"
+            || taskType.TypeArguments.Length != 1
+            || taskType.TypeArguments[0].SpecialType != SpecialType.System_Int32)
+        {
+            return false;
+        }
+
+        return original.Parameters.Length == 1 && IsCancellationToken(original.Parameters[0]);
+    }
+
+    private static bool IsExactDbSetAdd(IMethodSymbol target)
+    {
+        var original = target.OriginalDefinition;
+        if (original.ContainingAssembly?.Identity.Name != EntityFrameworkCoreAssembly
+            || !IsEfCoreVersion(original.ContainingAssembly)
+            || RoslynProgramIndexExtractor.GetMetadataName(original.ContainingType) != DbSetMetadataName
+            || original.ContainingType.TypeParameters.Length != 1
+            || original.Parameters.Length != 1
+            || original.Parameters[0].RefKind != RefKind.None)
+        {
+            return false;
+        }
+
+        return SymbolEqualityComparer.Default.Equals(original.Parameters[0].Type, original.ContainingType.TypeParameters[0]);
+    }
+
+    private static bool IsExactDbSetRemoveRange(IMethodSymbol target)
+    {
+        var original = target.OriginalDefinition;
+        if (original.ContainingAssembly?.Identity.Name != EntityFrameworkCoreAssembly
+            || !IsEfCoreVersion(original.ContainingAssembly)
+            || RoslynProgramIndexExtractor.GetMetadataName(original.ContainingType) != DbSetMetadataName
+            || original.ContainingType.TypeParameters.Length != 1
+            || original.Parameters.Length != 1
+            || original.Parameters[0].RefKind != RefKind.None)
+        {
+            return false;
+        }
+
+        var entityType = original.ContainingType.TypeParameters[0];
+        var paramType = original.Parameters[0].Type;
+
+        if (paramType is IArrayTypeSymbol arrayType)
+        {
+            return SymbolEqualityComparer.Default.Equals(arrayType.ElementType, entityType);
+        }
+
+        if (paramType is INamedTypeSymbol namedType && namedType.Name == "IEnumerable" && namedType.TypeArguments.Length == 1)
+        {
+            return SymbolEqualityComparer.Default.Equals(namedType.TypeArguments[0], entityType);
+        }
+
+        return false;
+    }
+
+    private static bool IsCancellationToken(IParameterSymbol parameter)
+        => parameter.RefKind == RefKind.None
+            && parameter.Type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) == "System.Threading.CancellationToken";
+
+    private static bool IsEfCoreVersion(IAssemblySymbol? assembly)
+        => assembly?.Identity.Version == new Version(10, 0, 10, 0);
+
+    private static bool IsExactRawSql(IMethodSymbol original, out string family)
+    {
+        family = string.Empty;
+        if (original.ContainingAssembly?.Identity.Name != EntityFrameworkCoreRelationalAssembly
+            || !IsEfCoreVersion(original.ContainingAssembly)
+            || original.Parameters.Length != 3
+            || original.Parameters.Any(parameter => parameter.RefKind != RefKind.None))
+        {
+            return false;
+        }
+
+        var parameters = original.Parameters;
+        if (original.MetadataName == "FromSqlRaw"
+            && RoslynProgramIndexExtractor.GetMetadataName(original.ContainingType) == "Microsoft.EntityFrameworkCore.RelationalQueryableExtensions"
+            && original.Arity == 1
+            && parameters[0].Type is INamedTypeSymbol dbSet
+            && RoslynProgramIndexExtractor.GetMetadataName(dbSet.OriginalDefinition) == DbSetMetadataName
+            && parameters[1].Type.SpecialType == SpecialType.System_String
+            && parameters[2].Type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) == "System.Object[]")
+        {
+            family = "FromSqlRaw";
+            return true;
+        }
+
+        if (original.MetadataName == "ExecuteSqlRawAsync"
+            && RoslynProgramIndexExtractor.GetMetadataName(original.ContainingType) == "Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions"
+            && original.Arity == 0
+            && parameters[0].Type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) == "Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade"
+            && parameters[1].Type.SpecialType == SpecialType.System_String
+            && parameters[2].Type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) == "System.Object[]"
+            && original.ReturnType is INamedTypeSymbol task
+            && task.Name == "Task"
+            && task.TypeArguments.Length == 1
+            && task.TypeArguments[0].SpecialType == SpecialType.System_Int32)
+        {
+            family = "ExecuteSqlRawAsync";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsPredicateExpression(IParameterSymbol parameter, ITypeSymbol entityType)
+    {
+        if (parameter.RefKind != RefKind.None || parameter.Type is not INamedTypeSymbol exprType)
+        {
+            return false;
+        }
+
+        if (exprType.TypeArguments.Length != 1
+            || RoslynProgramIndexExtractor.GetMetadataName(exprType.OriginalDefinition) != "System.Linq.Expressions.Expression`1")
+        {
+            return false;
+        }
+
+        if (exprType.TypeArguments[0] is not INamedTypeSymbol funcType
+            || funcType.TypeArguments.Length != 2
+            || RoslynProgramIndexExtractor.GetMetadataName(funcType.OriginalDefinition) != "System.Func`2")
+        {
+            return false;
+        }
+
+        return SymbolEqualityComparer.Default.Equals(funcType.TypeArguments[0], entityType)
+            && funcType.TypeArguments[1].SpecialType == SpecialType.System_Boolean;
     }
 
     private static bool TryResolveDbSetEntity(IInvocationOperation call, out string entityType, out string dbContextType)
@@ -650,6 +921,7 @@ internal sealed class RoslynNonGetSemanticFactCollector
         {
             IPropertyReferenceOperation property => property.Property.ContainingType.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
             IFieldReferenceOperation field => field.Field.ContainingType.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
+            IInvocationOperation setCall when setCall.TargetMethod.Name == "Set" => ResolveReceiver(setCall)?.Type?.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) ?? setCall.TargetMethod.ContainingType.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
             _ => string.Empty,
         };
         return !string.IsNullOrWhiteSpace(entityType) && !string.IsNullOrWhiteSpace(dbContextType);

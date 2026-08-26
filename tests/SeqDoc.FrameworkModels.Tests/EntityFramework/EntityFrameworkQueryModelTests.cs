@@ -61,6 +61,27 @@ public sealed class EntityFrameworkQueryModelTests
     }
 
     [Fact]
+    public async Task ExactCountAsyncPredicateAndNoPredicateOverloadsProduceQueryFacts()
+    {
+        var model = new EntityFrameworkQueryModel();
+        var context = new FrameworkAnalysisContext(Profile, EmptyIndex());
+
+        var predicateResult = await model.AnalyzeOperationAsync(
+            CreateQueryOperation("CountAsync", chain: AdmittedChain(), predicate: EqualityPredicate(), countPredicateOverload: true),
+            context,
+            CancellationToken.None);
+        var noPredicateResult = await model.AnalyzeOperationAsync(
+            CreateQueryOperation("CountAsync", chain: AdmittedChain()),
+            context,
+            CancellationToken.None);
+
+        Assert.True(predicateResult.Recognized);
+        Assert.True(noPredicateResult.Recognized);
+        Assert.NotNull(Assert.IsType<EntityFrameworkQueryFact>(Assert.Single(predicateResult.Facts)).PredicateOperation);
+        Assert.Null(Assert.IsType<EntityFrameworkQueryFact>(Assert.Single(noPredicateResult.Facts)).PredicateOperation);
+    }
+
+    [Fact]
     public async Task UnsupportedTerminalsLookalikesAndInvalidChainsFailClosed()
     {
         var model = new EntityFrameworkQueryModel();
@@ -187,6 +208,35 @@ public sealed class EntityFrameworkQueryModelTests
         Assert.Empty(result.Facts);
     }
 
+    [Theory]
+    [InlineData("SingleOrDefaultAsync", "assembly")]
+    [InlineData("SingleOrDefaultAsync", "containing-type")]
+    [InlineData("SingleOrDefaultAsync", "version")]
+    [InlineData("SingleOrDefaultAsync", "arity")]
+    [InlineData("SingleOrDefaultAsync", "parameter-order")]
+    [InlineData("SingleOrDefaultAsync", "parameter-type")]
+    [InlineData("SingleOrDefaultAsync", "parameter-ref")]
+    [InlineData("SingleOrDefaultAsync", "return")]
+    [InlineData("CountAsync", "assembly")]
+    [InlineData("CountAsync", "containing-type")]
+    [InlineData("CountAsync", "version")]
+    [InlineData("CountAsync", "arity")]
+    [InlineData("CountAsync", "parameter-order")]
+    [InlineData("CountAsync", "parameter-type")]
+    [InlineData("CountAsync", "parameter-ref")]
+    [InlineData("CountAsync", "parameter-count")]
+    [InlineData("CountAsync", "return")]
+    public async Task SingleAndCountSignatureMutationsFailClosed(string terminalName, string mutation)
+    {
+        var exact = CreateExactTerminalOperation(terminalName);
+        var result = await new EntityFrameworkQueryModel().AnalyzeOperationAsync(
+            ApplyTerminalMutation(exact, mutation),
+            new FrameworkAnalysisContext(Profile, EmptyIndex()),
+            CancellationToken.None);
+        Assert.False(result.Recognized);
+        Assert.Empty(result.Facts);
+    }
+
     [Fact]
     public async Task QueryFactRetainsExactCertaintyAndFrameworkEvidence()
     {
@@ -238,7 +288,8 @@ public sealed class EntityFrameworkQueryModelTests
         string terminalName,
         string? assembly = null,
         FrameworkQueryChainDescriptor? chain = null,
-        PredicateShapeDescriptor? predicate = null)
+        PredicateShapeDescriptor? predicate = null,
+        bool countPredicateOverload = false)
         => new(
             new OperationId($"operation:v1:{terminalName}"),
             new MethodId("method:v1:GetMeaning.Services.GadgetService.GetByIdAsync"),
@@ -253,12 +304,19 @@ public sealed class EntityFrameworkQueryModelTests
                 QueryableExtensionsType,
                 terminalName,
                 GenericArity: 1,
-                [
-                    new ParameterIdentityDescriptor(ParameterRefKind.None, "System.Linq.IQueryable<GetMeaning.Models.Gadget>"),
-                    new ParameterIdentityDescriptor(ParameterRefKind.None, "System.Linq.Expressions.Expression<System.Func<GetMeaning.Models.Gadget, System.Boolean>>"),
-                    new ParameterIdentityDescriptor(ParameterRefKind.None, "System.Threading.CancellationToken"),
-                ],
-                ReturnType: "System.Threading.Tasks.Task<GetMeaning.Models.Gadget>",
+                    terminalName == "CountAsync" && !countPredicateOverload
+                        ? [
+                        new ParameterIdentityDescriptor(ParameterRefKind.None, "System.Linq.IQueryable<GetMeaning.Models.Gadget>"),
+                        new ParameterIdentityDescriptor(ParameterRefKind.None, "System.Threading.CancellationToken"),
+                    ]
+                    : [
+                        new ParameterIdentityDescriptor(ParameterRefKind.None, "System.Linq.IQueryable<GetMeaning.Models.Gadget>"),
+                        new ParameterIdentityDescriptor(ParameterRefKind.None, "System.Linq.Expressions.Expression<System.Func<GetMeaning.Models.Gadget, System.Boolean>>"),
+                        new ParameterIdentityDescriptor(ParameterRefKind.None, "System.Threading.CancellationToken"),
+                    ],
+                ReturnType: terminalName == "CountAsync"
+                    ? "System.Threading.Tasks.Task<System.Int32>"
+                    : "System.Threading.Tasks.Task<GetMeaning.Models.Gadget>",
                 AssemblyVersion: EfCoreAssemblyVersion),
             [],
             chain,
@@ -266,6 +324,64 @@ public sealed class EntityFrameworkQueryModelTests
 
     private static OperationDescriptor ExactFirstOrDefaultOperation()
         => CreateQueryOperation("FirstOrDefaultAsync", chain: AdmittedChain(), predicate: EqualityPredicate());
+
+    private static OperationDescriptor CreateExactTerminalOperation(string terminalName)
+        => CreateQueryOperation(terminalName, chain: AdmittedChain(), predicate: EqualityPredicate());
+
+    private static OperationDescriptor ApplyTerminalMutation(OperationDescriptor exact, string mutation)
+    {
+        var identity = exact.TargetIdentity!;
+        var parameters = identity.Parameters;
+        static ParameterIdentityDescriptor Parameter(string type, ParameterRefKind refKind = ParameterRefKind.None)
+            => new(refKind, type);
+
+        return mutation switch
+        {
+            "assembly" => exact with { TargetIdentity = identity with { AssemblyIdentity = "GetMeaning" } },
+            "containing-type" => exact with { TargetIdentity = identity with { ContainingMetadataType = "GetMeaning.EntityFrameworkQueryableExtensions" } },
+            "version" => exact with { TargetIdentity = identity with { AssemblyVersion = "10.0.9.0" } },
+            "arity" => exact with { TargetIdentity = identity with { GenericArity = 2 } },
+            "parameter-order" => exact with
+            {
+                TargetIdentity = identity with
+                {
+                    Parameters = identity.MethodMetadataName == "CountAsync"
+                        ? [parameters[1], parameters[0]]
+                        : [parameters[1], parameters[0], parameters[2]],
+                },
+            },
+            "parameter-type" => exact with
+            {
+                TargetIdentity = identity with
+                {
+                    Parameters = identity.MethodMetadataName == "CountAsync"
+                        ? [parameters[0], Parameter("System.Threading.CancellationTokenSource")]
+                        : [parameters[0], Parameter("System.Linq.Expressions.Expression<System.Func<GetMeaning.Models.Gadget, System.String>>"), parameters[2]],
+                },
+            },
+            "parameter-ref" => exact with
+            {
+                TargetIdentity = identity with
+                {
+                    Parameters = identity.MethodMetadataName == "CountAsync"
+                        ? [parameters[0], Parameter("System.Threading.CancellationToken", ParameterRefKind.In)]
+                        : [parameters[0], parameters[1], Parameter("System.Threading.CancellationToken", ParameterRefKind.In)],
+                },
+            },
+            "parameter-count" => exact with
+            {
+                TargetIdentity = identity with
+                {
+                    Parameters = [.. parameters, Parameter("System.Threading.CancellationToken")],
+                },
+            },
+            "return" => exact with
+            {
+                TargetIdentity = identity with { ReturnType = "System.Threading.Tasks.ValueTask<System.Int32>" },
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(mutation), mutation, null),
+        };
+    }
 
     /// <summary>
     /// Mutates exactly one dimension of the exact FirstOrDefaultAsync declaration so a single

@@ -391,12 +391,12 @@ public sealed class BehaviorDocumentationFourFlowTests
             "Markdown must render Clear before Add.");
         Assert.True(
             PhraseIndex(updatePlan.Wording, "entity-mutation", "adds Widget")
-                < PhraseIndex(updatePlan.Wording, "entity-save", "saves changes to WidgetDbContext"),
+                < PhraseIndex(updatePlan.Wording, "entity-save", "calls SaveChanges"),
             "Markdown must render Add before the save.");
         foreach (string mutationLabel in new[] { "Remove Part range", "Clear tracked Parts", "Add Widget" })
         {
             Assert.True(
-                LastMessageIndex(updatePlan.Diagram, mutationLabel) < FirstMessageIndex(updatePlan.Diagram, "Save changes"),
+                LastMessageIndex(updatePlan.Diagram, mutationLabel) < FirstMessageIndex(updatePlan.Diagram, "calls SaveChanges"),
                 $"Mermaid must render every mutation message ({mutationLabel}) before the save message.");
         }
     }
@@ -528,7 +528,16 @@ public sealed class BehaviorDocumentationFourFlowTests
         var reserveService = reserve.Nodes.Single(node => node.Kind == ScenarioNodeKind.ServiceCall).Method!.Value;
         var reserveQueries = reserve.Nodes.Where(node => node.Kind == ScenarioNodeKind.EntityQuery).ToArray();
         Assert.Contains(reserveQueries, node => node.Detail.Contains("SingleOrDefaultAsync", StringComparison.Ordinal));
-        Assert.Contains(reserveQueries, node => node.Detail.Contains("CountAsync", StringComparison.Ordinal));
+        var reservedTicketCount = Assert.Single(reserveQueries, node => node.Detail.Contains("CountAsync", StringComparison.Ordinal));
+        var reservedTicketOperation = Assert.Single(
+            bundle.Extraction.Operations,
+            operation => operation.Id == reservedTicketCount.Operation);
+        Assert.Equal("TicketReservation.Api.Models.Ticket", reservedTicketOperation.QueryChain!.EntityType);
+        Assert.Single(
+            bundle.Extraction.NonGetSemanticFacts.EfOperationSequence,
+            sequence => sequence.Operation == reservedTicketCount.Operation
+                && sequence.Method == reserveService
+                && sequence.Kind == EfOperationSequenceKind.QueryTerminal);
         Assert.Contains(
             bundle.Extraction.NonGetSemanticFacts.EntityFrameworkMutations,
             fact => fact.Method == reserveService
@@ -565,12 +574,12 @@ public sealed class BehaviorDocumentationFourFlowTests
         var updatePlan = DocumentationPlanner.Plan(update);
         Assert.Contains(updatePlan.Diagram.Messages, message => message.Label == "UpdateAsync");
         Assert.Contains(updatePlan.Diagram.Messages, message => message.Label == "Find at most one Reservation");
-        Assert.DoesNotContain(updatePlan.Diagram.Messages, message => message.Label is "Remove Ticket range" or "Clear tracked Tickets" or "Add Ticket" or "Save changes");
+        Assert.DoesNotContain(updatePlan.Diagram.Messages, message => message.Label is "Remove Ticket range" or "Clear tracked Tickets" or "Add Ticket" or "calls SaveChanges");
         Assert.Contains(updatePlan.Wording.Phrases, phrase => phrase.Kind == WordingPhraseKind.TechnicalFallback);
 
         var reservePlan = DocumentationPlanner.Plan(reserve);
         Assert.Contains(reservePlan.Diagram.Messages, message => message.Label == "Find at most one Event");
-        Assert.DoesNotContain(reservePlan.Diagram.Messages, message => message.Label is "Count Reservations" or "Add Reservation" or "Add Ticket" or "Save changes");
+        Assert.DoesNotContain(reservePlan.Diagram.Messages, message => message.Label is "Count Reservations" or "Add Reservation" or "Add Ticket" or "calls SaveChanges");
         Assert.Contains(reservePlan.Wording.Phrases, phrase => phrase.Kind == WordingPhraseKind.TechnicalFallback);
 
         var plannedDocuments = graphs
