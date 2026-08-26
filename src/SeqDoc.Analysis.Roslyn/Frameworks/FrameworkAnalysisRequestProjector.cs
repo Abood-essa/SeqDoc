@@ -133,7 +133,8 @@ internal static class FrameworkAnalysisRequestProjector
                 && constructedTypeArgument is not null
                 ? RoslynProgramIndexExtractor.CreateSymbolId(constructedTypeArgument, projectId)
                 : null,
-            ServiceEndpointShape: ProjectServiceEndpointShape(call, project, hostChainProof));
+            ServiceEndpointShape: ProjectServiceEndpointShape(call, project, hostChainProof),
+            ClientInvocationShape: CoreWcfClientInvocationScanner.Project(call, project, documents));
     }
 
     /// <summary>
@@ -370,7 +371,7 @@ internal static class FrameworkAnalysisRequestProjector
                 _ => false,
             };
 
-    private static IOperation UnwrapAllConversionsAndParentheses(IOperation operation)
+    internal static IOperation UnwrapAllConversionsAndParentheses(IOperation operation)
     {
         var current = operation;
         while (current is IConversionOperation conversion)

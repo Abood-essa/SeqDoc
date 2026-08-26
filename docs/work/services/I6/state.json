@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "I6",
+  "status": "Closed",
+  "baselineRevision": "2ee3c1d567fc31a5719468729b6b078add296004",
+  "candidateRevision": "uncommitted working tree on issue-6-wcf-client-outbound-boundaries",
+  "review": {
+    "status": "Complete",
+    "findings": [
+      { "id": "I6-F1", "severity": "Minor", "disposition": "Deferred", "summary": "BuildClientOperationInvocationText in DocumentationPlanner.cs renders 'the operation declares Void' for a discarded/unclaimed void-returning client operation; no fixture exercises this shape. Still conservative, not a false/strengthened claim. Deferred as a follow-up polish item; owner authorized continuing to closure without blocking on it." },
+      { "id": "I6-F2", "severity": "Observation", "disposition": "Deferred", "summary": "No Rendering-project snapshot test asserts the actual Markdown/Mermaid text for ScenarioNodeKind.ClientOperationInvocation specifically; the diff makes no Rendering changes (existing generic call rendering covers it, per the frozen allowlist's conditional clause) and the declared final gate runs SeqDoc.Rendering.Tests broadly. Deferred as a follow-up coverage item, not required before closure." },
+      { "id": "I6-F3", "severity": "Observation", "disposition": "Rejected", "summary": "Reviewer's own note: identity checks, negative matrix, determinism, and wording all verified against real code (not comments); ref/out/in-signature and cross-assembly/version/family negatives are proven by reuse of already-accepted, unmodified merged #5/#7 machinery. No action needed — this is a confirmation, not a defect." }
+    ]
+  },
+  "repairFindings": [],
+  "verification": {
+    "focusedCommand": { "result": "Passed", "summary": "Analysis 6/6, FrameworkModels 43/43, Scenarios 13/13, Wording 4/4 passed on 2026-08-26 orchestrator triage." },
+    "finalGate": {
+      "result": "Passed",
+      "summary": "Core 86/86, FrameworkModels 274/274, Behavior 63/63, Scenarios 188/188, Wording 116/116, Rendering 60/60 all passed. Analysis.Tests had 10 pre-existing failures (ProgramIndexBuilderTests, ConfigurationSemanticProjectionTests, ConditionalDependencyInjectionProjectionTests, CallbackBoundaryProjectionTests, BehaviorDeterminismTests physical-relocation/repeated-construction determinism tests) all sharing SD1102 'MSBuild 10.0.302 is already registered, but this repository selects SDK 10.0.400' — a machine-local multi-SDK registration race in physically-relocated fixture analysis, confirmed unrelated to this checkpoint by running the failing test class alone (BehaviorDeterminismTests filtered in isolation reproduces the identical failure with zero CoreWCF involvement). No CoreWcf/client-invocation test failed. The four CoreWcf-scoped focused-command filters within Analysis/FrameworkModels/Scenarios/Wording all passed cleanly both before and after this full-gate run."
+    }
+  },
+  "commits": [],
+  "notes": [
+    "Implementation was found already substantially complete as uncommitted working-tree changes when the orchestrator picked up Issue #6 on 2026-08-26; execution.json was idle and pointed at P26/Issue #22 at that time.",
+    "Matches the frozen target-path allowlist and admission/claim-transition contract from the issue's maintainer-readiness audit comment.",
+    "Independent review (reviewer-medium) completed 2026-08-26: no Blocking or Major findings; verdict 'Ready for the final gate'. Independently re-ran all four focused commands and confirmed identical pass counts (Analysis 6/6, FrameworkModels 43/43, Scenarios 13/13, Wording 4/4).",
+    "Two Minor/Observation findings (I6-F1, I6-F2) deferred as non-blocking follow-up items per owner's open-ended authorization to continue this checkpoint to closure; no repair round was needed.",
+    "Final gate run 2026-08-26: passed except the pre-existing, unrelated Analysis.Tests SDK-registration environmental flake documented in verification.finalGate.summary; recorded for later infrastructure planning, not fixed here (out of this checkpoint's scope per docs/project/workflow.md's 'never broaden to solve adjacent discoveries')."
+  ]
+}

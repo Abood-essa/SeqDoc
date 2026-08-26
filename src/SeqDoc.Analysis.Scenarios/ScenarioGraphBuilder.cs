@@ -480,7 +480,14 @@ public static class ScenarioGraphBuilder
                 "SC001",
                 "The action call could not be joined to exactly one DI-resolved service implementation.",
                 $"{entryPoint.RootMethod.Value}\u001f{ambiguityReason ?? "unknown"}"));
-            AddRootDirectCalls(request, entryPoint, profileId, actionNode, nodes, edges);
+            var clientInvocationOperations = FrameworkFactsBound(request)
+                ? request.FrameworkFacts.Facts.OfType<ServiceClientInvocationFact>()
+                    .Where(fact => fact.CallerMethod == entryPoint.RootMethod)
+                    .Select(fact => fact.InvocationOperation)
+                    .ToHashSet()
+                : new HashSet<OperationId>();
+            AddRootDirectCalls(request, entryPoint, profileId, actionNode, nodes, edges, clientInvocationOperations);
+            AddServiceClientInvocations(request, entryPoint, profileId, actionNode, nodes, edges, diagnostics);
             var rootTopology = BuildTopology(
                 request,
                 profileId,
@@ -598,7 +605,8 @@ public static class ScenarioGraphBuilder
         CompilationProfileId profileId,
         ScenarioNode actionNode,
         List<ScenarioNode> nodes,
-        List<ScenarioEdge> edges)
+        List<ScenarioEdge> edges,
+        HashSet<OperationId>? excludedOperations = null)
     {
         var flow = request.Behavior.MethodFlows.SingleOrDefault(candidate => candidate.Method == entryPoint.RootMethod);
         if (flow is null)
@@ -619,7 +627,11 @@ public static class ScenarioGraphBuilder
                 && !invocation.IsDelegateOrEventInvoke
                 && !invocation.IsConstructor
                 && !string.IsNullOrWhiteSpace(invocation.TargetContainingTypeName)
-                && !string.IsNullOrWhiteSpace(invocation.TargetMethodName))
+                && !string.IsNullOrWhiteSpace(invocation.TargetMethodName)
+                // Operations independently admitted as a service-client invocation are presented by
+                // AddServiceClientInvocations with protocol-neutral wording instead of as a generic
+                // MethodCall node, so they are excluded here to avoid emitting two nodes for one call site.
+                && (excludedOperations is null || !excludedOperations.Contains(invocation.Operation)))
             .Select(invocation => (Invocation: invocation, Sites: request.Behavior.CallGraph.CallSites
                 .Where(site => site.ContainingMethod == entryPoint.RootMethod
                     && site.InvocationOperation == invocation.Operation)
@@ -673,6 +685,139 @@ public static class ScenarioGraphBuilder
                 "direct method call", evidence, CertaintyLevel.Exact, ordinal));
         }
 
+    }
+
+    private const string ClientUnsupportedInvocationCode = "SC-CLIENT-UNSUPPORTED-INVOCATION";
+
+    /// <summary>
+    /// Joins each compiler-proven <see cref="ServiceClientInvocationFact"/> reachable as a root-level
+    /// direct call from <paramref name="entryPoint"/>'s own method with a matching
+    /// <see cref="ServiceClientBoundaryFact"/> (exact client type and service contract type, classified
+    /// <see cref="ServiceClientKind.SourceClient"/> or <see cref="ServiceClientKind.GeneratedClient"/> —
+    /// never <see cref="ServiceClientKind.Unknown"/>) and an optional matching
+    /// <see cref="ServiceFaultContractFact"/> (exact operation symbol). Mirrors
+    /// <see cref="BuildServiceOperationEntries"/>'s capability/registration join pattern: the invocation
+    /// alone never proves the receiver's client classification, so a proven invocation without a
+    /// matching admitted boundary contributes a conservative unsupported-invocation diagnostic instead
+    /// of a node, exactly like an unregistered service capability. Only invocations that also pass the
+    /// same exact/source-backed/<see cref="CallResolutionKind.DirectExact"/> admission
+    /// <see cref="DirectCalls"/> already applies to ordinary direct calls are considered, so a
+    /// disconnected/unreachable call site never admits a node here either. The resulting node replaces
+    /// the generic <see cref="ScenarioNodeKind.MethodCall"/> node <see cref="AddRootDirectCalls"/> would
+    /// otherwise build for the same call site (see its <c>excludedOperations</c> parameter).
+    /// </summary>
+    private static void AddServiceClientInvocations(
+        ScenarioAnalysisRequest request,
+        NormalizedEntry entryPoint,
+        CompilationProfileId profileId,
+        ScenarioNode actionNode,
+        List<ScenarioNode> nodes,
+        List<ScenarioEdge> edges,
+        List<ScenarioGraphDiagnostic> diagnostics)
+    {
+        if (!FrameworkFactsBound(request))
+        {
+            return;
+        }
+
+        var invocationFacts = request.FrameworkFacts.Facts.OfType<ServiceClientInvocationFact>()
+            .Where(fact => fact.CallerMethod == entryPoint.RootMethod)
+            .ToArray();
+        if (invocationFacts.Length == 0)
+        {
+            return;
+        }
+
+        var directCalls = DirectCalls(request, entryPoint.RootMethod)
+            .ToDictionary(item => item.Invocation.Operation, item => item);
+        var clientBoundaries = request.FrameworkFacts.Facts.OfType<ServiceClientBoundaryFact>().ToArray();
+        var faultFacts = request.FrameworkFacts.Facts.OfType<ServiceFaultContractFact>().ToArray();
+
+        var admitted = invocationFacts
+            .Where(fact => directCalls.ContainsKey(fact.InvocationOperation))
+            .Select(fact => (Fact: fact, Call: directCalls[fact.InvocationOperation]))
+            .OrderBy(item => item.Call.Invocation.BlockOrdinal)
+            .ThenBy(item => item.Call.Invocation.EvaluationOrdinal)
+            .ThenBy(item => item.Fact.Id.Value, StringComparer.Ordinal)
+            .ToArray();
+
+        for (var ordinal = 0; ordinal < admitted.Length; ordinal++)
+        {
+            var fact = admitted[ordinal].Fact;
+            var call = admitted[ordinal].Call;
+
+            var boundaries = clientBoundaries
+                .Where(boundary => boundary.ClientTypeSymbol == fact.ClientTypeSymbol
+                    && boundary.ServiceContractTypeSymbol == fact.ServiceContractTypeSymbol
+                    && boundary.ClientKind is ServiceClientKind.SourceClient or ServiceClientKind.GeneratedClient)
+                .OrderBy(boundary => boundary.Id.Value, StringComparer.Ordinal)
+                .ToArray();
+            if (boundaries.Length == 0)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    profileId,
+                    entryPoint.EntryPointId,
+                    ClientUnsupportedInvocationCode,
+                    "A compiler-proven service-client invocation has no admitted source/generated client boundary.",
+                    $"'{fact.ClientType}' proves an exact invocation of '{fact.OperationName}' on service contract '{fact.ServiceContractType}', but no admitted client boundary classified SourceClient or GeneratedClient matches this exact client/contract pair.",
+                    fact.Evidence,
+                    fact.Certainty));
+                continue;
+            }
+
+            var faults = faultFacts
+                .Where(candidate => candidate.OperationSymbol == fact.OperationSymbol)
+                .OrderBy(candidate => candidate.FaultType, StringComparer.Ordinal)
+                .ToArray();
+            var declaredFaultTypeNames = faults.Length == 0
+                ? null
+                : string.Join(", ", faults.Select(f => f.FaultType).Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.Ordinal));
+
+            var evidence = Combine(
+                fact.Evidence,
+                call.Invocation.Evidence,
+                call.Site.Evidence,
+                call.Site.Resolution.Evidence,
+                Combine(boundaries.Select(boundary => boundary.Evidence).ToArray()),
+                Combine(faults.Select(f => f.Evidence).ToArray()));
+            var certainty = LeastConfident(
+                fact.Certainty,
+                evidence,
+                boundaries.Select(boundary => boundary.Certainty).Append(fact.Certainty).Max(),
+                faults.Select(f => f.Certainty).DefaultIfEmpty(fact.Certainty).Max());
+
+            var node = CreateNodeWithPresentation(
+                profileId,
+                entryPoint.EntryPointId,
+                ScenarioNodeKind.ClientOperationInvocation,
+                $"client-invocation:{fact.InvocationOperation.Value}",
+                fact.CallerMethod,
+                fact.InvocationOperation,
+                $"invokes {fact.ClientType}.{fact.OperationName}",
+                new ScenarioNodePresentation(
+                    ContractTypeName: fact.ServiceContractType,
+                    ClientTypeName: fact.ClientType,
+                    CalledMemberName: fact.OperationName,
+                    // Dual-populated with the same TargetContainingTypeName/TargetMemberName shape
+                    // ordinary MethodCall nodes use, so this node reuses the existing dynamic
+                    // per-type diagram-participant machinery (BuildMethodCallParticipantKeys and the
+                    // message source/target resolution it feeds) instead of colliding with the
+                    // reserved "client" participant key already used for the inbound caller.
+                    TargetContainingTypeName: fact.ClientType,
+                    TargetMemberName: fact.OperationName,
+                    ClientKind: boundaries[0].ClientKind,
+                    ResultClaimKind: fact.ResultClaim,
+                    ResultIsAwaited: fact.IsAwaited,
+                    ResultBindingName: fact.ResultBindingName,
+                    DeclaredResultTypeName: fact.DeclaredResultType,
+                    DeclaredFaultTypeNames: declaredFaultTypeNames),
+                evidence,
+                certainty,
+                ordinal);
+            nodes.Add(node);
+            edges.Add(CreateEdge(profileId, entryPoint.EntryPointId, actionNode, node, ScenarioEdgeKind.Call,
+                "outbound service-client call", evidence, certainty, ordinal));
+        }
     }
 
     private static ScenarioDirectCallExpansion AddConfiguredDirectCalls(
