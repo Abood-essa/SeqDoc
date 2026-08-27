@@ -1,6 +1,39 @@
 using System.Globalization;
+using System.ServiceModel;
+using System.ServiceModel.Channels;
 
 namespace CoreWcfServices;
+
+// A same-shaped client type used only to prove the ref-parameter negative below: derives ClientBase
+// for the admitted ICalculatorService contract and genuinely implements every operation (so it still
+// admits an ordinary source-client boundary), plus one additional, real, compilable overload named
+// Add whose extra `ref` parameter makes it a distinct overload rather than the interface's exact
+// Add(double, double) implementation. The compiler itself never lists such an overload in
+// ImplementedInterfaceMembers, so it must fail closed through the real producer rather than only
+// through a hand-built empty member set.
+public sealed class CalculatorRefOverloadClient : ClientBase<ICalculatorService>, ICalculatorService
+{
+    public CalculatorRefOverloadClient(Binding binding, EndpointAddress address)
+        : base(binding, address)
+    {
+    }
+
+    public double Add(double n1, double n2) => Channel.Add(n1, n2);
+
+    // Same-shaped lookalike overload: an extra `ref` parameter means this is a distinct overload, not
+    // the admitted contract operation's exact signature.
+    public double Add(double n1, ref double n2) => Channel.Add(n1, n2);
+
+    public double Subtract(double n1, double n2) => Channel.Subtract(n1, n2);
+
+    public double Multiply(double n1, double n2) => Channel.Multiply(n1, n2);
+
+    public double Divide(double n1, double n2) => Channel.Divide(n1, n2);
+
+    public double SquareRoot(double n1) => Channel.SquareRoot(n1);
+
+    public double Modulo(double n1, double n2) => Channel.Modulo(n1, n2);
+}
 
 // Real, compilable, guarded call sites exercising every supported service-client invocation result
 // claim (Discarded/ResultAssigned/ResultReturned/Unclaimed), the source/generated client-boundary
@@ -85,6 +118,13 @@ public sealed class CalculatorClientCaller
     // Negative: passed as an argument. Must classify as Unclaimed.
     public string CallPassedAsArgument(CalculatorSourceClient client, double n1, double n2)
         => Describe(client.Add(n1, n2));
+
+    // Negative: ref-parameter overload lookalike. CalculatorRefOverloadClient.Add(double, ref double)
+    // is a real, compilable overload but is not ICalculatorService.Add's exact signature (extra `ref`
+    // parameter), so it can never be listed in ImplementedInterfaceMembers and must never admit an
+    // invocation despite matching the operation name and a genuinely admitted receiver client boundary.
+    public double CallThroughRefParameterOverload(CalculatorRefOverloadClient client, double n1, double n2)
+        => client.Add(n1, ref n2);
 
     private static string Describe(double value) => value.ToString(CultureInfo.InvariantCulture);
 }

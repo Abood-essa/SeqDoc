@@ -4,11 +4,15 @@ using SeqDoc.Analysis.Roslyn;
 using SeqDoc.Analysis.Roslyn.Frameworks;
 using SeqDoc.Analysis.Roslyn.Toolchains;
 using SeqDoc.Analysis.Roslyn.Workspace;
+using SeqDoc.Analysis.Scenarios;
 using SeqDoc.Application.Analysis;
+using SeqDoc.Application.Documentation;
 using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Frameworks;
 using SeqDoc.Core.Identity;
 using SeqDoc.Core.ProgramIndex;
+using SeqDoc.Core.ScenarioGraph;
+using SeqDoc.Core.Semantics;
 using SeqDoc.FrameworkModels;
 using SeqDoc.FrameworkModels.CoreWcf;
 using Xunit;
@@ -149,6 +153,179 @@ public sealed class CoreWcfClientInvocationProjectionTests
             fact => fact.CallerMethod == caller.Id);
     }
 
+    [Fact]
+    public async Task RefParameterOverloadLookalikeNeverAdmitsAnInvocationThroughTheRealProducer()
+    {
+        // Real-producer proof for the exact signature/ref-kind boundary (mirrors
+        // CoreWcfClientInvocationModelTests.NoAdmittedContractMatchingMemberNeverAdmitsAnInvocation's
+        // hand-built empty-member-set substitute): CalculatorRefOverloadClient.Add(double, ref double)
+        // is a real, compilable overload that is not the admitted contract operation's exact signature.
+        var (programIndex, framework) = await AnalyzeFixtureAsync();
+        var caller = FindMethod(programIndex, CallerTypeMetadataName, "CallThroughRefParameterOverload");
+
+        Assert.DoesNotContain(
+            framework.Facts.OfType<ServiceClientInvocationFact>(),
+            fact => fact.CallerMethod == caller.Id);
+    }
+
+    [Fact]
+    public async Task RealFixtureCallSiteProducesExactlyOneVisibleClientInvocationMessageThroughScenarioAndPlanner()
+    {
+        // Full producer-to-first-observable vertical proof: real source through the production Roslyn
+        // projector, CoreWcfServiceModel, ScenarioGraphBuilder, and DocumentationPlanner, mirroring
+        // CoreWcfServiceModelProjectionTests's equivalent full-vertical test for the service side.
+        // A hand-built HttpEntryPointFact is the only non-Roslyn-producer wiring in this test — it only
+        // roots the graph at the real caller method (this fixture's caller is a plain class method, not
+        // an ASP.NET action), exactly like ScenarioTestFactory's own hand-built entry facts do for the
+        // rest of this codebase's HTTP-rooted scenario tests; every client-invocation admission fact it
+        // joins to is produced by the real Roslyn projector and CoreWcfServiceModel above.
+        var (programIndex, behavior, framework, profile) = await AnalyzeFullPipelineAsync();
+        var caller = FindMethod(programIndex, CallerTypeMetadataName, "CallAssigned");
+        var entryPointId = new EntryPointId("entry-point:v1:test:client-invocation-full-vertical");
+        var entryFact = new HttpEntryPointFact
+        {
+            Id = new BehaviorFactId("behavior-fact:v1:test:client-invocation-full-vertical"),
+            Evidence = caller.Evidence,
+            Certainty = CertaintyLevel.Exact,
+            EntryPointId = entryPointId,
+            RootMethod = caller.Id,
+            HttpMethod = HttpMethodKind.Get,
+            CanonicalRoute = "test/call-assigned",
+            OperationKey = "Test.CallAssigned",
+        };
+        framework = framework with { Facts = framework.Facts.Add(entryFact) };
+
+        var request = new ScenarioAnalysisRequest(
+            profile, programIndex, behavior, framework,
+            new SemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], "semantic-test"),
+            new DependencyInjectionFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], "di-test"),
+            new StructuralResultFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], "structural-test"),
+            new NonGetSemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], [], [], [], [], "non-get-test"));
+
+        var graphSet = ScenarioGraphBuilder.Build(request);
+        var graph = Assert.Single(graphSet.Graphs, item => item.RootMethod == caller.Id);
+        var node = Assert.Single(graph.Nodes, item => item.Kind == ScenarioNodeKind.ClientOperationInvocation);
+        Assert.DoesNotContain(graph.Nodes, item => item.Kind == ScenarioNodeKind.MethodCall);
+        Assert.Equal(CalculatorSourceClientMetadataName, node.Presentation?.ClientTypeName);
+        Assert.Equal(CalculatorContractMetadataName, node.Presentation?.ContractTypeName);
+        Assert.Equal("Add", node.Presentation?.CalledMemberName);
+        Assert.Equal(ClientInvocationResultClaimKind.ResultAssigned, node.Presentation?.ResultClaimKind);
+        Assert.Equal("sum", node.Presentation?.ResultBindingName);
+        Assert.Equal(CertaintyLevel.Exact, node.Certainty);
+
+        var plan = DocumentationPlanner.Plan(graph);
+        var phrase = Assert.Single(plan.Wording.Phrases, item => item.Key == "client-operation-invocation");
+        Assert.Equal(
+            "The action calls CalculatorSourceClient.Add through the ICalculatorService service-client boundary; "
+                + "the call result is assigned to sum.",
+            phrase.Text);
+        Assert.DoesNotContain("HTTP", phrase.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("response", phrase.Text, StringComparison.OrdinalIgnoreCase);
+
+        var message = Assert.Single(plan.Diagram.Messages, item => item.Label == "Add");
+        var participant = Assert.Single(plan.Diagram.Participants, item => item.Label == "CalculatorSourceClient");
+        Assert.Equal(participant.Key, message.Target);
+    }
+
+    [Fact]
+    public async Task TwoSequentialCallsToTheSameOperationOnAStraightLinePathAdmitTwoOrderedNodesRegardlessOfFrameworkFactOrder()
+    {
+        // Closes Risk #8's remaining gap: TwoDistinctClientInvocationCallSitesAdmitDeterministicallyRegardlessOfFrameworkFactInputOrder
+        // (SeqDoc.Scenarios.Tests) only proves determinism across two *different* operations on two
+        // mutually-exclusive branches of a guarded decision. This proves the narrower, same-operation,
+        // straight-line case through the real ScenarioGraphBuilder/DocumentationPlanner pipeline:
+        // CalculatorClientCaller.CallTwice calls client.Add(a, b) then client.Add(c, d) sequentially with
+        // no branching, so the B3 fix that groups ServiceClientInvocationFacts by InvocationOperation must
+        // never conflate these two genuinely distinct call sites into one node, and the resulting node
+        // order/identity/evidence/certainty must not depend on the order framework facts are supplied in.
+        var (programIndex, behavior, framework, profile) = await AnalyzeFullPipelineAsync();
+        var caller = FindMethod(programIndex, CallerTypeMetadataName, "CallTwice");
+        var entryPointId = new EntryPointId("entry-point:v1:test:client-invocation-call-twice");
+        var entryFact = new HttpEntryPointFact
+        {
+            Id = new BehaviorFactId("behavior-fact:v1:test:client-invocation-call-twice"),
+            Evidence = caller.Evidence,
+            Certainty = CertaintyLevel.Exact,
+            EntryPointId = entryPointId,
+            RootMethod = caller.Id,
+            HttpMethod = HttpMethodKind.Get,
+            CanonicalRoute = "test/call-twice",
+            OperationKey = "Test.CallTwice",
+        };
+        var frameworkWithEntry = framework with { Facts = framework.Facts.Add(entryFact) };
+
+        var forwardGraph = BuildCallTwiceGraph(programIndex, behavior, frameworkWithEntry, profile, caller.Id);
+        var reversedFacts = frameworkWithEntry with { Facts = [.. frameworkWithEntry.Facts.Reverse()] };
+        var reversedGraph = BuildCallTwiceGraph(programIndex, behavior, reversedFacts, profile, caller.Id);
+
+        AssertCallTwiceGraphShape(forwardGraph);
+        AssertCallTwiceGraphShape(reversedGraph);
+
+        var forwardNodes = forwardGraph.Nodes.Where(node => node.Kind == ScenarioNodeKind.ClientOperationInvocation)
+            .OrderBy(node => node.Presentation?.ResultBindingName, StringComparer.Ordinal)
+            .ToArray();
+        var reversedNodes = reversedGraph.Nodes.Where(node => node.Kind == ScenarioNodeKind.ClientOperationInvocation)
+            .OrderBy(node => node.Presentation?.ResultBindingName, StringComparer.Ordinal)
+            .ToArray();
+        for (var i = 0; i < forwardNodes.Length; i++)
+        {
+            Assert.Equal(forwardNodes[i].Id, reversedNodes[i].Id);
+            Assert.Equal(forwardNodes[i].Certainty, reversedNodes[i].Certainty);
+            Assert.Equal(forwardNodes[i].Evidence.Length, reversedNodes[i].Evidence.Length);
+            Assert.Equal(forwardNodes[i].Presentation?.ResultBindingName, reversedNodes[i].Presentation?.ResultBindingName);
+        }
+
+        // Rendered order must be source order (the `first`/(a,b) call before the `second`/(c,d) call)
+        // regardless of the framework-fact input order.
+        var forwardPlan = DocumentationPlanner.Plan(forwardGraph);
+        var reversedPlan = DocumentationPlanner.Plan(reversedGraph);
+        AssertCallTwiceMessageOrder(forwardPlan);
+        AssertCallTwiceMessageOrder(reversedPlan);
+    }
+
+    private static ScenarioGraph BuildCallTwiceGraph(
+        ProgramIndexSnapshot programIndex,
+        SeqDoc.Core.Behavior.BehaviorSnapshot behavior,
+        FrameworkAnalysisResult framework,
+        CompilationProfile profile,
+        MethodId callerId)
+    {
+        var request = new ScenarioAnalysisRequest(
+            profile, programIndex, behavior, framework,
+            new SemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], "semantic-test"),
+            new DependencyInjectionFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], "di-test"),
+            new StructuralResultFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], "structural-test"),
+            new NonGetSemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], [], [], [], [], "non-get-test"));
+
+        var graphSet = ScenarioGraphBuilder.Build(request);
+        return Assert.Single(graphSet.Graphs, item => item.RootMethod == callerId);
+    }
+
+    private static void AssertCallTwiceGraphShape(ScenarioGraph graph)
+    {
+        var invocationNodes = graph.Nodes.Where(node => node.Kind == ScenarioNodeKind.ClientOperationInvocation).ToArray();
+        Assert.Equal(2, invocationNodes.Length);
+        Assert.DoesNotContain(graph.Nodes, node => node.Kind == ScenarioNodeKind.MethodCall);
+        Assert.All(invocationNodes, node => Assert.Equal("Add", node.Presentation?.CalledMemberName));
+        Assert.All(invocationNodes, node => Assert.Equal(CertaintyLevel.Exact, node.Certainty));
+        Assert.Equal(2, invocationNodes.Select(node => node.Id.Value).Distinct(StringComparer.Ordinal).Count());
+        Assert.Contains(invocationNodes, node => node.Presentation?.ResultBindingName == "first");
+        Assert.Contains(invocationNodes, node => node.Presentation?.ResultBindingName == "second");
+    }
+
+    private static void AssertCallTwiceMessageOrder(DocumentationPlan plan)
+    {
+        // plan.Diagram.Messages preserves the sequence-diagram rendering order; the "Add" label appears
+        // exactly twice, and array position (not any explicit ordinal field) is the render order.
+        var addIndexes = plan.Diagram.Messages
+            .Select((message, index) => (message, index))
+            .Where(item => item.message.Label == "Add")
+            .Select(item => item.index)
+            .ToArray();
+        Assert.Equal(2, addIndexes.Length);
+        Assert.True(addIndexes[0] < addIndexes[1], "Expected the 'first' (a,b) call to be rendered before the 'second' (c,d) call.");
+    }
+
     private static void AssertClaim(
         ProgramIndexSnapshot programIndex,
         ServiceClientInvocationFact[] invocations,
@@ -197,6 +374,37 @@ public sealed class CoreWcfClientInvocationProjectionTests
             CancellationToken.None);
 
         return (extraction.Value.ProgramIndex, framework);
+    }
+
+    private static async Task<(ProgramIndexSnapshot ProgramIndex, SeqDoc.Core.Behavior.BehaviorSnapshot Behavior, FrameworkAnalysisResult Framework, CompilationProfile Profile)> AnalyzeFullPipelineAsync()
+    {
+        var root = FindRepositoryRoot();
+        var request = new CompilationAnalysisRequest(
+            root,
+            Path.Combine(root, FixtureRelativePath.Replace('/', Path.DirectorySeparatorChar)),
+            CompilationProfile.Create(FixtureRelativePath, "Release", "net10.0"));
+        var extraction = await new RoslynProfileAnalysisExtractor().ExtractAsync(request, CancellationToken.None);
+        Assert.True(
+            extraction.IsSuccess,
+            string.Join(Environment.NewLine, extraction.Diagnostics.Select(diagnostic => $"{diagnostic.Code}: {diagnostic.TechnicalCause}\n{diagnostic.InternalDetail}")));
+
+        var behaviorResult = await new BehaviorAnalyzer().AnalyzeAsync(
+            new BehaviorAnalysisRequest(extraction.Value!.ProgramIndex, extraction.Value.BehaviorInput),
+            CancellationToken.None);
+        Assert.True(
+            behaviorResult.IsSuccess,
+            string.Join(Environment.NewLine, behaviorResult.Diagnostics.Select(diagnostic => $"{diagnostic.Code}: {diagnostic.TechnicalCause}")));
+
+        var host = new FrameworkModelHost([new CoreWcfServiceModel()]);
+        var framework = await host.AnalyzeAsync(
+            new FrameworkAnalysisRequest(
+                new FrameworkDetectionContext(request.Profile, extraction.Value.ProgramIndex),
+                new FrameworkAnalysisContext(request.Profile, extraction.Value.ProgramIndex),
+                extraction.Value.Operations,
+                extraction.Value.Symbols),
+            CancellationToken.None);
+
+        return (extraction.Value.ProgramIndex, behaviorResult.Value!, framework, request.Profile);
     }
 
     private static string FindRepositoryRoot()

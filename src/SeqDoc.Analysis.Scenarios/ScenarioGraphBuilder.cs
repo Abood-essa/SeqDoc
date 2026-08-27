@@ -713,6 +713,8 @@ public static class ScenarioGraphBuilder
     }
 
     private const string ClientUnsupportedInvocationCode = "SC-CLIENT-UNSUPPORTED-INVOCATION";
+    private const string ClientConflictingBoundaryCode = "SC-CLIENT-CONFLICTING-BOUNDARY";
+    private const string ClientConflictingInvocationCode = "SC-CLIENT-CONFLICTING-INVOCATION";
 
     /// <summary>
     /// Joins each compiler-proven <see cref="ServiceClientInvocationFact"/> reachable as a root-level
@@ -758,18 +760,45 @@ public static class ScenarioGraphBuilder
         var clientBoundaries = request.FrameworkFacts.Facts.OfType<ServiceClientBoundaryFact>().ToArray();
         var faultFacts = request.FrameworkFacts.Facts.OfType<ServiceFaultContractFact>().ToArray();
 
+        // Grouped by InvocationOperation (the real identity of a compiler call site): if two or more
+        // ServiceClientInvocationFacts ever land on the same call site (duplicate emission or a genuine
+        // conflicting re-analysis), exactly one node is admitted per call site rather than one per fact.
+        // A group whose facts disagree on any field material to the node's identity or presentation is
+        // withheld and reported via ClientConflictingInvocationCode instead of arbitrarily picking one —
+        // the same fail-closed posture ClientConflictingBoundaryCode below applies to a disagreeing
+        // client-kind boundary set.
         var admitted = invocationFacts
             .Where(fact => directCalls.ContainsKey(fact.InvocationOperation))
-            .Select(fact => (Fact: fact, Call: directCalls[fact.InvocationOperation]))
+            .GroupBy(fact => fact.InvocationOperation)
+            .Select(group => (
+                Operation: group.Key,
+                Facts: group.OrderBy(f => f.Id.Value, StringComparer.Ordinal).ToArray(),
+                Call: directCalls[group.Key]))
             .OrderBy(item => item.Call.Invocation.BlockOrdinal)
             .ThenBy(item => item.Call.Invocation.EvaluationOrdinal)
-            .ThenBy(item => item.Fact.Id.Value, StringComparer.Ordinal)
+            .ThenBy(item => item.Operation.Value, StringComparer.Ordinal)
             .ToArray();
 
         for (var ordinal = 0; ordinal < admitted.Length; ordinal++)
         {
-            var fact = admitted[ordinal].Fact;
+            var facts = admitted[ordinal].Facts;
             var call = admitted[ordinal].Call;
+
+            if (facts.Length > 1 && !ClientInvocationFactsAgree(facts))
+            {
+                var first = facts[0];
+                diagnostics.Add(CreateDiagnostic(
+                    profileId,
+                    entryPoint.EntryPointId,
+                    ClientConflictingInvocationCode,
+                    "Multiple compiler-proven service-client invocation facts disagree for the same call site.",
+                    $"Call site '{first.InvocationOperation.Value}' has {facts.Length} admitted ServiceClientInvocationFacts that disagree on operation, contract, client, or result-claim shape; no single coherent invocation can be admitted for this call site.",
+                    Combine(facts.Select(f => f.Evidence).ToArray()),
+                    facts.Select(f => f.Certainty).Max()));
+                continue;
+            }
+
+            var fact = facts[0];
 
             var boundaries = clientBoundaries
                 .Where(boundary => boundary.ClientTypeSymbol == fact.ClientTypeSymbol
@@ -790,6 +819,20 @@ public static class ScenarioGraphBuilder
                 continue;
             }
 
+            var distinctClientKinds = boundaries.Select(boundary => boundary.ClientKind).Distinct().ToArray();
+            if (distinctClientKinds.Length > 1)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    profileId,
+                    entryPoint.EntryPointId,
+                    ClientConflictingBoundaryCode,
+                    "Conflicting client-kind boundaries match the same client/contract pair.",
+                    $"'{fact.ClientType}' proves an exact invocation of '{fact.OperationName}' on service contract '{fact.ServiceContractType}', but the admitted client boundaries for this exact client/contract pair disagree on ClientKind ({string.Join(", ", distinctClientKinds.Select(kind => kind.ToString()).OrderBy(name => name, StringComparer.Ordinal))}); no single coherent client kind can be admitted.",
+                    Combine(Combine(facts.Select(f => f.Evidence).ToArray()), Combine(boundaries.Select(boundary => boundary.Evidence).ToArray())),
+                    boundaries.Select(boundary => boundary.Certainty).Append(facts.Select(f => f.Certainty).Max()).Max()));
+                continue;
+            }
+
             var faults = faultFacts
                 .Where(candidate => candidate.OperationSymbol == fact.OperationSymbol)
                 .OrderBy(candidate => candidate.FaultType, StringComparer.Ordinal)
@@ -799,14 +842,14 @@ public static class ScenarioGraphBuilder
                 : string.Join(", ", faults.Select(f => f.FaultType).Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.Ordinal));
 
             var evidence = Combine(
-                fact.Evidence,
+                Combine(facts.Select(f => f.Evidence).ToArray()),
                 call.Invocation.Evidence,
                 call.Site.Evidence,
                 call.Site.Resolution.Evidence,
                 Combine(boundaries.Select(boundary => boundary.Evidence).ToArray()),
                 Combine(faults.Select(f => f.Evidence).ToArray()));
             var certainty = LeastConfident(
-                fact.Certainty,
+                facts.Select(f => f.Certainty).Max(),
                 evidence,
                 boundaries.Select(boundary => boundary.Certainty).Append(fact.Certainty).Max(),
                 faults.Select(f => f.Certainty).DefaultIfEmpty(fact.Certainty).Max());
@@ -830,7 +873,7 @@ public static class ScenarioGraphBuilder
                     // reserved "client" participant key already used for the inbound caller.
                     TargetContainingTypeName: fact.ClientType,
                     TargetMemberName: fact.OperationName,
-                    ClientKind: boundaries[0].ClientKind,
+                    ClientKind: distinctClientKinds[0],
                     ResultClaimKind: fact.ResultClaim,
                     ResultIsAwaited: fact.IsAwaited,
                     ResultBindingName: fact.ResultBindingName,
@@ -1512,6 +1555,32 @@ public static class ScenarioGraphBuilder
             && candidate.EvaluationOrdinal == first.EvaluationOrdinal
             && candidate.TargetAssemblyName == first.TargetAssemblyName
             && candidate.IsPlatformTarget == first.IsPlatformTarget);
+    }
+
+    /// <summary>
+    /// True when every <see cref="ServiceClientInvocationFact"/> admitted for the same
+    /// <see cref="ServiceClientInvocationFact.InvocationOperation"/> (the real identity of one compiler
+    /// call site) agrees on every field material to the node's identity, evidence join, and observable
+    /// presentation. Mirrors <see cref="InvocationFactsAgree"/>'s duplicate-anchor coherence check for
+    /// direct calls, applied to this fact's own required fields instead. Unlike
+    /// <see cref="InvocationFactsAgree"/>, this deliberately does not compare Certainty across candidates,
+    /// because Certainty is folded via the weakest-contributor rule (Max of Certainty values) regardless of
+    /// agreement, so differing certainty among otherwise-agreeing facts cannot strengthen the resulting claim.
+    /// </summary>
+    private static bool ClientInvocationFactsAgree(ServiceClientInvocationFact[] candidates)
+    {
+        var first = candidates[0];
+        return candidates.All(candidate => candidate.ServiceContractType == first.ServiceContractType
+            && candidate.ServiceContractTypeSymbol == first.ServiceContractTypeSymbol
+            && candidate.ClientType == first.ClientType
+            && candidate.ClientTypeSymbol == first.ClientTypeSymbol
+            && candidate.OperationName == first.OperationName
+            && candidate.OperationSymbol == first.OperationSymbol
+            && candidate.OperationKey == first.OperationKey
+            && candidate.ResultClaim == first.ResultClaim
+            && candidate.IsAwaited == first.IsAwaited
+            && candidate.ResultBindingName == first.ResultBindingName
+            && candidate.DeclaredResultType == first.DeclaredResultType);
     }
 
     private static bool IsDirectExact(InvocationFlowNode invocation, CallSite site)
