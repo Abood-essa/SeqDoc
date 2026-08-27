@@ -19,7 +19,8 @@ internal sealed record DiagramSettings(
     int? MaxExpandedCalls,
     int? MaxMaterialMessages,
     int? MaxParticipants,
-    int? MaxMermaidCharacters);
+    int? MaxMermaidCharacters,
+    bool? Decomposition);
 
 internal sealed record NamedProfileSettings(
     ImmutableSortedDictionary<string, string> MsBuildProperties,
@@ -122,7 +123,7 @@ internal sealed record YamlConfigurationDocument(
         var roots = ImmutableSortedSet.Create<string>(KeyComparer);
         var excludeParticipants = ImmutableSortedSet.Create<string>(KeyComparer);
         var excludeCalls = ImmutableSortedSet.Create<string>(KeyComparer);
-        var diagramSettings = new DiagramSettings(null, null, null, null, null);
+        var diagramSettings = new DiagramSettings(null, null, null, null, null, null);
         bool rootsSpecified = false;
         if (root.TryGetValue("documentation", out var documentation))
         {
@@ -181,6 +182,7 @@ internal sealed record YamlConfigurationDocument(
                 "maxExpandedMethods", "maxExpandedCalls", "maxParticipants", "maxMaterialMessages", "maxMermaidCharacters",
                 "maxFragmentDepth", "processingColor", "successColor",
                 "recoveryColor", "warningColor", "terminalFailureColor",
+                "decomposition",
             ]);
             foreach (string key in new[] { "maxExpandedMethods", "maxExpandedCalls", "maxParticipants", "maxMaterialMessages", "maxMermaidCharacters", "maxFragmentDepth" })
             {
@@ -195,7 +197,8 @@ internal sealed record YamlConfigurationDocument(
                 OptionalInteger(fields, "maxExpandedCalls", "$.diagrams.maxExpandedCalls"),
                 OptionalInteger(fields, "maxMaterialMessages", "$.diagrams.maxMaterialMessages"),
                 OptionalInteger(fields, "maxParticipants", "$.diagrams.maxParticipants"),
-                OptionalInteger(fields, "maxMermaidCharacters", "$.diagrams.maxMermaidCharacters"));
+                OptionalInteger(fields, "maxMermaidCharacters", "$.diagrams.maxMermaidCharacters"),
+                OptionalBoolean(fields, "decomposition", "$.diagrams.decomposition"));
 
             ValidateOptionalStrings(fields, "$.diagrams", "processingColor", "successColor", "recoveryColor", "warningColor", "terminalFailureColor");
         }
@@ -420,6 +423,21 @@ internal sealed record YamlConfigurationDocument(
         {
             throw new ConfigurationFormatException(path, "Expected true or false.");
         }
+    }
+
+    private static bool? OptionalBoolean(Dictionary<string, YamlNode> fields, string key, string path)
+    {
+        if (!fields.TryGetValue(key, out var node))
+        {
+            return null;
+        }
+
+        if (node is not YamlScalarNode scalar || !bool.TryParse(scalar.Value, out bool value))
+        {
+            throw new ConfigurationFormatException(path, "Expected true or false.");
+        }
+
+        return value;
     }
 
     private static void ValidateOptionalStrings(Dictionary<string, YamlNode> fields, string path, params string[] keys)

@@ -252,7 +252,8 @@ public static class CliHost
                  configuration.ExcludeCalls?.Value ?? ImmutableSortedSet.Create<string>(StringComparer.Ordinal),
                  new SeqDoc.Core.Configuration.DiagramBudget(configuration.MaxExpandedMethods.Value,
                      configuration.MaxExpandedCalls.Value, configuration.MaxMaterialMessages.Value,
-                     configuration.MaxParticipants.Value, configuration.MaxMermaidCharacters.Value));
+                     configuration.MaxParticipants.Value, configuration.MaxMermaidCharacters.Value),
+                 new DiagramDecompositionOptions(configuration.DecompositionEnabled.Value));
             if (generation.InvalidEntry)
             {
                 // An unknown or ambiguous focused entry is user input error, never a documentation
@@ -390,7 +391,8 @@ public static class CliHost
     private static GenerationResult GenerateDocumentation(
         PassAAnalysisSummary summary, string repositoryRoot, string outputPath, string? entry,
         ImmutableSortedSet<string> excludeParticipants, ImmutableSortedSet<string> excludeCalls,
-        SeqDoc.Core.Configuration.DiagramBudget? diagramBudget = null)
+        SeqDoc.Core.Configuration.DiagramBudget? diagramBudget = null,
+        DiagramDecompositionOptions? decomposition = null)
     {
         string absoluteOutput = Path.GetFullPath(outputPath, repositoryRoot);
         var graphs = summary.CompanionInspections
@@ -441,7 +443,7 @@ public static class CliHost
             .FirstOrDefault();
         string profileId = contributing?.ProfileId.Value ?? string.Empty;
         string fingerprint = contributing?.ScenarioGraphs.ProgramIndexFingerprint ?? string.Empty;
-        var built = DocumentationSetBuilder.Build(profileId, fingerprint, entries, diagramBudget);
+        var built = DocumentationSetBuilder.Build(profileId, fingerprint, entries, diagramBudget, decomposition);
         if (!built.Succeeded)
         {
             OutputSetActivator.MarkStale(absoluteOutput);
@@ -841,6 +843,7 @@ public static class CliHost
         output.WriteLine($"Maximum material messages: {configuration.MaxMaterialMessages.Value} ({configuration.MaxMaterialMessages.Provenance})");
         output.WriteLine($"Maximum participants: {configuration.MaxParticipants.Value} ({configuration.MaxParticipants.Provenance})");
         output.WriteLine($"Maximum Mermaid characters: {configuration.MaxMermaidCharacters.Value} ({configuration.MaxMermaidCharacters.Provenance})");
+        output.WriteLine($"Diagram decomposition: {configuration.DecompositionEnabled.Value} ({configuration.DecompositionEnabled.Provenance})");
         output.WriteLine($"Configured roots: {string.Join(", ", configuration.Roots.Value)} ({configuration.Roots.Provenance})");
         foreach ((string key, ResolvedConfigurationValue<string> value) in configuration.MsBuildProperties)
         {

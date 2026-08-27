@@ -68,6 +68,7 @@ public sealed class YamlConfigurationResolver : IConfigurationResolver
         var knownValues = EmptyResolvedMap();
         var diagramBudget = DefaultDiagramBudget();
         bool rootsSpecified = false;
+        var decompositionEnabled = new ResolvedConfigurationValue<bool>(false, ConfigurationProvenance.Default);
 
         if (document is not null)
         {
@@ -93,6 +94,10 @@ public sealed class YamlConfigurationResolver : IConfigurationResolver
             roots = new ResolvedConfigurationValue<ImmutableSortedSet<string>>(document.Roots,
                 document.RootsSpecified ? ConfigurationProvenance.ConfigurationFile : ConfigurationProvenance.Default);
             diagramBudget = ResolveDiagramBudget(document.Diagrams);
+            if (document.Diagrams.Decomposition is { } decomposition)
+            {
+                decompositionEnabled = new ResolvedConfigurationValue<bool>(decomposition, ConfigurationProvenance.ConfigurationFile);
+            }
         }
 
         if (request.Profile is not null)
@@ -165,7 +170,7 @@ public sealed class YamlConfigurationResolver : IConfigurationResolver
                 rootsSpecified,
                 excludeParticipants,
                 excludeCalls)
-            { DiagramBudget = diagramBudget })
+            { DiagramBudget = diagramBudget, DecompositionEnabled = decompositionEnabled })
             : ApplicationResult.Failure<ResolvedPassAConfiguration>(ApplicationOutcome.InvalidInput, [invalid]);
     }
 
@@ -314,7 +319,7 @@ public sealed class YamlConfigurationResolver : IConfigurationResolver
         ResolveBudgetValue(settings.MaxMermaidCharacters, SeqDoc.Core.Configuration.DiagramBudget.Default.MaxMermaidCharacters));
 
     private static ResolvedDiagramBudget DefaultDiagramBudget() => ResolveDiagramBudget(
-        new DiagramSettings(null, null, null, null, null));
+        new DiagramSettings(null, null, null, null, null, null));
 
     private static ResolvedConfigurationValue<int> ResolveBudgetValue(int? value, int defaultValue) =>
         new(value ?? defaultValue, value.HasValue ? ConfigurationProvenance.ConfigurationFile : ConfigurationProvenance.Default);

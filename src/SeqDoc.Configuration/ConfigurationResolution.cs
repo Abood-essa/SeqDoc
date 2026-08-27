@@ -60,6 +60,13 @@ public sealed record ResolvedPassAConfiguration(
 {
     public ResolvedDiagramBudget DiagramBudget { get; init; } = DefaultDiagramBudget;
     public ResolvedDiagramBudget ResolvedDiagramBudget => DiagramBudget;
+
+    /// <summary>
+    /// Additive opt-in decomposition flag. Defaults to provenance-tracked false so prior positional
+    /// constructions keep compiling with unchanged semantics.
+    /// </summary>
+    public ResolvedConfigurationValue<bool> DecompositionEnabled { get; init; } = new(false, ConfigurationProvenance.Default);
+
     public ResolvedConfigurationValue<int> MaxExpandedMethods => ResolvedDiagramBudget.MaxExpandedMethods;
     public ResolvedConfigurationValue<int> MaxExpandedCalls => ResolvedDiagramBudget.MaxExpandedCalls;
     public ResolvedConfigurationValue<int> MaxMaterialMessages => ResolvedDiagramBudget.MaxMaterialMessages;

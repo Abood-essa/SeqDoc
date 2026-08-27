@@ -1,0 +1,93 @@
+{
+  "checkpointId": "I23",
+  "status": "Closed",
+  "baseline": "dd51706",
+  "candidate": "WORKTREE",
+  "review": "review0",
+  "reviewRunCount": 1,
+  "completeCandidate": true,
+  "historicalReview": "retained as provenance",
+  "reconstruction": "e3de73a I23 content plus exact P2R repair hunks",
+  "evidenceDisposition": {
+    "scopeBaselineContamination": "Rejected: packet inspected wrong root; candidate is dd51706-based and allowlisted",
+    "atomicIrreducibleFragment": "Accepted: withhold entire unplaceable fragment as conservative DP-MERMAID-TRUNCATED boundary",
+    "cliJsonProvenance": "Rejected: human visibility line is frozen contract; JSON extension is non-goal",
+    "producerBacked": "Addressed by guarded production and compiler-backed FourFlow coverage"
+  },
+  "verification": {
+    "rendering": "77/77",
+    "configuration": "61/61",
+    "fourFlow": "13/13",
+    "cli": "20/20"
+  },
+  "testWriterAudit": {
+    "claimsAdded": 0,
+    "allRisksMapped": true
+  },
+  "exactAllowlist": true,
+  "allowlistAddition": "tests/SeqDoc.Cli.Tests/DiagramBudgetCliTests.cs",
+  "reviewFindings": [
+    {
+      "id": "I23-F1",
+      "severity": "Medium",
+      "status": "Fixed",
+      "repair": "Owner-approved smallest target amendment adds decomposition: true and exact human visibility line; no JSON schema change"
+    }
+  ],
+  "repairRerun": {
+    "number": 1,
+    "initialFailure": "Exit 3 solely because standalone GetMeaning fixture was unrestored",
+    "fixtureRestore": "Locked GetMeaning restore passed",
+    "cliBuild": "Clean Release CLI build: 0 warnings/errors",
+    "focusedCliTest": "DiagramBudgetCliTests 1/1"
+  },
+  "existingVerificationUnchanged": {
+    "rendering": "77/77",
+    "configuration": "61/61",
+    "fourFlow": "13/13"
+  },
+  "allFindingsDisposed": true,
+  "finalGatePending": true,
+  "externalVerificationPending": true,
+  "secondReview": false,
+  "finalGate": "PassWithKnownBaselineAndInheritedRenderEvidence",
+  "releaseVerification": {
+    "lockedRestoreBuild": "Pass, 0 warnings/errors",
+    "core": "91/91",
+    "analysis": "235/235",
+    "behavior": "63/63",
+    "scenarios": "218/218",
+    "wording": "116/116",
+    "rendering": "77/77",
+    "configuration": "61/61",
+    "cli": "20/20",
+    "acceptance": "30/31; sole unchanged known MediatR baseline",
+    "diffCheck": "Pass",
+    "analysisCorrection": "Initial 2/235 failure was solely omitted standalone FusionCache restore; exact locked restore corrected the verification command, with no candidate change"
+  },
+  "externalVerification": {
+    "disabled": {
+      "CreditTransfer": { "runs": 2, "byteIdentical": true, "matchesI21": true, "mmd": 8, "maxCharacters": 4821, "links": 0, "limit": 45000 },
+      "FraudManagement": { "runs": 2, "byteIdentical": true, "matchesI21": true, "mmd": 36, "maxCharacters": 1227, "links": 0, "limit": 45000 },
+      "SMSGateway": { "runs": 2, "byteIdentical": true, "matchesI21": true, "mmd": 15, "maxCharacters": 1907, "links": 0, "limit": 45000 },
+      "TicketReservation": { "runs": 2, "byteIdentical": true, "matchesI21": true, "mmd": 4, "maxCharacters": 484, "links": 0, "limit": 45000 }
+    },
+    "enabled": {
+      "CreditTransfer": { "runs": 2, "byteIdentical": true, "mmd": 14, "files": 30, "maxCharacters": 2568, "limit": 2600, "links": 0, "decompositionMentions": 2 },
+      "FraudManagement": { "runs": 2, "byteIdentical": true, "mmd": 42, "files": 86, "maxCharacters": 819, "limit": 900, "links": 0, "decompositionMentions": 4 }
+    },
+    "profilesAndFingerprints": "I21 values retained",
+    "mermaid": {
+      "currentExecutions": 114,
+      "inheritedExactByteEvidence": 5,
+      "distinctInputsWithEvidence": "119/119",
+      "currentRerenders": "114/119; no claim of 119 current rerenders",
+      "cli": "Pinned Mermaid CLI 11.16",
+      "availability": "Puppeteer missing chrome-headless-shell after user-cache removal; no reinstall or reinvocation per owner instruction"
+    },
+    "relativeConfigCorrection": "Initial SD3004 failures were command path quoting errors; absolute config paths passed with no candidate/configuration change"
+  },
+  "publication": "Pending",
+  "blocker": null,
+  "nextAction": "Publish candidate"
+}

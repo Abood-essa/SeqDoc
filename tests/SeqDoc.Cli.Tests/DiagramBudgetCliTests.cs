@@ -20,6 +20,7 @@ public sealed class DiagramBudgetCliTests
               maxMaterialMessages: 33
               maxParticipants: 44
               maxMermaidCharacters: 55
+              decomposition: true
             """);
 
         var json = await RunAsync("analyze", target, "--repository-root", root, "--cache", cache.Path,
@@ -40,6 +41,7 @@ public sealed class DiagramBudgetCliTests
         Assert.Equal(0, human.ExitCode);
         Assert.Contains("Maximum expanded methods: 11 (ConfigurationFile)", human.Output, StringComparison.Ordinal);
         Assert.Contains("Maximum Mermaid characters: 55 (ConfigurationFile)", human.Output, StringComparison.Ordinal);
+        Assert.Contains("Diagram decomposition: True (ConfigurationFile)", human.Output, StringComparison.Ordinal);
     }
 
     private static async Task<ProcessResult> RunAsync(params string[] arguments)

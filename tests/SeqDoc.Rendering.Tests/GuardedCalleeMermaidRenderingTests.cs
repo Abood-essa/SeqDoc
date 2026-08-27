@@ -1,8 +1,10 @@
 using System.Collections.Immutable;
+using System.Text;
 using System.Text.RegularExpressions;
 using SeqDoc.Analysis.Scenarios;
 using SeqDoc.Application.Documentation;
 using SeqDoc.Core.Behavior;
+using SeqDoc.Core.Configuration;
 using SeqDoc.Core.DiagramPlan;
 using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Frameworks;
@@ -71,6 +73,60 @@ public sealed class GuardedCalleeMermaidRenderingTests
         int lastMessage = Array.FindLastIndex(lines, line => line.Contains("->>", StringComparison.Ordinal));
         Assert.True(rootOpen >= 0 && rootOpen < nestedOpen && nestedOpen < lastMessage,
             "The root fragment must open before its nested fragment and both must precede the final message.");
+    }
+
+    [Fact]
+    public void ProductionGuardedOccurrencesRemainCompleteAndDeterministicThroughDecomposition()
+    {
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(CreateNestedLocalGuardsRequest()).Graphs);
+        var plan = DocumentationPlanner.Plan(graph).Diagram;
+        var budget = new DiagramBudget(1024, 4096, 1024, 256, MermaidRenderer.Render(plan).Length - 1);
+        var entry = new DocumentSetEntry("guarded-callee-test", PlanTestFactory.CreateWordingDocument(), plan);
+
+        var first = DocumentationSetBuilder.Build("profile:v1:test", "fingerprint", [entry], budget,
+            new DiagramDecompositionOptions(Enabled: true));
+        var second = DocumentationSetBuilder.Build("profile:v1:test", "fingerprint", [entry], budget,
+            new DiagramDecompositionOptions(Enabled: true));
+
+        Assert.True(first.Succeeded, string.Join("; ", first.Errors));
+        Assert.True(second.Succeeded, string.Join("; ", second.Errors));
+        Assert.Equal(first.Files.Select(file => (file.RelativePath, file.Content)),
+            second.Files.Select(file => (file.RelativePath, file.Content)));
+        Assert.Equal(1, first.Diagnostics.Count(item => item.Code == "DP-DIAGRAM-DECOMPOSED"));
+        Assert.All(first.Diagnostics, item => Assert.Equal("DP-DIAGRAM-DECOMPOSED", item.Code));
+
+        var mermaid = first.Files.Where(file => file.RelativePath.EndsWith(".mmd", StringComparison.Ordinal))
+            .Select(file => Encoding.UTF8.GetString(file.Content)).ToArray();
+        var messageLines = mermaid.SelectMany(text => text.Split('\n')
+            .Where(line => line.Contains("->>", StringComparison.Ordinal))).ToArray();
+        Assert.Equal(plan.Messages.Length, messageLines.Length);
+        Assert.Equal(messageLines.Length, messageLines.Distinct().Count());
+        Assert.All(mermaid, text => Assert.Empty(MermaidValidator.Validate(text)));
+
+        var files = first.Files.Select(file => file.RelativePath).ToHashSet(StringComparer.Ordinal);
+        foreach (var file in first.Files.Where(file => file.RelativePath.EndsWith(".md", StringComparison.Ordinal)))
+        {
+            string markdown = Encoding.UTF8.GetString(file.Content);
+            foreach (Match match in Regex.Matches(markdown, @"\]\(([^)#]+)", RegexOptions.CultureInvariant))
+            {
+                Assert.Contains(ResolveMarkdownTarget(file.RelativePath, match.Groups[1].Value), files);
+            }
+        }
+    }
+
+    private static string ResolveMarkdownTarget(string source, string link)
+    {
+        string directory = source.Contains('/', StringComparison.Ordinal)
+            ? source[..(source.LastIndexOf('/') + 1)] : string.Empty;
+        var segments = (directory + link).Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var resolved = new List<string>();
+        foreach (string segment in segments)
+        {
+            if (segment == ".") { continue; }
+            if (segment == "..") { resolved.RemoveAt(resolved.Count - 1); }
+            else { resolved.Add(segment); }
+        }
+        return string.Join('/', resolved);
     }
 
     [Fact]
