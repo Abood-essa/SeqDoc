@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "I21",
+  "status": "Closed",
+  "baselineRevision": "268f88e3d49832b59740907fd515f63e4e94aef8",
+  "candidateRevision": "WORKTREE",
+  "review": { "status": "FindingFixed", "reviewRunCount": 1, "findings": [{ "id": "I21-F1", "status": "Fixed", "summary": "Replaced unbound lane placeholders with executable bindings and commands; added deterministic audit and pinned render checks." }] },
+  "reviewState": "review0",
+  "repairRerun": 1,
+  "targetAllowlist": [
+    "src/SeqDoc.Analysis.Roslyn/Semantics/RoslynCallbackBoundaryFactCollector.cs",
+    "tests/SeqDoc.Analysis.Tests/CallbackBoundaryProjectionTests.cs",
+    "tests/fixtures/AdvancedAnalysis/CallbackBoundaries/CallbackContracts.cs",
+    "tests/SeqDoc.Rendering.Tests/packages.lock.json",
+    "docs/examples/fraud-management.yaml",
+    "docs/examples/sms-gateway.yaml",
+    "docs/work/traversal/I21/checkpoint.md",
+    "docs/work/traversal/I21/current-main-measurements.md",
+    "docs/work/traversal/I21/state.json"
+  ],
+  "verification": {
+    "restoreBuild": { "result": "Pass", "summary": "SeqDoc Release solution restore/build: 0 warnings/errors." },
+    "focused": { "result": "Pass", "summary": "Locked Release restore/build passed with 0 warnings/errors; Analysis 235/235 after exact locked standalone fixture restores and SEQDOC_TEST_PROJECTS_ROOT correction; Rendering 60/60. Initial complete Analysis invocation exposed missing fixture restores, not candidate defects; no source/test changes." },
+    "audit": { "result": "Pass", "summary": "Repair rerun 1: corrected output/cache bindings audited existing current-main outputs; 63 files/metrics reproduced, manifests and bytes equal, links and 45,000-character budget passed." },
+    "mermaidRender": { "result": "Pass", "summary": "Mermaid CLI 11.16.0: 63/63 run-1 artifacts rendered, 0 failures." },
+    "finalGate": { "result": "PassWithKnownBaseline", "summary": "Release: Core 91/91, Analysis 235/235, Behavior 63/63, Scenarios 218/218, Wording 116/116, Rendering 60/60, Acceptance 30/31. Sole unchanged baseline failure: CorpusMediatRTests.OrderingDraftRouteReachesExactMediatRHandlerWithoutPipelineClaim; candidate does not touch MediatR/Acceptance. git diff --check passed separately on the unchanged candidate." }
+  },
+  "measurements": {
+    "characterBudget": { "limitPerDiagram": 45000,
+      "creditTransfer": { "profile": "3f0c16b6", "fingerprint": "dd9b9153", "files": 18, "mermaid": 8, "maxChars": 4821, "messages": 100 },
+      "fraudManagement": { "target": "FraudManagement.sln", "profile": "f874be7e", "fingerprint": "f9a36fd5", "files": 74, "mermaid": 36, "maxChars": 1227, "messages": 108 },
+      "smsGateway": { "profile": "a82776da", "fingerprint": "f1bfaa65", "files": 32, "mermaid": 15, "maxChars": 1907, "messages": 95 },
+      "ticketReservation": { "profile": "417880f3", "fingerprint": "0e5e3ea2", "files": 10, "mermaid": 4, "maxChars": 484, "messages": 17 }
+    }
+  },
+  "notes": [
+    "External revisions: CT 02b82a5115ef6e2d138c70670f28b959fb646f6e; Fraud 7aabfef98fa4d47781bd8a98b9061ddcafb88836; SMS 7ca797356b1856eb815922ca977e9d85a569cb84; Ticket 1e25b6943a7dcfc443b8dca2ea946ee28afe811f.",
+    "Fraud WindowsService initially failed SD4011; catalog/profile check corrected the target to FraudManagement.sln without config drift.",
+    "Diagnostics were conservative warnings only; omitted-diagnostic-artifact wording is separate I24 behavior.",
+    "Test Writer audit added no tests; existing callback coverage is 25/25. Current-main bytes, not unavailable old artifacts, are authoritative.",
+    "Detailed current-main measurements, all 63 run-1 filenames/metrics/hashes, Markdown existence, run-1/run-2 manifest equality, diagnostics, commands, and Mermaid result are in current-main-measurements.md.",
+    "P2D, I21PUB, and execution records are parent orchestration only; candidate WORKTREE is pending publication and the publication target allowlist contains only the actual I21 record paths."
+  ]
+}

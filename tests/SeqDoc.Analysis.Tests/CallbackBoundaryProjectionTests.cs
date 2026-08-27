@@ -108,6 +108,30 @@ public sealed class CallbackBoundaryProjectionTests
     }
 
     /// <summary>
+    /// Claim 2b: a method-group callback whose accepted body exposes no flattenable member operations
+    /// carries no authoritative member set, so no boundary is projected and extraction still succeeds.
+    /// The boundary fails closed exactly like a target whose body was never extracted; it must never
+    /// crash behavior extraction or project an identity over an empty member set. Accepted exact
+    /// boundaries elsewhere in the fixture remain untouched (no over-broad skipping).
+    /// </summary>
+    [Fact]
+    public async Task EmptyMethodGroupCallbackTargetFailsClosedWithoutCrashingExtraction()
+    {
+        var extraction = await ExtractSuccessfullyAsync();
+        var facts = extraction.CallbackBoundaryFacts;
+
+        var caller = FindCaller(extraction, "InvokeEmptyMethodGroup");
+        Assert.DoesNotContain(facts.Boundaries, candidate => candidate.CallerMethod == caller);
+
+        // The accepted method-group boundary in the same fixture still projects with its
+        // non-empty canonical member set; skipping is scoped to member-less targets only.
+        var overloadCaller = FindCaller(extraction, "InvokeOverloadedMethodGroup");
+        var overloadBoundary = Assert.Single(facts.Boundaries, candidate => candidate.CallerMethod == overloadCaller);
+        Assert.Equal(CallbackTargetKind.MethodGroup, overloadBoundary.TargetKind);
+        Assert.NotEmpty(overloadBoundary.MemberOperations);
+    }
+
+    /// <summary>
     /// Claim 2: a single direct conditional invoke projects ZeroOrOne with a Conditional trigger and a
     /// non-null trigger condition anchor, while a repeated/twice invoke projects RepeatedOrUnknown and
     /// never ExactlyOnce. Cardinality is never inferred from the callback argument alone.
