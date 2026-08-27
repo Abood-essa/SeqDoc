@@ -1,0 +1,38 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "openai/gpt-5.6-sol",
+  "small_model": "openai/gpt-5.6-luna",
+  "default_agent": "orchestrator",
+  "subagent_depth": 1,
+  "permission": "allow",
+  "instructions": [
+    "docs/project/status.md",
+    "docs/project/workflow.md",
+    "docs/project/execution.json"
+  ],
+  "references": {
+    "test-projects": {
+      "path": "../SeqDoc-TestProjects",
+      "description": "External supplied and open-source applications used to verify SeqDoc without committing their source into this repository",
+      "hidden": true
+    }
+  },
+  "mcp": { "dart_sdk": { "enabled": false }, "figma": { "enabled": false } },
+  "agent": {
+    "build": { "disable": true, "permission": "allow" },
+    "plan": { "disable": true },
+    "general": { "disable": true },
+    "designer": { "disable": true },
+    "design-writer": { "disable": true },
+    "orchestrator": { "model": "openai/gpt-5.6-sol" },
+    "checkpoint-builder": { "model": "openai/gpt-5.6-luna" },
+    "test-writer": { "model": "openai/gpt-5.6-luna" },
+    "review": { "model": "openai/gpt-5.6-terra" },
+    "explore": { "model": "openai/gpt-5.6-luna" },
+    "title": { "model": "openai/gpt-5.6-luna" },
+    "summary": { "model": "openai/gpt-5.6-luna" },
+    "compaction": { "model": "openai/gpt-5.6-luna" }
+  },
+  "compaction": { "auto": true, "prune": true },
+  "tool_output": { "max_lines": 600, "max_bytes": 24576 }
+}
