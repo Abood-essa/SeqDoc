@@ -9,8 +9,8 @@ using SeqDoc.Core.Semantics;
 namespace SeqDoc.FrameworkModels.EntityFramework;
 
 /// <summary>
-/// Versioned Entity Framework Core query model. It admits only the exact SingleOrDefaultAsync and
-/// FirstOrDefaultAsync terminals on EntityFrameworkQueryableExtensions whose compiler-proven
+/// Versioned Entity Framework Core query model. It admits only the exact SingleOrDefaultAsync,
+/// FirstOrDefaultAsync, and CountAsync terminals on EntityFrameworkQueryableExtensions whose compiler-proven
 /// receiver chain contains ordered AsNoTracking and Include steps and whose predicate is an equality
 /// comparison linked to a comparison semantic fact. It matches exact assembly, assembly version,
 /// containing metadata type, metadata method name, and generic arity; it never matches raw names and
@@ -20,6 +20,7 @@ public sealed class EntityFrameworkQueryModel : IFrameworkBehaviorModel
 {
     public const string ModelIdValue = "seqdoc.entityframework.queries";
     public const string ModelVersionValue = "1.0.0";
+    private const string EfCoreAssemblyVersion = "10.0.10.0";
 
     /// <summary>Exact fully qualified framework identities admitted by this model version.</summary>
     internal static class Identity
@@ -81,7 +82,7 @@ public sealed class EntityFrameworkQueryModel : IFrameworkBehaviorModel
         var terminal = ResolveTerminalKind(identity);
         if (terminal is null
             || !string.Equals(identity.AssemblyIdentity, Identity.EfCoreAssembly, StringComparison.Ordinal)
-            || string.IsNullOrWhiteSpace(identity.AssemblyVersion)
+            || !string.Equals(identity.AssemblyVersion, EfCoreAssemblyVersion, StringComparison.Ordinal)
             || !string.Equals(identity.ContainingMetadataType, Identity.QueryableExtensionsType, StringComparison.Ordinal)
             || identity.GenericArity != 1)
         {
@@ -90,8 +91,7 @@ public sealed class EntityFrameworkQueryModel : IFrameworkBehaviorModel
             return ModelResult.Unrecognized;
         }
 
-        if (terminal.Value == EntityFrameworkQueryOperatorKind.FirstOrDefaultAsync
-            && !HasExactFirstOrDefaultAsyncSignature(identity, operation.QueryChain))
+        if (!HasExactTerminalSignature(identity, terminal.Value, operation.QueryChain))
         {
             // The FirstOrDefaultAsync terminal is admitted only for the exact supported EF Core
             // declaration. Any other parameter shape, ref-kind, return type, malformed type string,
@@ -147,9 +147,7 @@ public sealed class EntityFrameworkQueryModel : IFrameworkBehaviorModel
             DbSetMemberType = operation.QueryChain.ReceiverType,
             EntityType = operation.QueryChain.EntityType,
             Chain = chain,
-            PredicateOperation = terminal.Value == EntityFrameworkQueryOperatorKind.CountAsync
-                ? null
-                : operation.PredicateShape?.ComparisonOperation,
+            PredicateOperation = operation.PredicateShape?.ComparisonOperation,
             PredicateOperator = ComparisonOperatorKind.Equal,
             Evidence = CreateModelEvidence(
                 $"query:{operation.Id.Value}:{operation.QueryChain.EntityType}",
@@ -170,25 +168,27 @@ public sealed class EntityFrameworkQueryModel : IFrameworkBehaviorModel
         };
 
     /// <summary>
-    /// Requires the exact admitted EF Core declaration
+    /// Requires the exact admitted EF Core declaration for each terminal. Predicate terminals use
     /// FirstOrDefaultAsync&lt;T&gt;(IQueryable&lt;T&gt;, Expression&lt;Func&lt;T, System.Boolean&gt;&gt;,
-    /// CancellationToken) returning Task&lt;T&gt;. The predicate display is the compiler's exact
+    /// CancellationToken) returning Task&lt;T&gt;; CountAsync uses either CountAsync&lt;T&gt;(IQueryable&lt;T&gt;,
+    /// CancellationToken) or its exact predicate overload, returning Task&lt;System.Int32&gt;. The predicate display is the compiler's exact
     /// fully qualified <c>System.Boolean</c> form, never the <c>bool</c> alias; any other display,
-    /// ref-kind, return type, or generic element fails closed. All three parameters must be plain
+    /// ref-kind, return type, or generic element fails closed. All parameters must be plain
     /// (no ref/out/in), and the generic element must be single, nonblank, and exact-equal across
     /// the receiver, predicate, return type, and the proven receiver chain entity type; malformed
     /// or nested generic declarations fail closed instead of being guessed.
     /// </summary>
-    private static bool HasExactFirstOrDefaultAsyncSignature(
+    private static bool HasExactTerminalSignature(
         FrameworkMethodIdentity identity,
+        EntityFrameworkQueryOperatorKind terminal,
         FrameworkQueryChainDescriptor? chain)
     {
         var parameters = identity.Parameters;
-        if (parameters.IsDefaultOrEmpty
-            || parameters.Length != 3
-            || parameters[0].RefKind != ParameterRefKind.None
-            || parameters[1].RefKind != ParameterRefKind.None
-            || parameters[2].RefKind != ParameterRefKind.None)
+        var isCount = terminal == EntityFrameworkQueryOperatorKind.CountAsync;
+        var hasPredicate = !isCount || parameters.Length == 3;
+        var expectedParameterCount = isCount ? (hasPredicate ? 3 : 2) : 3;
+        if (parameters.IsDefaultOrEmpty || parameters.Length != expectedParameterCount
+            || parameters.Any(parameter => parameter.RefKind != ParameterRefKind.None))
         {
             return false;
         }
@@ -198,18 +198,20 @@ public sealed class EntityFrameworkQueryModel : IFrameworkBehaviorModel
             return false;
         }
 
-        return string.Equals(
-                parameters[1].FullyQualifiedType,
-                $"System.Linq.Expressions.Expression<System.Func<{entityType}, System.Boolean>>",
-                StringComparison.Ordinal)
-            && string.Equals(
-                parameters[2].FullyQualifiedType,
-                "System.Threading.CancellationToken",
-                StringComparison.Ordinal)
-            && string.Equals(
-                identity.ReturnType,
-                $"System.Threading.Tasks.Task<{entityType}>",
-                StringComparison.Ordinal)
+        var exactToken = string.Equals(
+            parameters[hasPredicate ? 2 : 1].FullyQualifiedType,
+            "System.Threading.CancellationToken",
+            StringComparison.Ordinal);
+        var exactPredicate = !hasPredicate || string.Equals(
+            parameters[1].FullyQualifiedType,
+            $"System.Linq.Expressions.Expression<System.Func<{entityType}, System.Boolean>>",
+            StringComparison.Ordinal);
+        var exactReturn = string.Equals(
+            identity.ReturnType,
+            isCount ? "System.Threading.Tasks.Task<System.Int32>" : $"System.Threading.Tasks.Task<{entityType}>",
+            StringComparison.Ordinal);
+
+        return exactPredicate && exactToken && exactReturn
             && chain is not null
             && string.Equals(entityType, chain.EntityType, StringComparison.Ordinal);
     }

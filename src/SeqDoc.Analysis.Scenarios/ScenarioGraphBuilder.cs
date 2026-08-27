@@ -247,10 +247,20 @@ public static class ScenarioGraphBuilder
     }
 
     private static bool FrameworkFactsBound(ScenarioAnalysisRequest request)
-        => request.FrameworkFacts.ProfileId == request.Profile.Id
+        => request.FrameworkFacts.ProfileId is not null
+            && request.FrameworkFacts.ProfileId == request.Profile.Id
             && !string.IsNullOrWhiteSpace(request.FrameworkFacts.ProgramIndexFingerprint)
             && string.Equals(
                 request.FrameworkFacts.ProgramIndexFingerprint,
+                request.ProgramIndex.IndexFingerprint,
+                StringComparison.Ordinal);
+
+    private static bool NonGetFactsBound(ScenarioAnalysisRequest request)
+        => request.NonGetSemanticFacts?.Profile is { } profile
+            && profile.Id == request.Profile.Id
+            && !string.IsNullOrWhiteSpace(request.NonGetSemanticFacts.ProgramIndexFingerprint)
+            && string.Equals(
+                request.NonGetSemanticFacts.ProgramIndexFingerprint,
                 request.ProgramIndex.IndexFingerprint,
                 StringComparison.Ordinal);
 
@@ -343,6 +353,21 @@ public static class ScenarioGraphBuilder
             }
 
             var directExpansion = AddConfiguredDirectCalls(request, entryPoint, profileId, actionNode, nodes, edges, diagnostics);
+
+            JoinEntityQueries(request, profileId, entryPointId, entryPoint.RootMethod, actionNode, nodes, edges, diagnostics);
+            JoinStateAssignments(request, profileId, entryPointId, entryPoint.RootMethod, actionNode, nodes, edges);
+            JoinEntityMutations(request, profileId, entryPointId, entryPoint.RootMethod, actionNode, nodes, edges);
+            JoinSourceObservations(
+                request,
+                profileId,
+                entryPointId,
+                entryPoint.RootMethod,
+                entryPoint.RootMethod,
+                actionNode,
+                actionNode,
+                nodes,
+                edges);
+
             var topologyNodes = nodes.Where(node => node.Kind != ScenarioNodeKind.MethodCall
                 || directExpansion.Steps.Any(step => step.ScenarioNodeId == node.Id && step.Depth == 1)).ToImmutableArray();
             var configuredTopology = BuildTopology(request, profileId, entryPointId, entryPoint, entryPoint.RootMethod,
@@ -1834,21 +1859,29 @@ public static class ScenarioGraphBuilder
         List<ScenarioEdge> edges,
         List<ScenarioGraphDiagnostic> diagnostics)
     {
+        if (!FrameworkFactsBound(request))
+        {
+            return;
+        }
+
         var efFacts = request.FrameworkFacts.Facts
             .OfType<EntityFrameworkQueryFact>()
             .Where(fact => fact.Method == serviceMethod)
             .ToArray();
-        var queryOrder = request.NonGetSemanticFacts.EfOperationSequence
+
+        var queryOrder = NonGetFactsBound(request) ? request.NonGetSemanticFacts!.EfOperationSequence
             .Where(item => item.Method == serviceMethod && item.Kind == EfOperationSequenceKind.QueryTerminal)
             .GroupBy(item => item.Operation.Value)
-            .ToDictionary(group => group.Key, group => group.Min(item => item.Ordinal), StringComparer.Ordinal);
+            .ToDictionary(group => group.Key, group => group.Min(item => item.Ordinal), StringComparer.Ordinal) : null;
+
         var ordered = efFacts
-            .OrderBy(fact => queryOrder.GetValueOrDefault(fact.Operation.Value, int.MaxValue))
+            .OrderBy(fact => queryOrder?.GetValueOrDefault(fact.Operation.Value, int.MaxValue) ?? int.MaxValue)
             .ThenBy(fact => fact.Operation.Value, StringComparer.Ordinal)
             .ToArray();
+
         foreach (var fact in ordered)
         {
-            int ordinal = queryOrder.GetValueOrDefault(fact.Operation.Value, 0);
+            int ordinal = queryOrder?.GetValueOrDefault(fact.Operation.Value, int.MaxValue) ?? int.MaxValue;
             var queryNode = BuildEntityQueryNode(
                 request,
                 profileId,
@@ -1871,7 +1904,7 @@ public static class ScenarioGraphBuilder
         }
     }
 
-    /// <summary>Joins every exact state assignment of the service method as an ordered state node.</summary>
+    /// <summary>Joins every exact property state assignment of the service method in source order.</summary>
     private static void JoinStateAssignments(
         ScenarioAnalysisRequest request,
         CompilationProfileId profileId,
@@ -1881,10 +1914,15 @@ public static class ScenarioGraphBuilder
         List<ScenarioNode> nodes,
         List<ScenarioEdge> edges)
     {
+        if (!NonGetFactsBound(request))
+        {
+            return;
+        }
+
         foreach (var assignment in request.NonGetSemanticFacts.StateAssignments
                      .Where(fact => fact.Method == serviceMethod)
-                     .OrderBy(fact => fact.SequenceOrdinal)
-                     .ThenBy(fact => fact.Operation.Value, StringComparer.Ordinal))
+                      .OrderBy(fact => fact.SequenceOrdinal)
+                      .ThenBy(fact => fact.Operation.Value, StringComparer.Ordinal))
         {
             var stateNode = CreateNode(
                 profileId,
@@ -1921,9 +1959,15 @@ public static class ScenarioGraphBuilder
         List<ScenarioNode> nodes,
         List<ScenarioEdge> edges)
     {
+        if (!NonGetFactsBound(request))
+        {
+            return;
+        }
+
         foreach (var mutation in request.NonGetSemanticFacts.EntityFrameworkMutations
                      .Where(fact => fact.Method == serviceMethod)
-                     .OrderBy(fact => fact.SequenceOrdinal))
+                      .OrderBy(fact => fact.SequenceOrdinal)
+                      .ThenBy(fact => fact.Operation.Value, StringComparer.Ordinal))
         {
             var mutationNode = CreateNode(
                 profileId,
@@ -1941,7 +1985,7 @@ public static class ScenarioGraphBuilder
                     EntityTypeName: mutation.EntityType,
                     MutationKind: mutation.MutationKind));
             nodes.Add(mutationNode);
-            var edgeKind = mutation.MutationKind == EntityFrameworkMutationKind.SaveChangesAsync
+            var edgeKind = mutation.MutationKind is EntityFrameworkMutationKind.SaveChangesAsync or EntityFrameworkMutationKind.SaveChanges
                 ? ScenarioEdgeKind.Save
                 : ScenarioEdgeKind.Mutation;
             edges.Add(CreateEdge(
@@ -1950,7 +1994,7 @@ public static class ScenarioGraphBuilder
                 serviceNode,
                 mutationNode,
                 edgeKind,
-                edgeKind == ScenarioEdgeKind.Save ? "persists changes" : "mutates tracked entities",
+                edgeKind == ScenarioEdgeKind.Save ? "calls SaveChanges" : "mutates tracked entities",
                 mutation.Evidence,
                 mutation.Certainty,
                 mutation.SequenceOrdinal));
@@ -1973,6 +2017,11 @@ public static class ScenarioGraphBuilder
         List<ScenarioNode> nodes,
         List<ScenarioEdge> edges)
     {
+        if (!NonGetFactsBound(request))
+        {
+            return;
+        }
+
         foreach (var observation in request.NonGetSemanticFacts.SourceObservations
                      .Where(fact => fact.Method == actionMethod || fact.Method == serviceMethod)
                      .OrderBy(fact => fact.Method.Value, StringComparer.Ordinal)
@@ -2303,7 +2352,7 @@ public static class ScenarioGraphBuilder
             EntityFrameworkMutationKind.Add => $"adds {entityName}",
             EntityFrameworkMutationKind.RemoveRange => $"removes {entityName} records",
             EntityFrameworkMutationKind.Clear => $"clears the tracked {entityName} set",
-            EntityFrameworkMutationKind.SaveChangesAsync => $"saves changes to {ShortTypeName(mutation.DbContextType)}",
+            EntityFrameworkMutationKind.SaveChangesAsync or EntityFrameworkMutationKind.SaveChanges => $"saves changes to {ShortTypeName(mutation.DbContextType)}",
             _ => "mutates the data store",
         };
     }
@@ -3477,6 +3526,7 @@ public static class ScenarioGraphBuilder
         var arms = new List<ScenarioArm>();
         var memberships = new List<ScenarioMembership>();
         var terminals = new List<ScenarioArmTerminal>();
+        var unsupportedDecisions = new HashSet<FlowNodeId>();
         var rootMethod = entryPoint.RootMethod;
 
         var flows = request.Behavior.MethodFlows
@@ -3551,6 +3601,7 @@ public static class ScenarioGraphBuilder
                 var falseClassification = ClassifyArmTerminal(flow, flowNodesById, decision, isTrue: false);
                 if (trueClassification.UnsupportedReason is not null || falseClassification.UnsupportedReason is not null)
                 {
+                    unsupportedDecisions.Add(decision.Id);
                     diagnostics.Add(CreateDiagnostic(
                         profileId,
                         entryPointId,
@@ -3640,7 +3691,20 @@ public static class ScenarioGraphBuilder
                 }
 
                 var withheld = conflictDecisions.ToHashSet(StringComparer.Ordinal);
+                var withholdUnsupportedTopology = IsPersistenceTopologyNode(node);
+                if (withholdUnsupportedTopology
+                    && firstSet.Any(dependence => unsupportedDecisions.Contains(dependence.ControllingDecision)))
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        profileId,
+                        entryPointId,
+                        "SC013",
+                        "The material scenario node is withheld because its unsupported decision topology cannot place the claim safely.",
+                        $"{node.Method!.Value}\u001f{operation.Value}\u001funsupported-decision-topology"));
+                }
                 foreach (var dependence in firstSet
+                             .Where(dependence => !withholdUnsupportedTopology
+                                 || !unsupportedDecisions.Contains(dependence.ControllingDecision))
                              .OrderBy(membership => membership.ControllingDecision.Value, StringComparer.Ordinal)
                              .ThenBy(membership => membership.ControlledOnTrue))
                 {
@@ -3705,6 +3769,11 @@ public static class ScenarioGraphBuilder
             or ScenarioNodeKind.EntityMutation
             or ScenarioNodeKind.Result
             or ScenarioNodeKind.Outcome;
+
+    private static bool IsPersistenceTopologyNode(ScenarioNode node)
+        => node.Kind is ScenarioNodeKind.EntityQuery
+            or ScenarioNodeKind.StateAssignment
+            or ScenarioNodeKind.EntityMutation;
 
     /// <summary>
     /// Maps each exact operation identity in one method flow to EVERY eligible anchor node

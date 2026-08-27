@@ -793,13 +793,38 @@ internal static class FrameworkAnalysisRequestProjector
             return null;
         }
 
+        var terminalEntityType = ResolveTerminalEntityType(call);
+        if (terminalEntityType is null)
+        {
+            return null;
+        }
+
         steps.Reverse();
         return new FrameworkQueryChainDescriptor(
             receiverType.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
             containingType.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
             memberName,
-            ResolveEntityType(receiverType),
+            terminalEntityType,
             steps.ToImmutableArray());
+    }
+
+    private static string? ResolveTerminalEntityType(IInvocationOperation call)
+    {
+        var receiverType = call.Instance?.Type
+            ?? (call.TargetMethod.IsExtensionMethod && call.Arguments.Length > 0
+                ? call.Arguments[0].Value.Type
+                : null);
+        if (receiverType is not INamedTypeSymbol queryable
+            || !queryable.IsGenericType
+            || queryable.TypeArguments.Length != 1
+            || queryable.TypeArguments[0].TypeKind == TypeKind.TypeParameter
+            || RoslynProgramIndexExtractor.GetMetadataName(queryable.OriginalDefinition) != "System.Linq.IQueryable`1")
+        {
+            return null;
+        }
+
+        var entityType = queryable.TypeArguments[0].ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat);
+        return string.IsNullOrWhiteSpace(entityType) ? null : entityType;
     }
 
     /// <summary>

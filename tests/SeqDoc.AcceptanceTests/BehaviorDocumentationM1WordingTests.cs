@@ -69,7 +69,7 @@ public sealed class BehaviorDocumentationM1WordingTests
         // placed exactly; empty break-only fragments are pruned rather than rendered as topology.
         Assert.Contains(plan.Diagram.Messages, message => message.Label == "ReserveAsync");
         Assert.Contains(plan.Diagram.Messages, message => message.Label == "Find at most one Event");
-        Assert.DoesNotContain(plan.Diagram.Messages, message => message.Label is "Count Reservations" or "Add Reservation" or "Add Ticket" or "Save changes");
+        Assert.DoesNotContain(plan.Diagram.Messages, message => message.Label is "Count Reservations" or "Add Reservation" or "Add Ticket" or "calls SaveChanges");
         Assert.Contains(plan.Wording.Phrases, phrase => phrase.Kind == WordingPhraseKind.TechnicalFallback);
 
         // The pre-guard Event lookup is an unscoped fact before the guards, so it stays visible at
@@ -80,7 +80,7 @@ public sealed class BehaviorDocumentationM1WordingTests
         // interaction; a Break is the last element of its arm, so no data interaction can follow it
         // in the same path.
         var dataRefs = plan.Diagram.Messages
-            .Where(message => message.Label is "Find at most one Event" or "Count Reservations" or "Add Reservation" or "Add Ticket" or "Save changes")
+            .Where(message => message.Label is "Find at most one Event" or "Count Reservations" or "Add Reservation" or "Add Ticket" or "calls SaveChanges")
             .Select(message => message.Id)
             .ToHashSet();
         Assert.NotEmpty(dataRefs);
@@ -125,14 +125,14 @@ public sealed class BehaviorDocumentationM1WordingTests
         var updatePlan = DocumentationPlanner.Plan(update);
         Assert.Contains(updatePlan.Diagram.Messages, message => message.Label == "UpdateAsync");
         Assert.Contains(updatePlan.Diagram.Messages, message => message.Label == "Find at most one Reservation");
-        Assert.DoesNotContain(updatePlan.Diagram.Messages, message => message.Label is "Remove Ticket range" or "Clear tracked Tickets" or "Add Ticket" or "Save changes");
+        Assert.DoesNotContain(updatePlan.Diagram.Messages, message => message.Label is "Remove Ticket range" or "Clear tracked Tickets" or "Add Ticket" or "calls SaveChanges");
         Assert.Contains(updatePlan.Wording.Phrases, phrase => phrase.Kind == WordingPhraseKind.TechnicalFallback);
 
         // Every terminating arm ends in exactly one Break and never carries a renderable data
         // interaction; a Break is the last element of its arm, so no data interaction can follow it
         // in the same path.
         var updateDataRefs = updatePlan.Diagram.Messages
-            .Where(message => message.Label is "Remove Ticket range" or "Clear tracked Tickets" or "Add Ticket" or "Save changes")
+            .Where(message => message.Label is "Remove Ticket range" or "Clear tracked Tickets" or "Add Ticket" or "calls SaveChanges")
             .Select(message => message.Id)
             .ToHashSet();
         Assert.Empty(updateDataRefs);

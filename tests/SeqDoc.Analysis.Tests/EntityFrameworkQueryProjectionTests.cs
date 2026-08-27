@@ -73,7 +73,7 @@ public sealed class EntityFrameworkQueryProjectionTests
             .Select(method => method.Id)
             .ToHashSet();
         Assert.DoesNotContain(facts, fact => unsupportedMethods.Contains(fact.Method));
-        Assert.Equal(2, facts.Length);
+        Assert.Equal(4, facts.Length);
     }
 
     [Fact]

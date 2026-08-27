@@ -430,7 +430,7 @@ public sealed class ScenarioGraphBuilderTests
         string[] phrases = plan.Wording.Phrases.Select(phrase => phrase.Text).ToArray();
         int addIndex = Array.FindIndex(phrases, text => text.Contains("adds Gadget", StringComparison.Ordinal));
         int queryIndex = Array.FindIndex(phrases, text => text.Contains("counts Gadgets", StringComparison.Ordinal));
-        int saveIndex = Array.FindIndex(phrases, text => text.Contains("saves changes", StringComparison.Ordinal));
+        int saveIndex = Array.FindIndex(phrases, text => text.Contains("calls SaveChanges", StringComparison.Ordinal));
         Assert.True(addIndex >= 0 && queryIndex >= 0 && saveIndex >= 0, "Wording lacks the interleaved Add/CountAsync/save phrases.");
         Assert.True(addIndex < queryIndex, "Wording must render Add before the interleaved CountAsync query.");
         Assert.True(queryIndex < saveIndex, "Wording must render the CountAsync query before the save.");
@@ -438,7 +438,7 @@ public sealed class ScenarioGraphBuilderTests
         string[] labels = plan.Diagram.Messages.Select(message => message.Label).ToArray();
         int addMessage = Array.FindIndex(labels, label => label.Contains("Add Gadget", StringComparison.Ordinal));
         int queryMessage = Array.FindIndex(labels, label => label.Contains("Count Gadgets", StringComparison.Ordinal));
-        int saveMessage = Array.FindIndex(labels, label => label.Contains("Save changes", StringComparison.Ordinal));
+        int saveMessage = Array.FindIndex(labels, label => label.Contains("calls SaveChanges", StringComparison.Ordinal));
         Assert.True(addMessage >= 0 && queryMessage >= 0 && saveMessage >= 0, "Mermaid lacks the interleaved Add/query/save messages.");
         Assert.True(addMessage < queryMessage, "Mermaid must render Add before the interleaved CountAsync query.");
         Assert.True(queryMessage < saveMessage, "Mermaid must render the CountAsync query before the save.");
