@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text;
 using SeqDoc.Core.DiagramPlan;
 using SeqDoc.Core.Configuration;
@@ -33,7 +34,8 @@ public static class DocumentationSetBuilder
         string profileId,
         string programIndexFingerprint,
         IReadOnlyList<DocumentSetEntry> documents,
-        DiagramBudget? diagramBudget = null)
+        DiagramBudget? diagramBudget = null,
+        DiagramDecompositionOptions? decomposition = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
         ArgumentException.ThrowIfNullOrWhiteSpace(programIndexFingerprint);
@@ -41,10 +43,30 @@ public static class DocumentationSetBuilder
 
         var files = new List<RenderedOutputFile>();
         var indexEntries = new List<(string OperationKey, string FileName)>();
+        var childDocumentsByFile = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         var errors = new List<string>();
         var diagnostics = new List<DiagramPlanDiagnostic>();
         foreach (var document in documents.OrderBy(item => item.FileName, StringComparer.Ordinal))
         {
+            // Decomposition is opt-in only: without the flag (or when the plan fits its Mermaid
+            // budget or lacks splittable structure) the legacy path below runs byte-identically.
+            if (decomposition is { Enabled: true }
+                && diagramBudget is not null
+                && MermaidRenderer.Render(document.Diagram).Length > diagramBudget.MaxMermaidCharacters
+                && DocumentationViewDecomposer.TryDecompose(document.Diagram, diagramBudget.MaxMermaidCharacters) is { } views)
+            {
+                AppendDecomposedDocument(
+                    document,
+                    views,
+                    diagramBudget.MaxMermaidCharacters,
+                    files,
+                    indexEntries,
+                    childDocumentsByFile,
+                    errors,
+                    diagnostics);
+                continue;
+            }
+
             DiagramPlan diagram = diagramBudget is null
                 ? document.Diagram
                 : FitMermaid(document.Diagram, diagramBudget.MaxMermaidCharacters);
@@ -75,7 +97,11 @@ public static class DocumentationSetBuilder
             return new DocumentationSetBuildResult(false, [], errors.ToImmutableArray()) { Diagnostics = diagnostics.ToImmutableArray() };
         }
 
-        string index = MarkdownRenderer.RenderIndex(profileId, programIndexFingerprint, indexEntries);
+        string index = MarkdownRenderer.RenderIndex(
+            profileId,
+            programIndexFingerprint,
+            indexEntries,
+            childDocumentsByFile.Count == 0 ? null : childDocumentsByFile);
         files.Add(new RenderedOutputFile("index.md", Encoding.UTF8.GetBytes(index)));
         return new DocumentationSetBuildResult(
             true,
@@ -84,14 +110,82 @@ public static class DocumentationSetBuilder
         { Diagnostics = diagnostics.ToImmutableArray() };
     }
 
-    private static DiagramPlan FitMermaid(DiagramPlan original, int limit)
+    /// <summary>
+    /// Renders one decomposed document: the overview first (keeping the base file names so index
+    /// links stay stable), then chronological children named {base}.part-{NNN}. Every view passes
+    /// through the existing character fitter as a safety net and its own structural validation.
+    /// Behavior text, original diagnostics, and the decomposition diagnostic live only on the
+    /// overview; children carry a title/part/parent-link Markdown body with no behavior or
+    /// diagnostics sections. Navigation lives in Markdown only, never inside Mermaid fences.
+    /// </summary>
+    private static void AppendDecomposedDocument(
+        DocumentSetEntry document,
+        ImmutableArray<DiagramPlan> views,
+        int maxMermaidCharacters,
+        List<RenderedOutputFile> files,
+        List<(string OperationKey, string FileName)> indexEntries,
+        Dictionary<string, IReadOnlyList<string>> childDocumentsByFile,
+        List<string> errors,
+        List<DiagramPlanDiagnostic> diagnostics)
+    {
+        var fittedViews = new List<DiagramPlan>();
+        var mermaidTexts = new List<string>();
+        for (int index = 0; index < views.Length; index++)
+        {
+            DiagramPlan fitted = FitMermaid(views[index], maxMermaidCharacters, preserveTopLevelFragments: true);
+            diagnostics.AddRange(fitted.Diagnostics);
+            string mermaid = MermaidRenderer.Render(fitted);
+            ImmutableArray<string> validationErrors = MermaidValidator.Validate(mermaid);
+            if (validationErrors.Length > 0)
+            {
+                errors.Add($"document {document.FileName}: {string.Join("; ", validationErrors)}");
+                return;
+            }
+
+            fittedViews.Add(fitted);
+            mermaidTexts.Add(mermaid);
+        }
+
+        int partCount = views.Length - 1;
+        var continuationNames = new List<string>();
+        for (int index = 1; index <= partCount; index++)
+        {
+            continuationNames.Add($"{document.FileName}.part-{index.ToString("000", CultureInfo.InvariantCulture)}");
+        }
+
+        for (int index = 0; index < fittedViews.Count; index++)
+        {
+            bool overview = index == 0;
+            string ordinal = overview ? string.Empty : $".part-{index.ToString("000", CultureInfo.InvariantCulture)}";
+            string markdownName = $"{document.FileName}{ordinal}.md";
+            string mermaidName = $"{document.FileName}{ordinal}.mmd";
+            string markdown = overview
+                ? MarkdownRenderer.RenderDocument(document.Wording, fittedViews[index], continuationNames)
+                : MarkdownRenderer.RenderDecomposedPart(
+                    document.Wording.Title,
+                    document.FileName,
+                    index,
+                    partCount,
+                    fittedViews[index]);
+            files.Add(new RenderedOutputFile(markdownName, Encoding.UTF8.GetBytes(markdown)));
+            files.Add(new RenderedOutputFile(mermaidName, Encoding.UTF8.GetBytes(mermaidTexts[index])));
+        }
+
+        indexEntries.Add((document.Wording.OperationKey, $"{document.FileName}.md"));
+        childDocumentsByFile[$"{document.FileName}.md"] = continuationNames.ToImmutableArray();
+    }
+
+    private static DiagramPlan FitMermaid(
+        DiagramPlan original,
+        int limit,
+        bool preserveTopLevelFragments = false)
     {
         if (MermaidRenderer.Render(original).Length <= limit) { return original; }
         for (int count = original.Messages.Length - 1; count >= 0; count--)
         {
             var kept = original.Messages.Take(count).ToImmutableArray();
             var ids = kept.Select(message => message.Id).ToHashSet();
-            var sequence = TrimSequence(original.Sequence, ids);
+            var sequence = TrimSequence(original.Sequence, ids, preserveTopLevelFragments);
             if (!original.Sequence.Elements.IsEmpty && sequence.Elements.IsEmpty) { continue; }
             if (!original.Sequence.Elements.IsEmpty)
             {
@@ -128,10 +222,21 @@ public static class DocumentationSetBuilder
             emptyDiagnostics);
     }
 
-    private static DiagramSequence TrimSequence(DiagramSequence sequence, HashSet<DiagramPlanElementId> ids)
+    private static DiagramSequence TrimSequence(
+        DiagramSequence sequence,
+        HashSet<DiagramPlanElementId> ids,
+        bool preserveTopLevelFragments = false)
         => new(sequence.Elements.Select(element => element.IsMessageRef
             ? ids.Contains(element.MessageRefId!.Value) ? element : null
-            : TrimFragment(element.NestedFragment!, ids)).Where(item => item is not null).Select(item => item!).ToImmutableArray());
+            : preserveTopLevelFragments
+                ? ContainsAllFragmentMessages(element.NestedFragment!, ids) ? element : null
+                : TrimFragment(element.NestedFragment!, ids)).Where(item => item is not null).Select(item => item!).ToImmutableArray());
+
+    private static bool ContainsAllFragmentMessages(DiagramFragment fragment, HashSet<DiagramPlanElementId> ids)
+        => fragment.MessageRefs.All(ids.Contains)
+            && fragment.Fragments.All(nested => ContainsAllFragmentMessages(nested, ids))
+            && fragment.Arms.All(arm => arm.MessageRefs.All(ids.Contains)
+                && arm.Fragments.All(nested => ContainsAllFragmentMessages(nested, ids)));
 
     private static DiagramSequenceElement? TrimFragment(DiagramFragment fragment, HashSet<DiagramPlanElementId> ids)
     {
@@ -160,7 +265,8 @@ public static class DocumentationSetBuilder
                 || arm.Fragments.Any(item => FragmentContains(item, id)))
             || fragment.Fragments.Any(item => FragmentContains(item, id));
 
-    private static string DebugProjection(IEnumerable<DiagramParticipant> participants,
+    /// <summary>Canonical newline-only debug projection shared with the view decomposer.</summary>
+    internal static string DebugProjection(IEnumerable<DiagramParticipant> participants,
         IEnumerable<DiagramMessage> messages, DiagramSequence sequence, IEnumerable<DiagramBranch> branches,
         IEnumerable<DiagramPlanDiagnostic> diagnostics)
     {

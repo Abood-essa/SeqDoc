@@ -872,6 +872,61 @@ public sealed class BehaviorDocumentationFourFlowTests
         Assert.DoesNotContain(plan.Diagram.Sequence.Elements, element =>
             element.IsMessageRef && plan.Diagram.Messages.Single(message => message.Id == element.MessageRefId)
                 .Label.Contains("Noise", StringComparison.Ordinal));
+
+        // P2R-R1: carry this compiler-backed plan through the real document-set decomposition seam.
+        int fullMermaidLength = MermaidRenderer.Render(plan.Diagram).Length;
+        var headerPlan = new DiagramPlan(
+            plan.Diagram.EntryPoint, plan.Diagram.Profile, plan.Diagram.OperationKey,
+            plan.Diagram.Participants, [], [], "configured-root-header");
+        int headerLength = MermaidRenderer.Render(headerPlan).Length;
+        int decompositionLimit = headerLength + Math.Max(80, (fullMermaidLength - headerLength) / 2);
+        var budget = new DiagramBudget(1024, 4096, 1024, 256, decompositionLimit);
+        Assert.True(fullMermaidLength > budget.MaxMermaidCharacters, "Precondition: budget must force decomposition.");
+        Assert.True(MermaidRenderer.Render(plan.Diagram).Length <= budget.MaxMermaidCharacters * 2,
+            "Precondition: the fixture must be small enough for decomposition without truncation.");
+
+        string fileName = DocumentationFileNaming.EntryKey(graph.EntryPoint, graph.OperationKey);
+        DocumentSetEntry[] entries = [new(fileName, plan.Wording, plan.Diagram)];
+        var built = DocumentationSetBuilder.Build(
+            bundle.Graphs.Profile.Id.Value, bundle.Graphs.ProgramIndexFingerprint, entries, budget,
+            new DiagramDecompositionOptions(Enabled: true));
+        var rebuilt = DocumentationSetBuilder.Build(
+            bundle.Graphs.Profile.Id.Value, bundle.Graphs.ProgramIndexFingerprint, entries, budget,
+            new DiagramDecompositionOptions(Enabled: true));
+        Assert.True(built.Succeeded, string.Join("; ", built.Errors));
+        Assert.Equal(1, built.Diagnostics.Count(item => item.Code == "DP-DIAGRAM-DECOMPOSED"));
+        Assert.DoesNotContain(built.Diagnostics, item => item.Code == "DP-MERMAID-TRUNCATED");
+        Assert.Equal(built.Files.Select(file => (file.RelativePath, file.Content)),
+            rebuilt.Files.Select(file => (file.RelativePath, file.Content)));
+        AssertMarkdownLinksResolve(built.Files);
+
+        var mermaidFiles = built.Files.Where(file => file.RelativePath.EndsWith(".mmd", StringComparison.Ordinal))
+            .Select(file => Encoding.UTF8.GetString(file.Content)).ToArray();
+        Assert.True(mermaidFiles.Length >= 2, "Precondition: enabled decomposition must emit an overview and a part.");
+        Assert.All(mermaidFiles, text =>
+        {
+            Assert.True(text.Length <= budget.MaxMermaidCharacters);
+            Assert.Empty(MermaidValidator.Validate(text));
+            Assert.DoesNotContain("Noise", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("Tail", text, StringComparison.Ordinal);
+        });
+        string emitTuple = $"{emit.Source}{(emit.Kind == DiagramMessageKind.Request ? "->>" : "-->>")}{emit.Target}: {emit.Label}";
+        var renderedMessageLines = mermaidFiles.SelectMany(text => text.Split('\n')).Select(line => line.Trim()).ToArray();
+        Assert.Equal(1, renderedMessageLines.Count(line => line == emitTuple));
+        Assert.Equal(1, renderedMessageLines.Count(line => line.Contains("Emit", StringComparison.Ordinal)));
+        string[] emitDocument = mermaidFiles.Single(text => text.Contains(emitTuple, StringComparison.Ordinal)).Split('\n');
+        int emitLineIndex = Array.FindIndex(emitDocument, line => line.Trim() == emitTuple);
+        int opener = Array.FindLastIndex(emitDocument, emitLineIndex, line =>
+            line.TrimStart().StartsWith("alt ", StringComparison.Ordinal)
+            || line.TrimStart().StartsWith("opt ", StringComparison.Ordinal));
+        int closer = Array.FindIndex(emitDocument, emitLineIndex + 1, line => line.Trim() == "end");
+        Assert.True(opener >= 0 && opener < emitLineIndex && closer > emitLineIndex,
+            "Emit must remain guarded after decomposition.");
+        foreach (var message in plan.Diagram.Messages)
+        {
+            string tuple = $"{message.Source}{(message.Kind == DiagramMessageKind.Request ? "->>" : "-->>")}{message.Target}: {message.Label}";
+            Assert.Equal(1, renderedMessageLines.Count(line => line == tuple));
+        }
     }
 
     private static async Task<FourFlowBundle> BuildAsync(string root, bool includeConfiguredRoot = false)
@@ -958,6 +1013,21 @@ public sealed class BehaviorDocumentationFourFlowTests
     private static IEnumerable<DiagramPlanElementId> AllFragmentMessageRefs(IEnumerable<DiagramFragment> fragments)
         => AllFragments(fragments).SelectMany(fragment => fragment.MessageRefs.Concat(
             fragment.Arms.SelectMany(arm => arm.MessageRefs)));
+
+    private static void AssertMarkdownLinksResolve(IReadOnlyList<RenderedOutputFile> files)
+    {
+        var paths = files.Select(file => file.RelativePath).ToHashSet(StringComparer.Ordinal);
+        foreach (var file in files.Where(file => file.RelativePath.EndsWith(".md", StringComparison.Ordinal)))
+        {
+            string markdown = Encoding.UTF8.GetString(file.Content);
+            foreach (Match match in Regex.Matches(markdown, @"\[[^\]]+\]\((?<target>[^)]+)\)"))
+            {
+                string target = match.Groups["target"].Value.Trim().Trim('<', '>').Split('#')[0];
+                if (target.Length == 0) { continue; }
+                Assert.Contains(target.TrimStart('.', Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), paths);
+            }
+        }
+    }
 
     private static int PhraseIndex(WordingDocument wording, string key, string contains)
     {
