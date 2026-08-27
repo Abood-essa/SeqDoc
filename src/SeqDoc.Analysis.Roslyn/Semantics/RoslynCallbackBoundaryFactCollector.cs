@@ -323,6 +323,14 @@ internal sealed class RoslynCallbackBoundaryFactCollector
                     targetMethodId ?? methodId,
                     targetKind == CallbackTargetKind.MethodGroup ? targetContext : null,
                     cancellationToken);
+                if (memberOperations.IsEmpty)
+                {
+                    // A method-group target whose accepted body exposes no flattenable member
+                    // operations carries no authoritative member set (see CollectMemberOperations);
+                    // the boundary fails closed exactly like a target whose body was never extracted
+                    // instead of projecting an identity over an empty canonical member set.
+                    continue;
+                }
                 // The contract-invoke operation lives in the callee body; only its stable identity is
                 // retained in the contract analysis, so the boundary evidence combines the caller-side
                 // invocation, the callback argument, and the exact target body.

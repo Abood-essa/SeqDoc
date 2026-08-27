@@ -1,0 +1,22 @@
+schemaVersion: 1
+
+selection:
+  roots:
+    # Worker startup chain invoked by SMSGatewayWorker.ExecuteAsync.
+    - method:v1:9e0b0ed0456e2a0b703182b2f80c0e6f070fd27dc040eaea8049996986780f11
+    - method:v1:408790594da946bdcf4a25ea314cb225fefe51b01951eeaeba985dcb1543e94d
+    # CoreWCF ext-service implementations registered by the WindowsHost.
+    - method:v1:82a90834bc7899d3d84395d8c448e364d4bd20fbb17bf6a376240d80fcad89bf
+    - method:v1:3fee2b104ddc7fb0e8a479f4b7bbcbf33f9b226dc1c0c9727eafa9dc36b48000
+    - method:v1:437e44024c2ed59a83020fbf5e54b5ce7b796b260839911c202fc48826c974f2
+    - method:v1:bfaf17521d607506cdade22455d1a83cbae65eee00f526ac4a3723c07cf35d26
+    # CoreWCF management-service implementations registered by the WindowsHost.
+    - method:v1:915c14bfffe2c1a3b72e34737317939dcb7a0364e55c11df2383407086e58429
+    - method:v1:21d677763cf381619d4673812a4a1d76eb6488866c6bac527c4ccfc30774d05b
+    - method:v1:28fb479e05f618c303f65d2c1647a2f4539407ef5eac3ee6ca80a585897d281a
+    - method:v1:2f3e0ee3e7bf5c287c6d19bd662bf20baf55fef42f1fab8dc8c88af2e4991427
+    # SMPP cluster/node and job-file processing core.
+    - method:v1:3dd8ea7333d6b26456db62e978b520e8ac15fc322c708740e7590979f0bc9306
+    - method:v1:b3c86821f645d8a8b26ecc43e6d1213379e4d935c754221f8ae81c626c89c64c
+    - method:v1:a90aa5c7f424717ef8a7edb2863223e9a5c834f493c3c8081ca3b3ea5efcee79
+    - method:v1:6863d76cc67732d126f533ae4a70730898e285b07558124f288cebecd3c5cfdc

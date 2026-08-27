@@ -106,6 +106,19 @@ public static class CallbackContracts
         RunOnce(CallbackTarget);
     }
 
+    /// <summary>
+    /// Passes a method group whose accepted body exposes no flattenable member operations; the
+    /// boundary must fail closed without projecting an identity instead of failing analysis.
+    /// </summary>
+    public static void InvokeEmptyMethodGroup()
+    {
+        RunOnce(EmptyCallbackTarget);
+    }
+
+    private static void EmptyCallbackTarget()
+    {
+    }
+
     private static void CallbackTarget(int value)
     {
         // Incompatible overload: an int parameter does not match the parameterless Action target.
