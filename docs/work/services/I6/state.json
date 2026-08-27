@@ -3,7 +3,7 @@
   "checkpointId": "I6",
   "status": "Closed",
   "baselineRevision": "2ee3c1d567fc31a5719468729b6b078add296004",
-  "candidateRevision": "uncommitted working tree on issue-6-wcf-client-outbound-boundaries",
+  "candidateRevision": "99f8bd2e0c0f24f9bc782d098584ce6e47421fd2 (merge of upstream/main into issue-6-wcf-client-outbound-boundaries; original checkpoint work at dc6e39b)",
   "review": {
     "status": "Complete",
     "findings": [
@@ -26,6 +26,7 @@
     "Matches the frozen target-path allowlist and admission/claim-transition contract from the issue's maintainer-readiness audit comment.",
     "Independent review (reviewer-medium) completed 2026-08-26: no Blocking or Major findings; verdict 'Ready for the final gate'. Independently re-ran all four focused commands and confirmed identical pass counts (Analysis 6/6, FrameworkModels 43/43, Scenarios 13/13, Wording 4/4).",
     "Two Minor/Observation findings (I6-F1, I6-F2) deferred as non-blocking follow-up items per owner's open-ended authorization to continue this checkpoint to closure; no repair round was needed.",
-    "Final gate run 2026-08-26: passed except the pre-existing, unrelated Analysis.Tests SDK-registration environmental flake documented in verification.finalGate.summary; recorded for later infrastructure planning, not fixed here (out of this checkpoint's scope per docs/project/workflow.md's 'never broaden to solve adjacent discoveries')."
+    "Final gate run 2026-08-26: passed except the pre-existing, unrelated Analysis.Tests SDK-registration environmental flake documented in verification.finalGate.summary; recorded for later infrastructure planning, not fixed here (out of this checkpoint's scope per docs/project/workflow.md's 'never broaden to solve adjacent discoveries').",
+    "Post-closure sync: upstream/main advanced 4 commits (PR #27 EF Core persistence projection, closes #9/#10) after checkpoint closure at dc6e39b. I6 branch merged (not rebased) at 99f8bd2e0c0f24f9bc782d098584ce6e47421fd2 to preserve already-open PR history. Three overlapping production files (FrameworkAnalysisRequestProjector.cs, ScenarioGraphBuilder.cs, DocumentationPlanner.cs) manually confirmed to retain both CoreWcf ClientOperationInvocation and EF Core EntityFramework markers intact with no shadowing. GetMeaning fixture restore (tests/fixtures/BehaviorDocumentation/GetMeaning/GetMeaning.csproj --locked-mode) discovered as a previously-undocumented prerequisite to resolve EntityFrameworkCore.Relational extension methods. Full re-verification run against merged tree: focused command set passed identically (Analysis 6/6, FrameworkModels 43/43, Scenarios 13/13, Wording 4/4); final gate passed except Analysis.Tests 221/231 with identical 10 pre-existing SD1102 failures (ConfigurationSemanticProjectionTests ×2, ConditionalDependencyInjectionProjectionTests ×2, CallbackBoundaryProjectionTests ×2, BehaviorDeterminismTests ×2, ProgramIndexBuilderTests ×2) as original baseline. No CoreWcf-scoped test regression. Checkpoint remains Closed; branch synced and ready for PR publication."
   ]
 }
