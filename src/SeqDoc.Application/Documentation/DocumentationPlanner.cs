@@ -93,6 +93,7 @@ public static class DocumentationPlanner
     private const string ActionPhraseKey = "action";
     private const string MethodCallPhraseKey = "method-call";
     private const string ServiceCallPhraseKey = "service-call";
+    private const string ClientOperationInvocationPhraseKey = "client-operation-invocation";
     private const string EntityQueryPhraseKey = "entity-query";
     private const string StateAssignmentPhraseKey = "state-assignment";
     private const string EntityMutationPhraseKey = "entity-mutation";
@@ -124,7 +125,7 @@ public static class DocumentationPlanner
                 string? type = NodeContainingType(node);
                 bool configuredParticipant = type is not null && participants.Contains(type);
                 bool builtInLogging = IsRecognizedLoggingCall(node);
-                bool configuredCall = node.Kind == ScenarioNodeKind.MethodCall
+                bool configuredCall = node.Kind is ScenarioNodeKind.MethodCall or ScenarioNodeKind.ClientOperationInvocation
                     && CallMatches(node, calls);
                 if (configuredParticipant || configuredCall || builtInLogging)
                 {
@@ -268,6 +269,17 @@ public static class DocumentationPlanner
                         WordingPhraseKind.Statement,
                         ServiceCallPhraseKey,
                         BuildServiceCallText(node),
+                        node.Evidence,
+                        node.Certainty);
+                    break;
+                case ScenarioNodeKind.ClientOperationInvocation:
+                    CreatePhrase(
+                        graph,
+                        phraseOrdinals,
+                        phrases,
+                        WordingPhraseKind.Statement,
+                        ClientOperationInvocationPhraseKey,
+                        BuildClientOperationInvocationText(node),
                         node.Evidence,
                         node.Certainty);
                     break;
@@ -592,7 +604,7 @@ public static class DocumentationPlanner
             ("data", dataNode, dataNode?.Presentation?.DbContextTypeName, "Data store", DiagramParticipantKind.Data),
         ]);
         foreach (var group in graph.Nodes
-                     .Where(node => node.Kind == ScenarioNodeKind.MethodCall
+                     .Where(node => node.Kind is ScenarioNodeKind.MethodCall or ScenarioNodeKind.ClientOperationInvocation
                          && !string.IsNullOrWhiteSpace(node.Presentation?.TargetContainingTypeName)
                           && !filter.HiddenNodes.Contains(node.Id))
                      .GroupBy(node => node.Presentation!.TargetContainingTypeName!, StringComparer.Ordinal)
@@ -748,14 +760,14 @@ public static class DocumentationPlanner
                     {
                         break;
                     }
-                    var sourceKey = callSource?.Kind == ScenarioNodeKind.MethodCall
+                    var sourceKey = callSource?.Kind is ScenarioNodeKind.MethodCall or ScenarioNodeKind.ClientOperationInvocation
                         && callSource.Presentation?.TargetContainingTypeName is { Length: > 0 } sourceType
                         && methodCallParticipantKeys.TryGetValue(sourceType, out var sourceParticipantKey)
                         ? sourceParticipantKey
                         : "action";
                     var targetKey = callTarget?.Presentation?.ActionKind == ScenarioActionKind.HostedWorker
                         ? "worker"
-                        : callTarget?.Kind == ScenarioNodeKind.MethodCall
+                        : callTarget?.Kind is ScenarioNodeKind.MethodCall or ScenarioNodeKind.ClientOperationInvocation
                         && callTarget.Presentation?.TargetContainingTypeName is { Length: > 0 } targetType
                         && methodCallParticipantKeys.TryGetValue(targetType, out var targetParticipantKey)
                         ? targetParticipantKey
@@ -2576,6 +2588,7 @@ public static class DocumentationPlanner
         ScenarioNodeKind.Action => 1,
         ScenarioNodeKind.MethodCall => 2,
         ScenarioNodeKind.ServiceCall => 2,
+        ScenarioNodeKind.ClientOperationInvocation => 2,
         ScenarioNodeKind.EntityQuery => 3,
         ScenarioNodeKind.StateAssignment => 4,
         ScenarioNodeKind.EntityMutation => 5,
@@ -2624,7 +2637,8 @@ public static class DocumentationPlanner
     {
         int segment = node.Kind switch
         {
-            ScenarioNodeKind.EntryPoint or ScenarioNodeKind.Action or ScenarioNodeKind.MethodCall or ScenarioNodeKind.ServiceCall => 0,
+            ScenarioNodeKind.EntryPoint or ScenarioNodeKind.Action or ScenarioNodeKind.MethodCall
+                or ScenarioNodeKind.ServiceCall or ScenarioNodeKind.ClientOperationInvocation => 0,
             ScenarioNodeKind.EntityQuery or ScenarioNodeKind.StateAssignment or ScenarioNodeKind.EntityMutation => 1,
             ScenarioNodeKind.SourceObservation => 2,
             ScenarioNodeKind.Delay or ScenarioNodeKind.Outcome when node.Presentation?.ActionKind == ScenarioActionKind.MinimalApiHandler => 2,
@@ -2633,7 +2647,7 @@ public static class DocumentationPlanner
         int rank = SemanticNodeRank(graph, node);
         int ordinal = segment == 1
             ? node.SequenceOrdinal
-            : node.Kind == ScenarioNodeKind.MethodCall
+            : node.Kind is ScenarioNodeKind.MethodCall or ScenarioNodeKind.ClientOperationInvocation
                 ? node.SequenceOrdinal
             : segment == 2 && node.Presentation?.ActionKind == ScenarioActionKind.MinimalApiHandler
                 ? node.Presentation.SourceOrdinal ?? int.MaxValue
@@ -2954,7 +2968,7 @@ public static class DocumentationPlanner
         string? rootContainingType = actionNode?.Presentation?.ConfiguredContainingTypeName
             ?? actionNode?.Presentation?.ControllerTypeName;
         var types = graph.Nodes
-            .Where(node => node.Kind == ScenarioNodeKind.MethodCall
+            .Where(node => node.Kind is ScenarioNodeKind.MethodCall or ScenarioNodeKind.ClientOperationInvocation
                 && !string.IsNullOrWhiteSpace(node.Presentation?.TargetContainingTypeName)
                 && !IsRecognizedLoggingType(node.Presentation?.TargetContainingTypeName))
             .Select(node => node.Presentation!.TargetContainingTypeName!)
@@ -3161,6 +3175,7 @@ public static class DocumentationPlanner
     private static bool ProducesDiagramMessage(ScenarioNode node) => node.Kind switch
     {
         ScenarioNodeKind.MethodCall => !IsRecognizedLoggingCall(node),
+        ScenarioNodeKind.ClientOperationInvocation => true,
         ScenarioNodeKind.ServiceCall or ScenarioNodeKind.Dispatch or ScenarioNodeKind.Handler
             or ScenarioNodeKind.EntityQuery or ScenarioNodeKind.EntityMutation
             or ScenarioNodeKind.Result or ScenarioNodeKind.Outcome => true,
@@ -3313,6 +3328,46 @@ public static class DocumentationPlanner
         }
 
         return "The action calls a service resolved through dependency injection.";
+    }
+
+    /// <summary>
+    /// Protocol-neutral outbound service-client call wording. The claim describes only the call
+    /// site's own compiler-proven syntax (discarded/assigned/returned/unclaimed, optionally awaited)
+    /// and the operation's declared fault contract, if any; it never claims a network call executed,
+    /// a response was received, or a runtime fault occurred.
+    /// </summary>
+    private static string BuildClientOperationInvocationText(ScenarioNode node)
+    {
+        var presentation = node.Presentation;
+        var client = ShortTypeName(presentation?.ClientTypeName ?? "the client");
+        var member = presentation?.CalledMemberName ?? "the operation";
+        var contract = string.IsNullOrWhiteSpace(presentation?.ContractTypeName)
+            ? null
+            : ShortTypeName(presentation.ContractTypeName);
+        var resultType = presentation?.DeclaredResultTypeName;
+
+        var claim = presentation?.ResultClaimKind switch
+        {
+            ClientInvocationResultClaimKind.Discarded => string.IsNullOrWhiteSpace(resultType)
+                ? "the result is discarded"
+                : $"the result is discarded; the operation declares {ShortTypeName(resultType)}",
+            ClientInvocationResultClaimKind.ResultAssigned => string.IsNullOrWhiteSpace(presentation?.ResultBindingName)
+                ? "the call result is assigned"
+                : $"the call result is assigned to {presentation!.ResultBindingName}",
+            ClientInvocationResultClaimKind.ResultReturned => "the call result is returned",
+            _ => string.IsNullOrWhiteSpace(resultType)
+                ? "the call is made"
+                : $"the call is made; result type {ShortTypeName(resultType)} is declared",
+        };
+        var awaited = presentation?.ResultIsAwaited == true ? ", awaited" : string.Empty;
+        var faultText = string.IsNullOrWhiteSpace(presentation?.DeclaredFaultTypeNames)
+            ? string.Empty
+            : $" The operation declares fault: {presentation!.DeclaredFaultTypeNames}.";
+
+        var callText = contract is null
+            ? $"The action calls {client}.{member} through the service-client boundary"
+            : $"The action calls {client}.{member} through the {contract} service-client boundary";
+        return $"{callText}; {claim}{awaited}.{faultText}";
     }
 
     private static string BuildMethodCallText(ScenarioGraph graph, ScenarioNode node)

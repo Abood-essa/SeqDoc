@@ -25,6 +25,14 @@ public enum ScenarioNodeKind
     Delay,
     Dispatch,
     Handler,
+
+    /// <summary>
+    /// An admitted outbound invocation of a service-client operation (an exact
+    /// <c>ClientBase&lt;TContract&gt;</c>-derived source/generated client call), distinct from
+    /// <see cref="ServiceCall"/> (DI-resolved same-process dispatch): this node represents a
+    /// compiler-proven call through a client boundary, never in-process dispatch.
+    /// </summary>
+    ClientOperationInvocation,
 }
 
 /// <summary>
@@ -196,7 +204,14 @@ public sealed record ScenarioNodePresentation(
     string? HostedWorkerStopMethodName = null,
     HostedWorkerLifecycleStep? HostedWorkerLifecycleStep = null,
     string? HostedWorkerCancellationParameterName = null,
-    bool HostedWorkerSchedulerRegistration = false);
+    bool HostedWorkerSchedulerRegistration = false,
+    string? ClientTypeName = null,
+    ServiceClientKind? ClientKind = null,
+    ClientInvocationResultClaimKind? ResultClaimKind = null,
+    bool ResultIsAwaited = false,
+    string? ResultBindingName = null,
+    string? DeclaredResultTypeName = null,
+    string? DeclaredFaultTypeNames = null);
 
 /// <summary>
 /// One evidence-backed scenario-graph edge connecting two nodes. Every edge carries non-empty

@@ -327,7 +327,17 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
 
     private ModelResult AnalyzeOperation(OperationDescriptor operation, FrameworkAnalysisContext context)
     {
-        if (!string.Equals(operation.Kind, "Invocation", StringComparison.Ordinal) || operation.ServiceEndpointShape is not { } shape)
+        if (!string.Equals(operation.Kind, "Invocation", StringComparison.Ordinal))
+        {
+            return ModelResult.Unrecognized;
+        }
+
+        if (operation.ClientInvocationShape is { } invocationShape)
+        {
+            return AnalyzeClientInvocation(operation, invocationShape, context);
+        }
+
+        if (operation.ServiceEndpointShape is not { } shape)
         {
             return ModelResult.Unrecognized;
         }
@@ -368,6 +378,118 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
             BindingType = shape.BindingType.MetadataName,
             Address = shape.Address,
             Evidence = CreateModelEvidence($"service-endpoint-registration:{operation.Id.Value}", underlyingEvidence, effectiveCertainty),
+            Certainty = effectiveCertainty,
+        };
+        return new ModelResult(true, facts: [fact], diagnostics: diagnostics);
+    }
+
+    /// <summary>
+    /// Admits an <see cref="ServiceClientInvocationFact"/> only when every identity link holds: the
+    /// invocation's receiver is a concrete (never interface-typed) type whose exact symbol equals the
+    /// invoked method's own declaring type (ruling out an inherited-method or reinterpreted-receiver
+    /// ambiguity), that declaring type's exact base-type chain derives
+    /// <c>System.ServiceModel.ClientBase&lt;TContract&gt;</c>, the invoked method is an ordinary
+    /// non-generic instance method, and it implements exactly one admitted CoreWCF/classic-WCF
+    /// interface member whose contract is the exact contract <c>ClientBase</c> was constructed with.
+    /// Whether the receiver's client type actually carries an admitted <see cref="ServiceClientBoundaryFact"/>
+    /// with a <see cref="ServiceClientKind.SourceClient"/>/<see cref="ServiceClientKind.GeneratedClient"/>
+    /// classification is proven independently and joined later by the Scenario Graph, mirroring how
+    /// capability and registration are proven separately and joined there.
+    /// </summary>
+    private ModelResult AnalyzeClientInvocation(
+        OperationDescriptor operation,
+        FrameworkClientInvocationShapeDescriptor shape,
+        FrameworkAnalysisContext context)
+    {
+        var profileId = context.Profile.Id;
+        var methodShape = shape.TargetMethodShape;
+
+        if (!shape.ReceiverIsConcreteType
+            || shape.ReceiverTypeSymbol is not { } receiverTypeSymbol
+            || receiverTypeSymbol != methodShape.DeclaringTypeSymbol)
+        {
+            // Ambiguous (interface-typed) receiver, or the invoked method is inherited from a type
+            // other than the receiver's own exact static type: never admitted.
+            return ModelResult.Unrecognized;
+        }
+
+        if (!methodShape.IsOrdinary || methodShape.IsStatic || methodShape.IsAbstract || methodShape.GenericArity != 0)
+        {
+            return ModelResult.Unrecognized;
+        }
+
+        if (!HasClientBase(methodShape.DeclaringType))
+        {
+            return ModelResult.Unrecognized;
+        }
+
+        var admittedMembers = (methodShape.ImplementedInterfaceMembers.IsDefaultOrEmpty
+                ? Enumerable.Empty<FrameworkInterfaceMemberIdentity>()
+                : methodShape.ImplementedInterfaceMembers)
+            .Select(member => (Member: member, Family: TryGetAdmittedFamily(member)))
+            .Where(entry => entry.Family is not null)
+            .Select(entry => (entry.Member, Family: entry.Family!.Value))
+            .Where(entry => IsClientBaseDerivedForContract(methodShape.DeclaringType, entry.Member.InterfaceType))
+            .ToArray();
+        if (admittedMembers.Length != 1)
+        {
+            // Zero admitted contract-matching members (not a call to a supported client operation) or
+            // more than one (ambiguous) never admits an invocation fact.
+            return ModelResult.Unrecognized;
+        }
+
+        var (member, family) = admittedMembers[0];
+        var contractEvidence = member.InterfaceTypeAttributes
+            .Where(attribute => ServiceContractFamily(attribute.AttributeType) == family)
+            .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence)
+            .DistinctBy(item => item.Id.Value)
+            .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
+            .ToImmutableArray();
+        var operationEvidence = member.InterfaceMethodAttributes
+            .Where(attribute => OperationContractFamily(attribute.AttributeType) == family)
+            .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence)
+            .DistinctBy(item => item.Id.Value)
+            .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
+            .ToImmutableArray();
+        if (contractEvidence.IsDefaultOrEmpty || operationEvidence.IsDefaultOrEmpty)
+        {
+            return new ModelResult(false, diagnostics:
+                [CoreWcfServiceModelDiagnostics.EligibilityShapeUnavailable(profileId, $"{operation.Id.Value}client-invocation-attribute-evidence-unavailable")]);
+        }
+
+        var underlyingEvidence = operation.Evidence
+            .Concat(contractEvidence)
+            .Concat(operationEvidence)
+            .DistinctBy(item => item.Id.Value)
+            .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
+            .ToImmutableArray();
+        var effectiveCertainty = WeakestCertainty(operation.Certainty, underlyingEvidence);
+        var diagnostics = ImmutableArray<AnalysisDiagnostic>.Empty;
+        if (operation.Certainty != CertaintyLevel.Exact)
+        {
+            diagnostics = [CoreWcfServiceModelDiagnostics.DegradedInputCertainty(profileId, operation.Id.Value)];
+        }
+
+        var serviceContractType = member.InterfaceType.MetadataName;
+        var operationName = member.InterfaceMethodMetadataName;
+        var operationKey = $"{serviceContractType}.{operationName}";
+        var fact = new ServiceClientInvocationFact
+        {
+            Id = CreateBehaviorFactId(profileId, "service-client-invocation", new OperationBehaviorFactAnchor(operation.Method, operation.Id), 0),
+            CallerMethod = operation.Method,
+            InvocationOperation = operation.Id,
+            ServiceContractType = serviceContractType,
+            ServiceContractTypeSymbol = member.InterfaceTypeSymbol,
+            ClientType = methodShape.DeclaringType.Identity.MetadataName,
+            ClientTypeSymbol = receiverTypeSymbol,
+            OperationName = operationName,
+            OperationSymbol = member.InterfaceMethodSymbol,
+            OperationKey = operationKey,
+            ResultClaim = shape.ResultClaim,
+            IsAwaited = shape.IsAwaited,
+            ResultBindingName = shape.ResultBindingName,
+            DeclaredResultType = shape.DeclaredResultType,
+            Evidence = CreateModelEvidence($"service-client-invocation:{operationKey}:{operation.Id.Value}", underlyingEvidence, effectiveCertainty),
             Certainty = effectiveCertainty,
         };
         return new ModelResult(true, facts: [fact], diagnostics: diagnostics);

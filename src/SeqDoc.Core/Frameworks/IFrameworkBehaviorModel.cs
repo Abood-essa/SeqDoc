@@ -164,6 +164,31 @@ public sealed record FrameworkServiceEndpointShapeDescriptor(
     ImmutableArray<EvidenceRef> HostChainEvidence = default);
 
 /// <summary>
+/// Compiler-proven shape of one invocation whose target method implements at least one interface
+/// member, attached so a client-invocation-aware framework model can prove exact operation identity
+/// without rescanning symbols. <see cref="TargetMethodShape"/> is the exact same
+/// <see cref="FrameworkMethodShape"/> the eligibility projector would produce for the target method
+/// itself (declaring type, base-type chain with constructed generic arguments, declaring-type
+/// attributes, and every implemented interface member with its own exact attribute identities) — reused
+/// rather than re-derived, so a model matches an admitted contract operation the same way it already
+/// does for a service implementation. <see cref="ReceiverTypeSymbol"/> is the exact Program Index
+/// symbol identity of the invocation's receiver expression's own static type;
+/// <see cref="ReceiverIsConcreteType"/> is true only when that static type is a class (never an
+/// interface), so a model can reject an ambiguous interface-typed receiver. <see cref="ResultClaim"/>,
+/// <see cref="IsAwaited"/>, and <see cref="ResultBindingName"/> are the compiler-proven syntactic
+/// disposition of the call site's own result (discarded, assigned, returned, or unclaimed, optionally
+/// awaited) — never a network or runtime claim.
+/// </summary>
+public sealed record FrameworkClientInvocationShapeDescriptor(
+    FrameworkMethodShape TargetMethodShape,
+    SymbolId? ReceiverTypeSymbol,
+    bool ReceiverIsConcreteType,
+    ClientInvocationResultClaimKind ResultClaim,
+    bool IsAwaited,
+    string? ResultBindingName,
+    string DeclaredResultType);
+
+/// <summary>
 /// One compiler-proven step of an invocation receiver chain. The Roslyn adapter fills steps from the
 /// exact nested invocation operations of an expression; models verify each step against exact
 /// framework symbols. <see cref="NavigationMemberIdentity"/> carries the canonical identity of the
@@ -218,7 +243,8 @@ public sealed record OperationDescriptor(
     FrameworkDispatchShapeDescriptor? DispatchShape = null,
     FrameworkTypeIdentity? ConstructedType = null,
     SymbolId? ConstructedTypeSymbol = null,
-    FrameworkServiceEndpointShapeDescriptor? ServiceEndpointShape = null);
+    FrameworkServiceEndpointShapeDescriptor? ServiceEndpointShape = null,
+    FrameworkClientInvocationShapeDescriptor? ClientInvocationShape = null);
 
 /// <summary>
 /// Exact, Roslyn-neutral identity of one named type. The controlled eligibility projector fills this
