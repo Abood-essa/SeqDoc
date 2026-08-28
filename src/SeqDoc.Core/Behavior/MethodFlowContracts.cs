@@ -265,6 +265,18 @@ public sealed record LoopNode(
     ImmutableArray<EvidenceRef> Evidence,
     CertaintyLevel Certainty) : FlowNode(Id, Method, Evidence, Certainty)
 {
+    /// <summary>The compiler loop shape retained by this projection.</summary>
+    public ExtractedLoopKind LoopKind { get; init; } = ExtractedLoopKind.WhileLoop;
+
+    /// <summary>The canonical compiler header block ordinal.</summary>
+    public int HeaderBlockOrdinal { get; init; } = -1;
+
+    /// <summary>Canonical compiler latch block ordinals.</summary>
+    public ImmutableArray<int> LatchBlockOrdinals { get; init; } = [];
+
+    /// <summary>Exact compiler-proven backedge endpoints.</summary>
+    public ImmutableArray<ExtractedOrdinaryBranch> BackEdges { get; init; } = [];
+
     private ImmutableArray<int> _bodyBlockOrdinals;
 
     /// <summary>Canonical compiler block ordinals for loop members, excluding the header.</summary>

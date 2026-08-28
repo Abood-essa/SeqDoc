@@ -1367,6 +1367,7 @@ internal static class RoslynBehaviorExtractor
             predicateFacts,
             profileId,
             localInitializers,
+            diagnostics,
             cancellationToken);
         bodies.Add(body);
     }
@@ -1481,9 +1482,10 @@ internal static class RoslynBehaviorExtractor
         RoslynConfigurationSemanticFactCollector configurationFacts,
         RoslynCallbackBoundaryFactCollector callbackBoundaryFacts,
         RoslynPredicateFactCollector predicateFacts,
-        CompilationProfileId profileId,
-        IReadOnlyDictionary<ILocalSymbol, IOperation> localInitializers,
-        CancellationToken cancellationToken)
+         CompilationProfileId profileId,
+         IReadOnlyDictionary<ILocalSymbol, IOperation> localInitializers,
+         ImmutableArray<AnalysisDiagnostic>.Builder diagnostics,
+         CancellationToken cancellationToken)
     {
         var cfg = ControlFlowGraph.Create(bodyOperation, cancellationToken);
 
@@ -1608,6 +1610,26 @@ internal static class RoslynBehaviorExtractor
                 CertaintyLevel.Exact));
         }
 
+        // Loop operations are compiler anchors, not CFG operations. Generate their identities in a
+        // side map only: adding them to the flattened operation stream changes value flow, evaluation
+        // order, and unrelated fingerprints.
+        var loopAnchors = new Dictionary<ILoopOperation, OperationId>(ReferenceEqualityComparer.Instance);
+        var extractedAnchors = ImmutableArray.CreateBuilder<ExtractedLoopAnchor>();
+        foreach (var loop in EnumerateSelfAndChildren(bodyOperation).OfType<ILoopOperation>())
+        {
+            var anchorId = CreateOperationId(loop, methodId, "LoopAnchor", 0, loop.Syntax?.SpanStart ?? 0, 0, documents);
+            loopAnchors[loop] = anchorId;
+            extractedAnchors.Add(new ExtractedLoopAnchor(anchorId, loop switch
+            {
+                IWhileLoopOperation whileLoop when !whileLoop.ConditionIsTop => ExtractedLoopKind.DoWhileLoop,
+                IWhileLoopOperation => ExtractedLoopKind.WhileLoop,
+                IForEachLoopOperation => ExtractedLoopKind.ForEachLoop,
+                _ => ExtractedLoopKind.ForLoop,
+            }, ResolveEvidence(loop, documents, evidence),
+                loop.Syntax is null ? CertaintyLevel.Unknown : CertaintyLevel.Exact));
+        }
+        var ordinaryBranches = BuildOrdinaryBranches(cfg, regionById, documents, evidence);
+
         var locals = CollectLocals(bodyOperation)
             .Keys
             .Select(local => new ExtractedLocal(local.Name, local.Type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat)))
@@ -1628,7 +1650,18 @@ internal static class RoslynBehaviorExtractor
             operations.ToImmutable(),
             blocks.ToImmutable(),
             regionBuilder.ToImmutable(),
-            evidence);
+            evidence,
+            BuildNaturalLoops(
+                cfg,
+                bodyOperation,
+                ordinaryBranches,
+                loopAnchors,
+                regionById,
+                evidence,
+                documents,
+                diagnostics),
+            extractedAnchors.OrderBy(anchor => anchor.Operation.Value, StringComparer.Ordinal).ToImmutableArray(),
+            ordinaryBranches);
         CollectSemanticFacts(
             cfg,
             method,
@@ -1657,6 +1690,299 @@ internal static class RoslynBehaviorExtractor
         // loaded project context and method body is registered (regression).
         callbackBoundaryFacts.AddMethod(project, methodId, bodyOperation, evidence, operationById, cancellationToken);
         return body with { BodyFingerprint = BehaviorFingerprint.ComputeBody(body) };
+    }
+
+    private static ImmutableArray<ExtractedOrdinaryBranch> BuildOrdinaryBranches(
+        ControlFlowGraph cfg,
+        Dictionary<ControlFlowRegion, FlowRegionId> regionById,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents,
+        ImmutableArray<EvidenceRef> methodEvidence) =>
+        cfg.Blocks
+            .SelectMany(block => new[] { block.FallThroughSuccessor, block.ConditionalSuccessor }
+                .Where(branch => branch is not null)
+                .Select(branch => (Source: block, Branch: branch!)))
+            .Where(item => item.Source.IsReachable
+                && item.Branch.Destination?.IsReachable == true
+                && item.Branch.Semantics == ControlFlowBranchSemantics.Regular
+                && item.Branch.Destination is not null)
+            .Select(item => new ExtractedOrdinaryBranch(
+                item.Source.Ordinal,
+                item.Branch.Destination!.Ordinal,
+                item.Branch.EnteringRegions.Where(regionById.ContainsKey).Select(region => regionById[region]).Distinct().OrderBy(id => id.Value, StringComparer.Ordinal).ToImmutableArray(),
+                item.Branch.LeavingRegions.Where(regionById.ContainsKey).Select(region => regionById[region]).Distinct().OrderBy(id => id.Value, StringComparer.Ordinal).ToImmutableArray(),
+                BlockEvidence(item.Source, documents, methodEvidence)
+                    .AddRange(BlockEvidence(item.Branch.Destination, documents, methodEvidence))
+                    .DistinctBy(evidence => evidence.Id)
+                    .OrderBy(evidence => evidence.Id.Value, StringComparer.Ordinal)
+                    .ToImmutableArray(),
+                CertaintyLevel.Exact))
+            .OrderBy(branch => branch.SourceBlockOrdinal)
+            .ThenBy(branch => branch.DestinationBlockOrdinal)
+            .ToImmutableArray();
+
+    private static ImmutableArray<EvidenceRef> BlockEvidence(
+        BasicBlock block,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents,
+        ImmutableArray<EvidenceRef> methodEvidence)
+    {
+        if (block.BranchValue is { } branchValue)
+        {
+            return ResolveEvidence(branchValue, documents, methodEvidence);
+        }
+
+        if (block.Operations.FirstOrDefault() is { } operation)
+        {
+            return ResolveEvidence(operation, documents, methodEvidence);
+        }
+
+        return methodEvidence;
+    }
+
+    private static ImmutableArray<ExtractedNaturalLoop> BuildNaturalLoops(
+        ControlFlowGraph cfg,
+        IMethodBodyOperation bodyOperation,
+        ImmutableArray<ExtractedOrdinaryBranch> branches,
+        Dictionary<ILoopOperation, OperationId> loopAnchors,
+        Dictionary<ControlFlowRegion, FlowRegionId> regionById,
+        ImmutableArray<EvidenceRef> methodEvidence,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents,
+        ImmutableArray<AnalysisDiagnostic>.Builder diagnostics)
+    {
+        var blocks = cfg.Blocks.ToDictionary(block => block.Ordinal);
+        var successors = branches.GroupBy(branch => branch.SourceBlockOrdinal).ToDictionary(group => group.Key, group => group.Select(branch => branch.DestinationBlockOrdinal).ToArray());
+        var predecessors = branches.GroupBy(branch => branch.DestinationBlockOrdinal).ToDictionary(group => group.Key, group => group.Select(branch => branch.SourceBlockOrdinal).ToArray());
+        var entryOrdinal = blocks.Keys.Min();
+        var roots = blocks.Keys.Where(ordinal => ordinal == entryOrdinal || !predecessors.ContainsKey(ordinal)).Order().ToArray();
+        var componentByBlock = new Dictionary<int, int>();
+        foreach (var root in roots)
+        {
+            var pending = new Stack<int>();
+            pending.Push(root);
+            while (pending.TryPop(out var current))
+            {
+                if (componentByBlock.ContainsKey(current))
+                {
+                    continue;
+                }
+                componentByBlock[current] = root;
+                if (successors.TryGetValue(current, out var next))
+                {
+                    foreach (var destination in next.Order())
+                    {
+                        pending.Push(destination);
+                    }
+                }
+            }
+        }
+
+        var dominators = new Dictionary<int, HashSet<int>>();
+        foreach (var component in componentByBlock.Values.Distinct().Order())
+        {
+            var members = componentByBlock.Where(pair => pair.Value == component).Select(pair => pair.Key).Order().ToArray();
+            var all = members.ToHashSet();
+            foreach (var member in members)
+            {
+                dominators[member] = member == component ? [member] : new HashSet<int>(all);
+            }
+            var changed = true;
+            while (changed)
+            {
+                changed = false;
+                foreach (var member in members.Where(member => member != component))
+                {
+                    var incoming = predecessors.GetValueOrDefault(member, []).Where(dominators.ContainsKey).Where(predecessor => componentByBlock[predecessor] == component).ToArray();
+                    if (incoming.Length == 0)
+                    {
+                        continue;
+                    }
+                    var value = new HashSet<int>(dominators[incoming[0]]);
+                    foreach (var predecessor in incoming.Skip(1))
+                    {
+                        value.IntersectWith(dominators[predecessor]);
+                    }
+                    value.Add(member);
+                    if (!value.SetEquals(dominators[member]))
+                    {
+                        dominators[member] = value;
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        var candidates = new List<(int Header, HashSet<int> Members, List<ExtractedOrdinaryBranch> BackEdges)>();
+        foreach (var backEdge in branches.Where(branch => dominators.GetValueOrDefault(branch.SourceBlockOrdinal)?.Contains(branch.DestinationBlockOrdinal) == true))
+        {
+            var members = new HashSet<int> { backEdge.DestinationBlockOrdinal, backEdge.SourceBlockOrdinal };
+            var pending = new Stack<int>();
+            pending.Push(backEdge.SourceBlockOrdinal);
+            while (pending.TryPop(out var current))
+            {
+                if (current == backEdge.DestinationBlockOrdinal)
+                {
+                    continue;
+                }
+
+                foreach (var predecessor in predecessors.GetValueOrDefault(current, []))
+                {
+                    if (predecessor != backEdge.DestinationBlockOrdinal && members.Add(predecessor))
+                    {
+                        pending.Push(predecessor);
+                    }
+                }
+            }
+
+            var existing = candidates.FirstOrDefault(candidate => candidate.Header == backEdge.DestinationBlockOrdinal && candidate.Members.SetEquals(members));
+            if (existing.Members is not null)
+            {
+                existing.BackEdges.Add(backEdge);
+            }
+            else
+            {
+                candidates.Add((backEdge.DestinationBlockOrdinal, members, [backEdge]));
+            }
+        }
+
+        var loopOperations = EnumerateSelfAndChildren(bodyOperation).OfType<ILoopOperation>()
+            .Where(loopAnchors.ContainsKey)
+            .Select(operation => (Operation: operation, Id: loopAnchors[operation]))
+            .ToArray();
+        var normalizedCandidates = candidates
+                     .GroupBy(candidate => candidate.Header)
+                     .Select(group => (
+                         Header: group.Key,
+                         Members: group.SelectMany(candidate => candidate.Members).ToHashSet(),
+                         BackEdges: group.SelectMany(candidate => candidate.BackEdges).ToList()))
+                     .OrderBy(candidate => candidate.Header)
+                      .ThenBy(candidate => candidate.Members.Min())
+                      .ToArray();
+        var result = new List<ExtractedNaturalLoop>();
+        var usedAnchors = new HashSet<OperationId>();
+        var rejectedAnchors = new HashSet<OperationId>();
+        foreach (var candidate in normalizedCandidates)
+        {
+            if (candidate.Members.Any(member => componentByBlock.GetValueOrDefault(member) != componentByBlock.GetValueOrDefault(candidate.Header)))
+            {
+                diagnostics.Add(CreateLoopDiagnostic(bodyOperation, "irreducible or cross-component candidate", candidate.Header));
+                continue;
+            }
+            var entries = branches.Where(branch => candidate.Members.Contains(branch.DestinationBlockOrdinal) && !candidate.Members.Contains(branch.SourceBlockOrdinal) && branch.DestinationBlockOrdinal != candidate.Header).ToArray();
+            if (entries.Length > 0)
+            {
+                diagnostics.Add(CreateLoopDiagnostic(bodyOperation, "multi-entry candidate", candidate.Header));
+                continue;
+            }
+            var matches = loopOperations
+                .Where(item => !usedAnchors.Contains(item.Id) && MatchesExactShape(item.Operation, candidate, blocks))
+                .ToArray();
+            if (matches.Length != 1)
+            {
+                foreach (var matchingAnchor in matches)
+                {
+                    rejectedAnchors.Add(matchingAnchor.Id);
+                }
+                diagnostics.Add(CreateLoopDiagnostic(bodyOperation, "duplicate or inconsistent anchor mapping", candidate.Header));
+                continue;
+            }
+            var match = matches[0];
+            usedAnchors.Add(match.Id);
+            var kind = match.Operation switch
+            {
+                IWhileLoopOperation whileLoop when !whileLoop.ConditionIsTop => ExtractedLoopKind.DoWhileLoop,
+                IWhileLoopOperation => ExtractedLoopKind.WhileLoop,
+                IForEachLoopOperation => ExtractedLoopKind.ForEachLoop,
+                _ => ExtractedLoopKind.ForLoop,
+            };
+            var exits = branches.Where(branch => candidate.Members.Contains(branch.SourceBlockOrdinal) && !candidate.Members.Contains(branch.DestinationBlockOrdinal)).Select(branch => branch.DestinationBlockOrdinal).Distinct().Order().ToImmutableArray();
+            var loopEvidence = ResolveEvidence(match.Operation, documents, methodEvidence)
+                .AddRange(candidate.BackEdges.SelectMany(edge => edge.Evidence))
+                .DistinctBy(evidence => evidence.Id)
+                .OrderBy(evidence => evidence.Id.Value, StringComparer.Ordinal)
+                .ToImmutableArray();
+            result.Add(new ExtractedNaturalLoop(match.Id, kind, candidate.Header,
+                candidate.BackEdges.Select(edge => edge.SourceBlockOrdinal).Distinct().Order().ToImmutableArray(),
+                candidate.Members.Where(member => member != candidate.Header).Order().ToImmutableArray(), exits,
+                candidate.BackEdges.OrderBy(edge => edge.SourceBlockOrdinal).ThenBy(edge => edge.DestinationBlockOrdinal).ToImmutableArray(),
+                loopEvidence, WeakestCertainty(match.Operation, candidate)));
+        }
+        foreach (var unmatched in loopOperations.Where(item => !usedAnchors.Contains(item.Id) && !rejectedAnchors.Contains(item.Id)))
+        {
+            diagnostics.Add(CreateLoopDiagnostic(bodyOperation, "unmatched compiler loop operation", unmatched.Operation.Syntax?.SpanStart ?? 0));
+        }
+        return result.OrderBy(loop => loop.HeaderBlockOrdinal).ThenBy(loop => loop.LoopOperation.Value, StringComparer.Ordinal).ToImmutableArray();
+
+        static CertaintyLevel WeakestCertainty(ILoopOperation operation, (int Header, HashSet<int> Members, List<ExtractedOrdinaryBranch> BackEdges) candidate)
+        {
+            var values = candidate.BackEdges.Select(edge => edge.Certainty)
+                .Append(operation.Syntax is null ? CertaintyLevel.Unknown : CertaintyLevel.Exact);
+            return values.Max();
+        }
+
+        static bool MatchesExactShape(ILoopOperation operation, (int Header, HashSet<int> Members, List<ExtractedOrdinaryBranch> BackEdges) candidate, Dictionary<int, BasicBlock> blocks)
+        {
+            var condition = operation switch
+            {
+                IWhileLoopOperation whileLoop => whileLoop.Condition,
+                IForLoopOperation forLoop => forLoop.Condition,
+                _ => null,
+            };
+            var conditionBlocks = condition is null ? [] : blocks.Values
+                .Where(block => block.BranchValue is not null)
+                .Where(block => block.BranchValue!.Kind == condition.Kind
+                    && block.BranchValue.Syntax is not null
+                    && condition.Syntax is not null
+                    && block.BranchValue.Syntax.SyntaxTree == condition.Syntax.SyntaxTree
+                    && block.BranchValue.Syntax.Span == condition.Syntax.Span)
+                .Select(block => block.Ordinal)
+                .Order()
+                .ToArray();
+            int? conditionBlock = conditionBlocks.Length == 1 ? conditionBlocks[0] : null;
+            if (condition is not null && conditionBlocks.Length != 1)
+            {
+                return false;
+            }
+            if (operation is IWhileLoopOperation whileOperation && !whileOperation.ConditionIsTop)
+            {
+                return conditionBlock is { } doWhileConditionBlock
+                    && candidate.BackEdges.Count(edge => edge.SourceBlockOrdinal == doWhileConditionBlock
+                    && edge.DestinationBlockOrdinal == candidate.Header) == 1;
+            }
+
+            if (conditionBlock is { } testedConditionBlock)
+            {
+                return testedConditionBlock == candidate.Header;
+            }
+
+            // Array foreach lowers to an implicit, zero-argument Boolean Invocation branch value over
+            // the exact collection expression. The compiler-generated flag, branch value kind, syntax
+            // identity, and header ordinal are admitted;
+            // whole-body/member containment is not.
+            return operation is IForEachLoopOperation foreachLoop
+                && foreachLoop.Collection.Syntax is not null
+                && blocks.Values.Where(block => block.BranchValue is IInvocationOperation invocation
+                    && invocation.Kind == OperationKind.Invocation
+                    && invocation.IsImplicit
+                    && invocation.Arguments.Length == 0
+                    && invocation.TargetMethod.ReturnType.SpecialType == SpecialType.System_Boolean
+                    && invocation.Syntax is not null
+                    && invocation.Syntax.SyntaxTree == foreachLoop.Collection.Syntax.SyntaxTree
+                    && invocation.Syntax.Span == foreachLoop.Collection.Syntax.Span)
+                    .Select(block => block.Ordinal)
+                    .Distinct()
+                    .ToArray() is { Length: 1 } collectionBlocks
+                && collectionBlocks[0] == candidate.Header;
+
+        }
+
+        static AnalysisDiagnostic CreateLoopDiagnostic(IOperation operation, string reason, int ordinal)
+        {
+            var id = StableIdentity.CreateDiagnosticId(new DiagnosticIdentityDescriptor("BE2010", AnalysisStage.BaselineIndex, null, operation.Syntax?.ToString() ?? "loop", Math.Max(0, ordinal)));
+            return new AnalysisDiagnostic(id, "BE2010", SeqDoc.Core.Diagnostics.DiagnosticSeverity.Warning, AnalysisStage.BaselineIndex,
+                $"A compiler natural-loop candidate was withheld ({reason}).", new DiagnosticLocation("behavior extraction"),
+                "The compiler control-flow facts do not prove one supported natural loop.",
+                "No natural-loop descriptor is produced.", "Treat loop topology conservatively.", CertaintyLevel.Conservative,
+                internalDetail: reason);
+        }
     }
 
     /// <summary>
@@ -4281,6 +4607,9 @@ internal static class RoslynBehaviorExtractor
         IReturnOperation => ExtractedOperationKind.Return,
         IThrowOperation => ExtractedOperationKind.Throw,
         IAwaitOperation => ExtractedOperationKind.Await,
+        IWhileLoopOperation whileLoop => whileLoop.ConditionIsTop
+            ? ExtractedOperationKind.WhileLoop
+            : ExtractedOperationKind.DoWhileLoop,
         ILoopOperation loop => loop.LoopKind switch
         {
             LoopKind.For => ExtractedOperationKind.ForLoop,

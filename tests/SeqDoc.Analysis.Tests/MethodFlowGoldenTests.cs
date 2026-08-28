@@ -129,7 +129,7 @@ public sealed class MethodFlowGoldenTests
 
         var doWhile = flows.First(flow => names[flow.Method] == "DoWhileShape");
         var doWhileLoop = Assert.Single(doWhile.Nodes.OfType<LoopNode>());
-        Assert.Empty(doWhileLoop.Body);
+        Assert.NotEmpty(doWhileLoop.Body);
         Assert.DoesNotContain(doWhileLoop.Exits, exit => exit == doWhileLoop.Header);
         foreach (var loopName in LoopShapeNames)
         {

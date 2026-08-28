@@ -148,6 +148,20 @@ public static class DispatchShapes
         return total;
     }
 
+    public static int NestedForEachShape(int[][] values)
+    {
+        var total = 0;
+        foreach (var group in values)
+        {
+            foreach (var value in group)
+            {
+                total += value;
+            }
+        }
+
+        return total;
+    }
+
     public static int WhileLoopShape(int limit)
     {
         int total = 0;
@@ -159,6 +173,81 @@ public static class DispatchShapes
         }
 
         return total;
+    }
+
+    public static int SequentialLoopShape(int firstLimit, int secondLimit)
+    {
+        var total = 0;
+        for (var first = 0; first < firstLimit; first++)
+        {
+            total += first;
+        }
+
+        var second = 0;
+        while (second < secondLimit)
+        {
+            total += second;
+            second++;
+        }
+
+        return total;
+    }
+
+    public static int NestedLoopShape(int outerLimit, int innerLimit)
+    {
+        var total = 0;
+        for (var outer = 0; outer < outerLimit; outer++)
+        {
+            var inner = 0;
+            while (inner < innerLimit)
+            {
+                total += outer + inner;
+                inner++;
+            }
+        }
+
+        return total;
+    }
+
+    public static int MultipleLatchLoopShape(int limit)
+    {
+        var total = 0;
+        var index = 0;
+        while (index < limit)
+        {
+            if ((index & 1) == 0)
+            {
+                index++;
+                continue;
+            }
+
+            total += index++;
+        }
+
+        return total;
+    }
+
+    public static int FinallyBoundaryShape(int value)
+    {
+        try
+        {
+            return value;
+        }
+        finally
+        {
+            _ = value.ToString();
+        }
+    }
+
+    public static int UnreachableLoopShape(int limit)
+    {
+        return 0;
+#pragma warning disable CS0162
+        while (limit-- > 0)
+        {
+            limit--;
+        }
+#pragma warning restore CS0162
     }
 
     public static int ReflectionShape(int amount)

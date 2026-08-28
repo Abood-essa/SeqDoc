@@ -1,5 +1,5 @@
 {
-  "BehaviorFingerprint": "eca256327eacf41d15af2d58b5536217bb19e7cfe423f787923233d7f2ecfee4",
+  "BehaviorFingerprint": "4cf7b2fb4df0dfb4aa5932f529dc9781867637682539af9640bb4bfcc01de263",
   "CallSiteCount": 9,
   "CallEdgeCount": 9,
   "CallSites": [
@@ -3578,7 +3578,7 @@
     },
     {
       "Name": "WhileShape",
-      "FlowFingerprint": "6b6684f50e77a38c0789bcac153e8cb1d1222869933a0bcbe7dd3b52595a8aac",
+      "FlowFingerprint": "a740b922dec32f63f4464e2c61e6dc5f2aff51bdc3b693a6ae56200702671e45",
       "NodeCount": 19,
       "EdgeCount": 18,
       "RegionCount": 2,
@@ -3625,13 +3625,6 @@
         {
           "Kind": "Operation",
           "Operation": "behavior-operation:v1:6f944d4c567fd352e5a2ba8424bd51bd302f8d8ae4e3760542355d937c4c5122",
-          "Target": null,
-          "IsDispatchable": null,
-          "IsRethrow": null
-        },
-        {
-          "Kind": "Loop",
-          "Operation": null,
           "Target": null,
           "IsDispatchable": null,
           "IsRethrow": null
@@ -3716,6 +3709,13 @@
         {
           "Kind": "Operation",
           "Operation": "behavior-operation:v1:07bfe3b3f03947ae97e38359a34f4aaec5f416fc1588c59af1fc4e54679eb659",
+          "Target": null,
+          "IsDispatchable": null,
+          "IsRethrow": null
+        },
+        {
+          "Kind": "Loop",
+          "Operation": null,
           "Target": null,
           "IsDispatchable": null,
           "IsRethrow": null

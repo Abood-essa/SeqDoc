@@ -118,6 +118,7 @@ public static class MethodFlowBuilder
         AddBlockEdges(
             body,
             blocksByOrdinal,
+            operationsById,
             blockHeads,
             blockTails,
             entryId,
@@ -136,12 +137,14 @@ public static class MethodFlowBuilder
         var loopRegions = DetectLoops(
             body,
             blocksByOrdinal,
+            operationsById,
             blockHeads,
             blockTails,
             nodes,
             regions,
             body.Evidence,
-            ref edgeOrdinal);
+            ref edgeOrdinal,
+            diagnostics);
         if (exitBlock is null)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -397,6 +400,7 @@ public static class MethodFlowBuilder
     private static void AddBlockEdges(
         ExtractedMethodBody body,
         Dictionary<int, ExtractedBasicBlock> blocksByOrdinal,
+        Dictionary<OperationId, ExtractedOperation> operationsById,
         Dictionary<int, FlowNodeId> blockHeads,
         Dictionary<int, FlowNodeId> blockTails,
         FlowNodeId entryId,
@@ -563,72 +567,112 @@ public static class MethodFlowBuilder
     private static ImmutableArray<FlowRegion> DetectLoops(
         ExtractedMethodBody body,
         Dictionary<int, ExtractedBasicBlock> blocksByOrdinal,
+        Dictionary<OperationId, ExtractedOperation> operationsById,
         Dictionary<int, FlowNodeId> blockHeads,
         Dictionary<int, FlowNodeId> blockTails,
         ImmutableArray<FlowNode>.Builder nodes,
         ImmutableArray<FlowRegion>.Builder regions,
         ImmutableArray<EvidenceRef> evidence,
-        ref int edgeOrdinal)
+        ref int edgeOrdinal,
+        ImmutableArray<AnalysisDiagnostic>.Builder diagnostics)
     {
-        var dominators = ComputeDominators(body, blocksByOrdinal);
         var loopOrdinal = regions.Count;
-        foreach (var block in body.Blocks.OrderBy(block => block.Ordinal))
+        var anchors = body.LoopAnchors.IsDefault ? [] : body.LoopAnchors;
+        var ordinaryBranches = body.OrdinaryBranches.IsDefault ? [] : body.OrdinaryBranches;
+        if (anchors.Select(anchor => anchor.Operation).Distinct().Count() != anchors.Length
+            || anchors.Select(anchor => anchor.Operation.Value ?? string.Empty).Distinct(StringComparer.Ordinal).Count() != anchors.Length
+            || anchors.Any(anchor => anchor.Evidence.IsDefaultOrEmpty))
         {
-            var backTargets = new List<int>();
-            if (block.FallThroughSuccessor is { } fallThrough && blocksByOrdinal.ContainsKey(fallThrough))
+            diagnostics.Add(CreateDiagnostic("BD2012", "The compiler loop-anchor collection is invalid.", body.Method.Value, -1));
+            return regions.ToImmutable();
+        }
+
+        foreach (var loop in (body.NaturalLoops.IsDefault ? [] : body.NaturalLoops)
+                     .OrderBy(loop => loop.HeaderBlockOrdinal)
+                     .ThenBy(loop => loop.LoopOperation.Value, StringComparer.Ordinal))
+        {
+            var anchorMatches = anchors.Where(candidate => candidate.Operation == loop.LoopOperation).ToArray();
+            var anchor = anchorMatches.Length == 1 ? anchorMatches[0] : null;
+            if (anchor is null
+                || anchor.Operation.Value is null
+                || anchor.Kind != loop.Kind
+                || anchor.Evidence.Any(evidence => !loop.Evidence.Any(candidate => candidate.Id == evidence.Id))
+                || loop.Certainty < anchor.Certainty
+                || loop.LoopOperation.Value is null
+                || !loop.LatchBlockOrdinals.Any()
+                || loop.BackEdges.IsDefaultOrEmpty
+                || loop.BackEdges.Any(edge => edge.DestinationBlockOrdinal != loop.HeaderBlockOrdinal
+                    || !loop.LatchBlockOrdinals.Contains(edge.SourceBlockOrdinal))
+                || loop.HeaderBlockOrdinal < 0
+                || loop.BodyBlockOrdinals.Contains(loop.HeaderBlockOrdinal)
+                || loop.ExitBlockOrdinals.Contains(loop.HeaderBlockOrdinal)
+                || (loop.Kind != ExtractedLoopKind.DoWhileLoop && loop.LatchBlockOrdinals.Any(ordinal => ordinal == loop.HeaderBlockOrdinal))
+                || loop.BodyBlockOrdinals.Intersect(loop.ExitBlockOrdinals).Any()
+                || loop.LatchBlockOrdinals.Intersect(loop.ExitBlockOrdinals).Any()
+                || loop.LatchBlockOrdinals.Any(ordinal => ordinal != loop.HeaderBlockOrdinal && !loop.BodyBlockOrdinals.Contains(ordinal))
+                || loop.BodyBlockOrdinals.Length != loop.BodyBlockOrdinals.Distinct().Count()
+                || loop.ExitBlockOrdinals.Length != loop.ExitBlockOrdinals.Distinct().Count()
+                || loop.LatchBlockOrdinals.Length != loop.LatchBlockOrdinals.Distinct().Count()
+                || loop.BackEdges.Select(edge => (edge.SourceBlockOrdinal, edge.DestinationBlockOrdinal)).Distinct().Count() != loop.BackEdges.Length
+                || !loop.LatchBlockOrdinals.SequenceEqual(loop.BackEdges.Select(edge => edge.SourceBlockOrdinal).Distinct().Order())
+                || !loop.Evidence.Any()
+                || !loop.Evidence.Select(evidence => evidence.Id).Distinct().SequenceEqual(loop.Evidence.Select(evidence => evidence.Id))
+                || loop.BackEdges.Any(edge => edge.Evidence.IsDefaultOrEmpty
+                    || ordinaryBranches.Count(admitted => admitted.SourceBlockOrdinal == edge.SourceBlockOrdinal
+                        && admitted.DestinationBlockOrdinal == edge.DestinationBlockOrdinal
+                        && admitted.EnteringRegions.SequenceEqual(edge.EnteringRegions)
+                        && admitted.LeavingRegions.SequenceEqual(edge.LeavingRegions)) != 1
+                    || edge.EnteringRegions.Any(region => !body.Regions.Any(candidate => candidate.Id == region))
+                    || edge.LeavingRegions.Any(region => !body.Regions.Any(candidate => candidate.Id == region))
+                    || edge.Evidence.Any(evidence => !loop.Evidence.Any(candidate => candidate.Id == evidence.Id))))
             {
-                backTargets.Add(fallThrough);
+                diagnostics.Add(CreateDiagnostic("BD2011", "A compiler-derived natural loop descriptor is invalid and was withheld.", body.Method.Value, loop.HeaderBlockOrdinal));
+                continue;
             }
 
-            backTargets.AddRange(block.ConditionalSuccessors.Where(blocksByOrdinal.ContainsKey));
-            foreach (var headerOrdinal in backTargets.Distinct().Order())
+            if (!blocksByOrdinal.ContainsKey(loop.HeaderBlockOrdinal)
+                || loop.BodyBlockOrdinals.Any(ordinal => !blocksByOrdinal.ContainsKey(ordinal))
+                || loop.ExitBlockOrdinals.Any(ordinal => !blocksByOrdinal.ContainsKey(ordinal))
+                || loop.LatchBlockOrdinals.Any(ordinal => !blocksByOrdinal.ContainsKey(ordinal)))
             {
-                if (headerOrdinal > block.Ordinal
-                    || !dominators.TryGetValue(block.Ordinal, out var latchDominators)
-                    || !latchDominators.Contains(headerOrdinal))
-                {
-                    continue;
-                }
+                diagnostics.Add(CreateDiagnostic("BD2010", "A compiler-derived natural loop references an unknown block.", body.Method.Value, loop.HeaderBlockOrdinal));
+                continue;
+            }
 
-                var loopMembers = ComputeNaturalLoop(headerOrdinal, block.Ordinal, blocksByOrdinal);
-                if (loopMembers.Count < 2 && headerOrdinal != block.Ordinal)
-                {
-                    continue;
-                }
-
-                var loopId = StableIdentity.CreateFlowRegionId(new FlowRegionIdentityDescriptor(
-                    body.Method, "NaturalLoop", loopOrdinal));
-                var loopNodeId = StableIdentity.CreateFlowNodeId(new FlowNodeIdentityDescriptor(
-                    body.Method, "Loop", headerOrdinal, 0, "loop"));
-                var bodyNodes = loopMembers
-                    .Where(ordinal => ordinal != headerOrdinal)
+            var loopId = StableIdentity.CreateFlowRegionId(new FlowRegionIdentityDescriptor(
+                body.Method, "NaturalLoop", loopOrdinal));
+            var loopNodeId = StableIdentity.CreateFlowNodeId(new FlowNodeIdentityDescriptor(
+                body.Method, "Loop", loop.HeaderBlockOrdinal, loopOrdinal, loop.LoopOperation.Value ?? "loop"));
+            var projectedBodyOrdinals = loop.BodyBlockOrdinals.IsEmpty && loop.Kind == ExtractedLoopKind.DoWhileLoop
+                ? loop.LatchBlockOrdinals
+                : loop.BodyBlockOrdinals;
+            var bodyNodes = projectedBodyOrdinals
                     .Order()
                     .Select(ordinal => blockTails.TryGetValue(ordinal, out var tail) ? tail : blockHeads[ordinal])
                     .OrderBy(id => id.Value, StringComparer.Ordinal)
                     .ToImmutableArray();
-                var bodyBlockOrdinals = loopMembers
-                    .Where(ordinal => ordinal != headerOrdinal)
-                    .Order()
-                    .ToImmutableArray();
-                var exits = blocksByOrdinal
-                    .Where(pair => !loopMembers.Contains(pair.Key))
-                    .Select(pair => pair.Value)
-                    .Where(candidate => candidate.Predecessors.Any(loopMembers.Contains))
-                    .Select(candidate => blockHeads.TryGetValue(candidate.Ordinal, out var head) ? head : blockTails[candidate.Ordinal])
+            var exits = loop.ExitBlockOrdinals
+                    .Select(ordinal => blockHeads.TryGetValue(ordinal, out var head) ? head : blockTails[ordinal])
                     .OrderBy(id => id.Value, StringComparer.Ordinal)
                     .ToImmutableArray();
 
-                nodes.Add(new LoopNode(
+            nodes.Add(new LoopNode(
                     loopNodeId,
                     body.Method,
                     loopId,
-                    blockHeads[headerOrdinal],
+                    blockHeads[loop.HeaderBlockOrdinal],
                     bodyNodes,
                     exits,
-                    evidence,
-                    CertaintyLevel.Exact,
-                    bodyBlockOrdinals));
-                regions.Add(new FlowRegion(
+                    loop.Evidence,
+                    loop.Certainty,
+                     loop.BodyBlockOrdinals)
+            {
+                LoopKind = loop.Kind,
+                HeaderBlockOrdinal = loop.HeaderBlockOrdinal,
+                LatchBlockOrdinals = loop.LatchBlockOrdinals,
+                BackEdges = loop.BackEdges,
+            });
+            regions.Add(new FlowRegion(
                     loopId,
                     body.Method,
                     FlowRegionKind.NaturalLoop,
@@ -636,10 +680,9 @@ public static class MethodFlowBuilder
                     loopOrdinal,
                     bodyNodes,
                     null,
-                    evidence,
-                    CertaintyLevel.Exact));
-                loopOrdinal++;
-            }
+                    loop.Evidence,
+                    loop.Certainty));
+            loopOrdinal++;
         }
 
         return regions.ToImmutable();

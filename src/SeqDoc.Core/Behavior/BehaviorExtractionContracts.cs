@@ -49,6 +49,39 @@ public enum ExtractedOperationKind
     End,
 }
 
+public enum ExtractedLoopKind
+{
+    WhileLoop,
+    DoWhileLoop,
+    ForLoop,
+    ForEachLoop,
+}
+
+public sealed record ExtractedOrdinaryBranch(
+    int SourceBlockOrdinal,
+    int DestinationBlockOrdinal,
+    ImmutableArray<FlowRegionId> EnteringRegions,
+    ImmutableArray<FlowRegionId> LeavingRegions,
+    ImmutableArray<EvidenceRef> Evidence = default,
+    CertaintyLevel Certainty = CertaintyLevel.Unknown);
+
+public sealed record ExtractedLoopAnchor(
+    OperationId Operation,
+    ExtractedLoopKind Kind,
+    ImmutableArray<EvidenceRef> Evidence,
+    CertaintyLevel Certainty);
+
+public sealed record ExtractedNaturalLoop(
+    OperationId LoopOperation,
+    ExtractedLoopKind Kind,
+    int HeaderBlockOrdinal,
+    ImmutableArray<int> LatchBlockOrdinals,
+    ImmutableArray<int> BodyBlockOrdinals,
+    ImmutableArray<int> ExitBlockOrdinals,
+    ImmutableArray<ExtractedOrdinaryBranch> BackEdges,
+    ImmutableArray<EvidenceRef> Evidence,
+    CertaintyLevel Certainty);
+
 /// <summary>Classifies how one extracted basic block terminates.</summary>
 public enum ExtractedBlockTerminalKind
 {
@@ -230,7 +263,10 @@ public sealed record ExtractedMethodBody(
     ImmutableArray<ExtractedOperation> Operations,
     ImmutableArray<ExtractedBasicBlock> Blocks,
     ImmutableArray<ExtractedExceptionRegion> Regions,
-    ImmutableArray<EvidenceRef> Evidence);
+    ImmutableArray<EvidenceRef> Evidence,
+    ImmutableArray<ExtractedNaturalLoop> NaturalLoops = default,
+    ImmutableArray<ExtractedLoopAnchor> LoopAnchors = default,
+    ImmutableArray<ExtractedOrdinaryBranch> OrdinaryBranches = default);
 
 /// <summary>Describes one type in the loaded hierarchy with completeness scope.</summary>
 public sealed record ExtractedTypeNode(
