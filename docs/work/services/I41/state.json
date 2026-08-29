@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "I41",
+  "status": "Closed",
+  "baselineRevision": "26affb5d5a2f2ee3da5a4d4bee231209b0c33a53",
+  "candidateRevision": "WORKTREE",
+  "nextAction": "Ready for publication. Push branch issue-41-classic-wcf-net9-tuples and open PR closing #41 against upstream/main - owner approval required (no push/PR performed). After #41 merges: apply blocked label to #8 / remove ready, label #41, then resume the amended Issue #8.",
+  "branch": "issue-41-classic-wcf-net9-tuples",
+  "githubIssue": 41,
+  "blocks": [8],
+  "parentWorkstream": 1,
+  "review": {
+    "status": "AcceptWithMinorRepairs",
+    "reviewRunCount": 1,
+    "findings": [
+      { "id": "I41-F1", "status": "Fixed", "summary": "Coarse HasClientBase union made a net9 ClientBase<T> lookalike with an unresolved contract emit EligibilityShapeUnavailable instead of silent Unrecognized - consistent with existing 8.1.2.0 behavior; pinned by a same-shaped negative producer test, gate unchanged." },
+      { "id": "I41-F2", "status": "Fixed", "summary": "Added a weakest-certainty boundary test for the (8.0.0.0, 9.0.0.0) tuple - non-Exact triggering certainty is preserved, not strengthened." },
+      { "id": "I41-F3", "status": "Fixed", "summary": "ClassicWcfCompatibilityTuple doc comment reworded - discriminator is assembly simple name + exact version + metadata name; PublicKeyToken retained as an informational note only, not an enforced check." },
+      { "id": "I41-F4", "status": "Fixed", "summary": "Added an explicit comment that clientMembers is tuple-homogeneous by construction so clientMembers[0].Admitted's marker version applies to all." }
+    ]
+  },
+  "finalGate": {
+    "result": "Pass",
+    "summary": "Locked Release restore + build 0/0. FrameworkModels 302/302, Analysis 239/239, Scenarios 218/218, Wording 116/116, Rendering 77/77, Core 91/91, Behavior 63/63. git diff --check clean. The sole initial Analysis failure (ProgramIndexBuilderTests.TicketReservationLoadsThroughBaselineIndexerWhenAvailable) was an unrelated missing external-corpus restore, not touched by the I41 diff; passed after dotnet restore of TicketReservation.sln."
+  },
+  "targetAllowlist": [
+    "src/SeqDoc.FrameworkModels/CoreWcf/CoreWcfServiceModel.cs",
+    "tests/SeqDoc.FrameworkModels.Tests/CoreWcf/CoreWcfServiceModelTests.cs",
+    "tests/SeqDoc.FrameworkModels.Tests/CoreWcf/CoreWcfTestIndexFactory.cs",
+    "tests/SeqDoc.Analysis.Tests/CoreWcfServiceModelProjectionTests.cs",
+    "tests/SeqDoc.Analysis.Tests/CoreWcfClientInvocationProjectionTests.cs",
+    "tests/fixtures/PassC/ClassicWcfNet9Compatibility/**",
+    "docs/work/services/I41/**"
+  ],
+  "compatibilityTuples": [
+    { "tfm": "net10.0", "serviceModelVersion": "8.1.2.0", "generatedMarkerAssembly": "System.Runtime", "generatedMarkerVersion": "10.0.0.0", "disposition": "preserve" },
+    { "tfm": "net9.0", "serviceModelVersion": "8.0.0.0", "generatedMarkerAssembly": "System.Runtime", "generatedMarkerVersion": "9.0.0.0", "disposition": "add", "source": "CreditTransferEngine.csproj" },
+    { "tfm": "net9.0", "serviceModelVersion": "8.1.0.0", "generatedMarkerAssembly": "System.Runtime", "generatedMarkerVersion": "9.0.0.0", "disposition": "add", "source": "LP.SMSGateway.UI.Web.csproj" }
+  ],
+  "notes": [
+    "System.ServiceModel.Primitives PublicKeyToken b03f5f7f11d50a3a for all tuples.",
+    "Each tuple is atomic; the generated-marker version must match the same tuple as the resolved ServiceModel contract identity.",
+    "Fixture 8.0.0 and 8.1.0 likely need separate projects (cannot coexist); use project-local VersionOverride, not Directory.Packages.props.",
+    "Verified toolchain in ~/.dotnet (SDK 9.0.317 + 10.0.302)."
+  ]
+}

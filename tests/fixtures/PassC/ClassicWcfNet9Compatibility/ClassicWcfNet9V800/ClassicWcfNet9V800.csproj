@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <InformationalVersion>1.0.0+fixture</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <ContinuousIntegrationBuild>false</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Project-local pin of the measured net9.0 / 8.0.0.0 compatibility tuple; Directory.Packages.props
+         is deliberately not edited. System.ServiceModel.Primitives 8.0.0 and 8.1.0 cannot coexist, so
+         this tuple has its own fixture project (see ../ClassicWcfNet9V810). -->
+    <PackageReference Include="System.ServiceModel.Primitives" VersionOverride="8.0.0" />
+  </ItemGroup>
+</Project>
