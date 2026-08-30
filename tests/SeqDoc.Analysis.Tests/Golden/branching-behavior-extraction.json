@@ -1,10 +1,10 @@
 {
-  "InputFingerprint": "f910a545cf499e20db417b2cbdab72eb7e630f5fe21296a558654aa443057270",
+  "InputFingerprint": "0f1c6e6e541d8a8538f5321dc6aef023e56a2534789d41973d8eba392232ee36",
   "Methods": [
     {
       "Name": "CaughtByBaseType",
       "Method": "method:v1:08b255aec506b3fec86fc36d6dd4148da3137c0c71c722112bdd6dfea0f40067",
-      "BodyFingerprint": "cf32e71833d3d43d11727fb1f9a7f9a8ad28c3e9ef0ab84c42c0f9b1c290df17",
+      "BodyFingerprint": "41754e78f518b8f5b8ab00470e2928cad0d84e22f9aab15f53b6d0a9f4b0afaa",
       "ParameterCount": 1,
       "LocalCount": 0,
       "OperationCount": 5,
@@ -241,7 +241,7 @@
     {
       "Name": "NonVoidTerminal",
       "Method": "method:v1:1a0fc6b4cc7eea2360a0d24dea5e0d5a16631ff1dbdc1b5edf0d0d0b5840f9be",
-      "BodyFingerprint": "e8ae8c7d05dc846658b1c47cbdf562c19b8c890ef0bd049eaf0cbe07c00b53d5",
+      "BodyFingerprint": "af728dcdf6c9216e42e2afc6845a3a6ffe5f7b874705c81059f480e18eb7ff17",
       "ParameterCount": 1,
       "LocalCount": 0,
       "OperationCount": 3,
@@ -415,7 +415,7 @@
     {
       "Name": "ShortCircuit",
       "Method": "method:v1:2d382d29828b1c39e599ef9111f97fae83d3c8fbba94abea300bcc19a7647a03",
-      "BodyFingerprint": "61c73b23ccb97292e13659483d54c14da764bb662dd1f393026d7eda0b0ac7a8",
+      "BodyFingerprint": "798d526279bfd374404f2f7736894b3b70c2206827cb3cc65a7b05c70edc1156",
       "ParameterCount": 2,
       "LocalCount": 0,
       "OperationCount": 6,
@@ -681,7 +681,7 @@
     {
       "Name": "MixedSwitchAndThrow",
       "Method": "method:v1:3ace52c03ac8ed6c29641f88468c62399c4e71e9e93b7d7e564c570f92126480",
-      "BodyFingerprint": "22131bcc5b7a53958688dd704c99e30d2088d444eb2b5ddf0221622ab2270aea",
+      "BodyFingerprint": "f35227f19264e2dd5ea203ac246fc16393cc900da96fcba930eea3ca47f17f63",
       "ParameterCount": 1,
       "LocalCount": 1,
       "OperationCount": 25,
@@ -1543,7 +1543,7 @@
     {
       "Name": "RethrowCaughtByOuter",
       "Method": "method:v1:3bfdcf4b9f2d99a85a3beb7db29bc0dda3f5f7b8e82738f171b7332ed4f7e4c2",
-      "BodyFingerprint": "4a88e390976922c627d412159e25f8857aea3df5795c6c0af1aa3b19a6d373eb",
+      "BodyFingerprint": "2fc3f36295da8475a7a2a857f0235816c18e4afdf8312f6e54c6f40ea7df8a1b",
       "ParameterCount": 1,
       "LocalCount": 0,
       "OperationCount": 5,
@@ -1818,7 +1818,7 @@
     {
       "Name": "GenericCaughtThrow",
       "Method": "method:v1:580170b3604c37a8e0c860d29743012f39b4a239c34e9bd42162f30ee4a3e0b7",
-      "BodyFingerprint": "84bbe3c5686b193d238765f8dcd80472ac3e2ab5fb3ede9f1e361e20f570091a",
+      "BodyFingerprint": "29855cb9f5d7dfaaba5ccd47e9258930b54062451465454419e466f746200a58",
       "ParameterCount": 1,
       "LocalCount": 0,
       "OperationCount": 3,
@@ -2003,7 +2003,7 @@
     {
       "Name": "SwitchShape",
       "Method": "method:v1:5ca3aa286d2fb0d104973407f1654ffdf910aa0d66ea6bd0b77cb9ddc56021ce",
-      "BodyFingerprint": "4d374edfb2022fca711b0b3b82c34fb333aa8258fe5916e7db03bf043087d3af",
+      "BodyFingerprint": "ea3caebddf625772bf778db7ee5a1b710f8ef6d85c6c149538e5195b26cf78ba",
       "ParameterCount": 1,
       "LocalCount": 0,
       "OperationCount": 21,
@@ -2737,7 +2737,7 @@
     {
       "Name": "ThrowShape",
       "Method": "method:v1:82ea3bd5cf72b26e4dd3894dc465f3d499ae1ecaff6ca9125d0367807e0c3db1",
-      "BodyFingerprint": "3d3a7dbd977a3a2ff169bf129cc98a0266efc8f5ea684de609f9485225091c6d",
+      "BodyFingerprint": "96139fb9393ac4107ec8f358df436b73ba759816e3a8a0067bd8ac24e1ddbf15",
       "ParameterCount": 1,
       "LocalCount": 0,
       "OperationCount": 12,
@@ -3223,7 +3223,7 @@
     {
       "Name": "WrongCatchType",
       "Method": "method:v1:8e353c8b43f49243e51aa301b6ea2ae3dd8bf1a661c4d0b57250bf5d9d618485",
-      "BodyFingerprint": "dda02f9c3944ff7f130744abc4cedf5d3e5210a57a883e3a615e35ade5517754",
+      "BodyFingerprint": "6799aa829fe683e36932ae388fb9506d186bc560649042d42bcc8fc701ae6b6b",
       "ParameterCount": 1,
       "LocalCount": 0,
       "OperationCount": 5,
@@ -3460,7 +3460,7 @@
     {
       "Name": "IfElse",
       "Method": "method:v1:a0a59272cdcd25bddcfb5337972a25c04d9485568e3830609c8b914ccb6cbce3",
-      "BodyFingerprint": "d4cc66c1331991aa90e57c164d1b329d9c0835c7a846bcfc3c96d817f30f0b94",
+      "BodyFingerprint": "5dc7f53fa32c6b7b43f6c3824d0ac9b1daa3bc7c21d83be0f7089d6a47d1c319",
       "ParameterCount": 1,
       "LocalCount": 1,
       "OperationCount": 19,
@@ -4064,7 +4064,7 @@
     {
       "Name": "UncaughtThrow",
       "Method": "method:v1:afef7c031be566c615e06d3a74561e468d5cbc9e968b2e143ed7b8dd9d2b659c",
-      "BodyFingerprint": "7f44ab1f023bfb60fcd657b49206dab75d85f108ab5627a7a937b1883d072a67",
+      "BodyFingerprint": "66b63655d9e57a89585191b81167957f1dcd495e1a5e438515fbda3824dead65",
       "ParameterCount": 1,
       "LocalCount": 0,
       "OperationCount": 8,
@@ -4364,7 +4364,7 @@
     {
       "Name": "WhileShape",
       "Method": "method:v1:bcc393749101d2934e51d0e92aa2bdb944addc304b03c9fb11463d192774642b",
-      "BodyFingerprint": "4a22ef7bbd6f4b73278c60199c2f10ce701ba81feda79016b0127fbfb30f32c2",
+      "BodyFingerprint": "7392d0d38452a1ddd9137dac99c63f9e4c3d4b1729029cd958755b86d71fdbbe",
       "ParameterCount": 1,
       "LocalCount": 2,
       "OperationCount": 17,
