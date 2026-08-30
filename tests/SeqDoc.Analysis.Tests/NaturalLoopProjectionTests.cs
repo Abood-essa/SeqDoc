@@ -3,6 +3,7 @@ using SeqDoc.Analysis.Behavior;
 using SeqDoc.Analysis.Roslyn;
 using SeqDoc.Application.Analysis;
 using SeqDoc.Core.Behavior;
+using SeqDoc.Core.Diagnostics;
 using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Identity;
 using Xunit;
@@ -221,6 +222,142 @@ public sealed class NaturalLoopProjectionTests
         Assert.Single(result.Diagnostics, diagnostic => diagnostic.Code == "BD2011");
     }
 
+    [Fact]
+    public async Task BodyFingerprintIncludesCanonicalLoopTopologyAndNormalizesConstructionOrder()
+    {
+        var extraction = await ExtractAsync();
+        var body = extraction.BehaviorInput.Methods.Single(candidate => MethodName(extraction, candidate.Method) == "NestedLoopShape");
+        var loop = body.NaturalLoops[0];
+        var anchor = body.LoopAnchors[0];
+        var branch = body.OrdinaryBranches[0];
+
+        Assert.NotEqual(body.BodyFingerprint, BehaviorFingerprint.ComputeBody(body with
+        {
+            NaturalLoops = body.NaturalLoops.SetItem(0, loop with { ExitBlockOrdinals = loop.ExitBlockOrdinals.SetItem(0, loop.ExitBlockOrdinals[0] + 1) })
+        }));
+        Assert.NotEqual(body.BodyFingerprint, BehaviorFingerprint.ComputeBody(body with
+        {
+            LoopAnchors = body.LoopAnchors.SetItem(0, anchor with { Kind = anchor.Kind == ExtractedLoopKind.DoWhileLoop ? ExtractedLoopKind.WhileLoop : ExtractedLoopKind.DoWhileLoop })
+        }));
+        Assert.NotEqual(body.BodyFingerprint, BehaviorFingerprint.ComputeBody(body with
+        {
+            OrdinaryBranches = body.OrdinaryBranches.SetItem(0, branch with { DestinationBlockOrdinal = branch.DestinationBlockOrdinal + 1 })
+        }));
+
+        Assert.Equal(body.BodyFingerprint, BehaviorFingerprint.ComputeBody(body with
+        {
+            NaturalLoops = body.NaturalLoops.Reverse().Select(item => item with
+            {
+                BodyBlockOrdinals = item.BodyBlockOrdinals.Reverse().ToImmutableArray(),
+                LatchBlockOrdinals = item.LatchBlockOrdinals.Reverse().ToImmutableArray(),
+                ExitBlockOrdinals = item.ExitBlockOrdinals.Reverse().ToImmutableArray(),
+                BackEdges = item.BackEdges.Reverse().Select(edge => edge with
+                {
+                    EnteringRegions = edge.EnteringRegions.Reverse().ToImmutableArray(),
+                    LeavingRegions = edge.LeavingRegions.Reverse().ToImmutableArray(),
+                    Evidence = edge.Evidence.Reverse().ToImmutableArray(),
+                }).ToImmutableArray(),
+                Evidence = item.Evidence.Reverse().ToImmutableArray(),
+            }).ToImmutableArray(),
+            LoopAnchors = body.LoopAnchors.Reverse().Select(item => item with { Evidence = item.Evidence.Reverse().ToImmutableArray() }).ToImmutableArray(),
+            OrdinaryBranches = body.OrdinaryBranches.Reverse().Select(item => item with
+            {
+                EnteringRegions = item.EnteringRegions.Reverse().ToImmutableArray(),
+                LeavingRegions = item.LeavingRegions.Reverse().ToImmutableArray(),
+                Evidence = item.Evidence.Reverse().ToImmutableArray(),
+            }).ToImmutableArray()
+        }));
+
+        var noTopology = extraction.BehaviorInput.Methods.Single(candidate => MethodName(extraction, candidate.Method) == "StaticShape");
+        Assert.Equal(
+            BehaviorFingerprint.ComputeBody(noTopology with { NaturalLoops = [], LoopAnchors = [], OrdinaryBranches = [] }),
+            BehaviorFingerprint.ComputeBody(noTopology with { NaturalLoops = default, LoopAnchors = default, OrdinaryBranches = default }));
+    }
+
+    [Fact]
+    public async Task NestedFunctionLoopsStayConfinedToTheirOwningMethods()
+    {
+        var extraction = await ExtractAsync();
+        foreach (var name in new[] { "LocalFunctionNestedLoopShape", "AnonymousFunctionNestedLoopShape" })
+        {
+            var body = extraction.BehaviorInput.Methods.Single(candidate => MethodName(extraction, candidate.Method) == name);
+            Assert.Empty(body.NaturalLoops);
+            Assert.Empty(body.LoopAnchors);
+            Assert.DoesNotContain(extraction.BehaviorInput.Diagnostics, diagnostic =>
+                diagnostic.Code == "BE2010" && diagnostic.Location.Description.Contains(body.Method.Value, StringComparison.Ordinal));
+        }
+
+    }
+
+    [Theory]
+    [InlineData("non-successor backedge")]
+    [InlineData("unreachable body")]
+    [InlineData("incorrect exit")]
+    [InlineData("impossible region transition")]
+    public void HostileValidIdLoopDescriptorsAreWithheld(string hostileShape)
+    {
+        var result = MethodFlowBuilder.Build(CreateHostileBody(hostileShape));
+
+        Assert.DoesNotContain(result.Snapshot.Nodes, node => node.Kind == FlowNodeKind.Loop);
+        Assert.DoesNotContain(result.Snapshot.Regions, region => region.Kind == FlowRegionKind.NaturalLoop);
+        Assert.Single(result.Diagnostics, diagnostic => diagnostic.Code == "BD2011");
+    }
+
+    [Fact]
+    public async Task CompilerCatchBoundariesDoNotFabricateLatchesAndRemainDeterministic()
+    {
+        var extraction = await ExtractAsync();
+        var (_, snapshot) = await AnalyzeAsync();
+        foreach (var name in new[] { "CatchToLoopShape", "NestedTryCatchLoopShape" })
+        {
+            var body = extraction.BehaviorInput.Methods.Single(candidate => MethodName(extraction, candidate.Method) == name);
+            var flow = FlowNamed(extraction, snapshot, name);
+            var projectedLoops = flow.Nodes.OfType<LoopNode>().ToArray();
+            Assert.Equal(body.NaturalLoops.Length, projectedLoops.Length);
+            Assert.Contains(body.Regions, region => region.Kind is ExtractedRegionKind.Catch or ExtractedRegionKind.Filter or ExtractedRegionKind.Finally);
+            var catchRegions = body.Regions.Where(region => region.Kind == ExtractedRegionKind.Catch).ToArray();
+            var loopHeaders = body.NaturalLoops.Select(loop => loop.HeaderBlockOrdinal).ToHashSet();
+            var catchContinuationBranches = body.OrdinaryBranches.Where(branch =>
+                catchRegions.Any(region => branch.SourceBlockOrdinal >= region.StartBlockOrdinal
+                    && branch.SourceBlockOrdinal <= region.EndBlockOrdinal)
+                && loopHeaders.Contains(branch.DestinationBlockOrdinal)).ToArray();
+            Assert.NotEmpty(catchContinuationBranches);
+            Assert.All(catchContinuationBranches, branch =>
+                Assert.DoesNotContain(body.NaturalLoops, loop =>
+                    loop.LatchBlockOrdinals.Contains(branch.SourceBlockOrdinal)
+                    || loop.BackEdges.Any(edge => edge.SourceBlockOrdinal == branch.SourceBlockOrdinal
+                        && edge.DestinationBlockOrdinal == branch.DestinationBlockOrdinal)));
+            foreach (var descriptor in body.NaturalLoops)
+            {
+                Assert.Contains(projectedLoops, loop => loop.BodyBlockOrdinals.SequenceEqual(descriptor.BodyBlockOrdinals));
+                Assert.All(descriptor.LatchBlockOrdinals, latch =>
+                    Assert.DoesNotContain(body.Regions, region =>
+                        (region.Kind is ExtractedRegionKind.Catch or ExtractedRegionKind.Filter or ExtractedRegionKind.Finally)
+                        && latch >= region.StartBlockOrdinal
+                        && latch <= region.EndBlockOrdinal));
+                Assert.All(descriptor.BackEdges, edge => Assert.Equal(descriptor.HeaderBlockOrdinal, edge.DestinationBlockOrdinal));
+            }
+
+            var reversed = body with
+            {
+                Blocks = body.Blocks.Reverse().ToImmutableArray(),
+                Operations = body.Operations.Reverse().ToImmutableArray(),
+                Regions = body.Regions.Reverse().ToImmutableArray(),
+                NaturalLoops = body.NaturalLoops.Reverse().ToImmutableArray(),
+                LoopAnchors = body.LoopAnchors.Reverse().ToImmutableArray(),
+                OrdinaryBranches = body.OrdinaryBranches.Reverse().ToImmutableArray()
+            };
+            var originalResult = MethodFlowBuilder.Build(body);
+            var reversedResult = MethodFlowBuilder.Build(reversed);
+            Assert.Equal(originalResult.Snapshot.FlowFingerprint, reversedResult.Snapshot.FlowFingerprint);
+            Assert.Equal(originalResult.Diagnostics.Select(DiagnosticSignature), reversedResult.Diagnostics.Select(DiagnosticSignature));
+            Assert.Equal(originalResult.Snapshot.Nodes.OfType<LoopNode>().Select(node => node.Id), reversedResult.Snapshot.Nodes.OfType<LoopNode>().Select(node => node.Id));
+        }
+    }
+
+    private static string DiagnosticSignature(AnalysisDiagnostic diagnostic)
+        => $"{diagnostic.Code}|{diagnostic.InternalDetail}|{diagnostic.Location.Description}";
+
     private static ExtractedMethodBody CreateHandBuiltBody(
         ImmutableArray<ExtractedNaturalLoop> loops,
         OperationId? operationId = null,
@@ -232,14 +369,64 @@ public sealed class NaturalLoopProjectionTests
             [new ExtractedOperation(operation, new MethodId("method:v1:hand-built-loop"), ExtractedOperationKind.WhileLoop, null, [], 0, "System.Void", null, false, true, [], [], [], null, null, null, null, null, null, null, null, evidence is null ? [] : [evidence], evidence?.Certainty ?? CertaintyLevel.Exact)],
             [
                 new ExtractedBasicBlock(0, [], null, 1, [], [], ExtractedBlockTerminalKind.None, false, [], [], [], CertaintyLevel.Exact),
-                new ExtractedBasicBlock(1, [], null, 2, [], [0, 2], ExtractedBlockTerminalKind.None, false, [], [], [], CertaintyLevel.Exact),
+                new ExtractedBasicBlock(1, [], null, 2, [3], [0, 2], ExtractedBlockTerminalKind.None, false, [], [], [], CertaintyLevel.Exact),
                 new ExtractedBasicBlock(2, [], null, 1, [], [1], ExtractedBlockTerminalKind.None, false, [], [], [], CertaintyLevel.Exact),
-                 new ExtractedBasicBlock(3, [], null, null, [], [1], ExtractedBlockTerminalKind.Exit, false, [], [], [], CertaintyLevel.Exact),
-             ],
-             [new ExtractedExceptionRegion(new FlowRegionId("flow-region:v1:root"), ExtractedRegionKind.Root, null, 0, 0, 3, null, [], CertaintyLevel.Exact)],
-             evidence is null ? [] : [evidence], loops,
-             operationId is null ? [] : [new ExtractedLoopAnchor(operation, loops[0].Kind, [evidence!], evidence!.Certainty)],
-             operationId is null ? [] : [new ExtractedOrdinaryBranch(2, 1, [], [], [evidence!], evidence!.Certainty)]);
+                new ExtractedBasicBlock(3, [], null, null, [], [1], ExtractedBlockTerminalKind.Exit, false, [], [], [], CertaintyLevel.Exact),
+            ],
+            [new ExtractedExceptionRegion(new FlowRegionId("flow-region:v1:root"), ExtractedRegionKind.Root, null, 0, 0, 3, null, [], CertaintyLevel.Exact)],
+            evidence is null ? [] : [evidence], loops,
+            operationId is null ? [] : [new ExtractedLoopAnchor(operation, loops[0].Kind, [evidence!], evidence!.Certainty)],
+            operationId is null ? [] : [
+                new ExtractedOrdinaryBranch(0, 1, [], [], [evidence!], evidence!.Certainty),
+                new ExtractedOrdinaryBranch(1, 2, [], [], [evidence!], evidence!.Certainty),
+                new ExtractedOrdinaryBranch(1, 3, [], [], [evidence!], evidence!.Certainty),
+                new ExtractedOrdinaryBranch(2, 1, [], [], [evidence!], evidence!.Certainty)]);
+    }
+
+    private static ExtractedMethodBody CreateHostileBody(string shape)
+    {
+        var operation = new OperationId("behavior-operation:v1:hostile-loop");
+        var evidence = new EvidenceRef(new EvidenceId("evidence:v1:hostile-loop"), EvidenceKind.Source, "loop.cs", null, "while", "test", CertaintyLevel.Exact);
+        var branch = new ExtractedOrdinaryBranch(2, 1,
+            shape == "impossible region transition" ? [new FlowRegionId("flow-region:v1:root")] : [], [], [evidence], CertaintyLevel.Exact);
+        var loop = new ExtractedNaturalLoop(operation, ExtractedLoopKind.WhileLoop, 1, [2],
+            [2], shape == "incorrect exit" ? [0] : [3], [branch], [evidence], CertaintyLevel.Exact);
+        var body = CreateValidHostileBody(operation, evidence, loop, branch);
+        if (shape == "non-successor backedge")
+        {
+            body = body with { Blocks = body.Blocks.Select(block => block.Ordinal == 2 ? block with { FallThroughSuccessor = 3 } : block).ToImmutableArray() };
+        }
+        else if (shape == "unreachable body")
+        {
+            body = body with { Blocks = body.Blocks.Select(block => block.Ordinal == 1 ? block with { FallThroughSuccessor = 3 } : block).ToImmutableArray() };
+        }
+        return body;
+    }
+
+    private static ExtractedMethodBody CreateValidHostileBody(
+        OperationId operation,
+        EvidenceRef evidence,
+        ExtractedNaturalLoop loop,
+        ExtractedOrdinaryBranch backEdge)
+    {
+        var exitBranch = new ExtractedOrdinaryBranch(1, 3, [], [], [evidence], CertaintyLevel.Exact);
+        return new ExtractedMethodBody(
+            new MethodId("method:v1:hostile-loop"), "body", [], [],
+            [new ExtractedOperation(operation, new MethodId("method:v1:hostile-loop"), ExtractedOperationKind.WhileLoop, null, [], 0, "System.Void", null, false, true, [], [], [], null, null, null, null, null, null, null, null, [evidence], evidence.Certainty)],
+            [
+                new ExtractedBasicBlock(0, [], null, 1, [], [], ExtractedBlockTerminalKind.None, false, [], [], [], CertaintyLevel.Exact),
+                new ExtractedBasicBlock(1, [], null, 2, [3], [0, 2], ExtractedBlockTerminalKind.None, false, [], [], [], CertaintyLevel.Exact),
+                new ExtractedBasicBlock(2, [], null, 1, [], [1], ExtractedBlockTerminalKind.None, false, [], [], [], CertaintyLevel.Exact),
+                new ExtractedBasicBlock(3, [], null, null, [], [1], ExtractedBlockTerminalKind.Exit, false, [], [], [], CertaintyLevel.Exact),
+            ],
+            [new ExtractedExceptionRegion(new FlowRegionId("flow-region:v1:root"), ExtractedRegionKind.Root, null, 0, 0, 3, null, [], CertaintyLevel.Exact)],
+            [evidence], [loop],
+            [new ExtractedLoopAnchor(operation, loop.Kind, [evidence], evidence.Certainty)],
+            [
+                new ExtractedOrdinaryBranch(0, 1, [], [], [evidence], CertaintyLevel.Exact),
+                new ExtractedOrdinaryBranch(1, 2, [], [], [evidence], CertaintyLevel.Exact),
+                exitBranch,
+                backEdge]);
     }
 
     private static async Task<ProfileAnalysisExtraction> ExtractAsync()

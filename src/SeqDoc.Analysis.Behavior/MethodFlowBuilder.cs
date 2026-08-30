@@ -593,6 +593,14 @@ public static class MethodFlowBuilder
         {
             var anchorMatches = anchors.Where(candidate => candidate.Operation == loop.LoopOperation).ToArray();
             var anchor = anchorMatches.Length == 1 ? anchorMatches[0] : null;
+            if (!blocksByOrdinal.ContainsKey(loop.HeaderBlockOrdinal)
+                || loop.BodyBlockOrdinals.Any(ordinal => !blocksByOrdinal.ContainsKey(ordinal))
+                || loop.ExitBlockOrdinals.Any(ordinal => !blocksByOrdinal.ContainsKey(ordinal))
+                || loop.LatchBlockOrdinals.Any(ordinal => !blocksByOrdinal.ContainsKey(ordinal)))
+            {
+                diagnostics.Add(CreateDiagnostic("BD2010", "A compiler-derived natural loop references an unknown block.", body.Method.Value, loop.HeaderBlockOrdinal));
+                continue;
+            }
             if (anchor is null
                 || anchor.Operation.Value is null
                 || anchor.Kind != loop.Kind
@@ -617,25 +625,17 @@ public static class MethodFlowBuilder
                 || !loop.LatchBlockOrdinals.SequenceEqual(loop.BackEdges.Select(edge => edge.SourceBlockOrdinal).Distinct().Order())
                 || !loop.Evidence.Any()
                 || !loop.Evidence.Select(evidence => evidence.Id).Distinct().SequenceEqual(loop.Evidence.Select(evidence => evidence.Id))
-                || loop.BackEdges.Any(edge => edge.Evidence.IsDefaultOrEmpty
-                    || ordinaryBranches.Count(admitted => admitted.SourceBlockOrdinal == edge.SourceBlockOrdinal
-                        && admitted.DestinationBlockOrdinal == edge.DestinationBlockOrdinal
-                        && admitted.EnteringRegions.SequenceEqual(edge.EnteringRegions)
-                        && admitted.LeavingRegions.SequenceEqual(edge.LeavingRegions)) != 1
-                    || edge.EnteringRegions.Any(region => !body.Regions.Any(candidate => candidate.Id == region))
-                    || edge.LeavingRegions.Any(region => !body.Regions.Any(candidate => candidate.Id == region))
-                    || edge.Evidence.Any(evidence => !loop.Evidence.Any(candidate => candidate.Id == evidence.Id))))
+                 || loop.BackEdges.Any(edge => edge.Evidence.IsDefaultOrEmpty
+                     || ordinaryBranches.Count(admitted => admitted.SourceBlockOrdinal == edge.SourceBlockOrdinal
+                         && admitted.DestinationBlockOrdinal == edge.DestinationBlockOrdinal
+                         && admitted.EnteringRegions.SequenceEqual(edge.EnteringRegions)
+                         && admitted.LeavingRegions.SequenceEqual(edge.LeavingRegions)) != 1
+                     || edge.EnteringRegions.Any(region => !body.Regions.Any(candidate => candidate.Id == region))
+                     || edge.LeavingRegions.Any(region => !body.Regions.Any(candidate => candidate.Id == region))
+                     || edge.Evidence.Any(evidence => !loop.Evidence.Any(candidate => candidate.Id == evidence.Id)))
+                 || !HasValidTopology(body, loop, blocksByOrdinal, ordinaryBranches))
             {
                 diagnostics.Add(CreateDiagnostic("BD2011", "A compiler-derived natural loop descriptor is invalid and was withheld.", body.Method.Value, loop.HeaderBlockOrdinal));
-                continue;
-            }
-
-            if (!blocksByOrdinal.ContainsKey(loop.HeaderBlockOrdinal)
-                || loop.BodyBlockOrdinals.Any(ordinal => !blocksByOrdinal.ContainsKey(ordinal))
-                || loop.ExitBlockOrdinals.Any(ordinal => !blocksByOrdinal.ContainsKey(ordinal))
-                || loop.LatchBlockOrdinals.Any(ordinal => !blocksByOrdinal.ContainsKey(ordinal)))
-            {
-                diagnostics.Add(CreateDiagnostic("BD2010", "A compiler-derived natural loop references an unknown block.", body.Method.Value, loop.HeaderBlockOrdinal));
                 continue;
             }
 
@@ -657,15 +657,15 @@ public static class MethodFlowBuilder
                     .ToImmutableArray();
 
             nodes.Add(new LoopNode(
-                    loopNodeId,
-                    body.Method,
-                    loopId,
-                    blockHeads[loop.HeaderBlockOrdinal],
-                    bodyNodes,
-                    exits,
-                    loop.Evidence,
-                    loop.Certainty,
-                     loop.BodyBlockOrdinals)
+                loopNodeId,
+                body.Method,
+                loopId,
+                blockHeads[loop.HeaderBlockOrdinal],
+                bodyNodes,
+                exits,
+                loop.Evidence,
+                loop.Certainty,
+                loop.BodyBlockOrdinals)
             {
                 LoopKind = loop.Kind,
                 HeaderBlockOrdinal = loop.HeaderBlockOrdinal,
@@ -733,6 +733,167 @@ public static class MethodFlowBuilder
         }
 
         return dominators;
+    }
+
+    private static bool HasValidTopology(
+        ExtractedMethodBody body,
+        ExtractedNaturalLoop loop,
+        Dictionary<int, ExtractedBasicBlock> blocksByOrdinal,
+        ImmutableArray<ExtractedOrdinaryBranch> ordinaryBranches)
+    {
+        if (!blocksByOrdinal.ContainsKey(loop.HeaderBlockOrdinal)
+            || loop.BodyBlockOrdinals.Any(ordinal => !blocksByOrdinal.ContainsKey(ordinal))
+            || loop.LatchBlockOrdinals.Any(ordinal => !blocksByOrdinal.ContainsKey(ordinal))
+            || loop.ExitBlockOrdinals.Any(ordinal => !blocksByOrdinal.ContainsKey(ordinal)))
+        {
+            return false;
+        }
+
+        var members = loop.BodyBlockOrdinals.Append(loop.HeaderBlockOrdinal).ToHashSet();
+        static bool HasSuccessor(ExtractedBasicBlock block, int destination) =>
+            block.FallThroughSuccessor == destination || block.ConditionalSuccessors.Contains(destination);
+
+        var verified = ordinaryBranches
+            .Where(branch => blocksByOrdinal.TryGetValue(branch.SourceBlockOrdinal, out var source)
+                && blocksByOrdinal.TryGetValue(branch.DestinationBlockOrdinal, out var destination)
+                && HasSuccessor(source, branch.DestinationBlockOrdinal)
+                && destination.Predecessors.Contains(branch.SourceBlockOrdinal))
+            .ToArray();
+        if (verified.Length != ordinaryBranches.Length)
+        {
+            return false;
+        }
+
+        if (verified.GroupBy(branch => (branch.SourceBlockOrdinal, branch.DestinationBlockOrdinal)).Any(group => group.Count() != 1))
+        {
+            return false;
+        }
+
+        var verifiedByPair = verified.ToDictionary(branch => (branch.SourceBlockOrdinal, branch.DestinationBlockOrdinal));
+        var actualMemberPairs = members
+            .SelectMany(source => GetSuccessors(blocksByOrdinal[source]).Select(destination => (Source: source, Destination: destination)))
+            .ToHashSet();
+        var suppliedMemberBranches = verified.Where(branch => members.Contains(branch.SourceBlockOrdinal)).ToArray();
+        if (suppliedMemberBranches.GroupBy(branch => (branch.SourceBlockOrdinal, branch.DestinationBlockOrdinal)).Any(group => group.Count() != 1)
+            || suppliedMemberBranches.Any(branch => !actualMemberPairs.Contains((branch.SourceBlockOrdinal, branch.DestinationBlockOrdinal)))
+            || actualMemberPairs.Any(pair => !verifiedByPair.ContainsKey((pair.Source, pair.Destination))))
+        {
+            return false;
+        }
+        var completeMemberEdges = suppliedMemberBranches;
+        if (verified.Any(edge => !members.Contains(edge.SourceBlockOrdinal)
+                && members.Contains(edge.DestinationBlockOrdinal)
+                && edge.DestinationBlockOrdinal != loop.HeaderBlockOrdinal))
+        {
+            return false;
+        }
+
+        foreach (var edge in loop.BackEdges)
+        {
+            if (!members.Contains(edge.SourceBlockOrdinal)
+                || edge.DestinationBlockOrdinal != loop.HeaderBlockOrdinal
+                || !verifiedByPair.ContainsKey((edge.SourceBlockOrdinal, edge.DestinationBlockOrdinal)))
+            {
+                return false;
+            }
+        }
+
+        var reverse = new HashSet<int> { loop.HeaderBlockOrdinal };
+        var pending = new Stack<int>(loop.LatchBlockOrdinals);
+        while (pending.TryPop(out var current))
+        {
+            if (!reverse.Add(current))
+            {
+                continue;
+            }
+
+            foreach (var predecessor in completeMemberEdges.Where(edge => edge.DestinationBlockOrdinal == current).Select(edge => edge.SourceBlockOrdinal))
+            {
+                if (predecessor != loop.HeaderBlockOrdinal && members.Contains(predecessor))
+                {
+                    pending.Push(predecessor);
+                }
+            }
+        }
+
+        if (!reverse.SetEquals(members))
+        {
+            return false;
+        }
+
+        var reachable = new HashSet<int> { loop.HeaderBlockOrdinal };
+        pending = new Stack<int>([loop.HeaderBlockOrdinal]);
+        while (pending.TryPop(out var current))
+        {
+            foreach (var destination in completeMemberEdges.Where(edge => edge.SourceBlockOrdinal == current)
+                         .Select(edge => edge.DestinationBlockOrdinal).Where(members.Contains))
+            {
+                if (reachable.Add(destination))
+                {
+                    pending.Push(destination);
+                }
+            }
+        }
+
+        if (!reachable.SetEquals(members))
+        {
+            return false;
+        }
+
+        if (completeMemberEdges.Any(edge => members.Contains(edge.DestinationBlockOrdinal)
+                && edge.DestinationBlockOrdinal != loop.HeaderBlockOrdinal
+                && !members.Contains(edge.SourceBlockOrdinal)))
+        {
+            return false;
+        }
+
+        var actualExits = completeMemberEdges
+            .Where(branch => members.Contains(branch.SourceBlockOrdinal) && !members.Contains(branch.DestinationBlockOrdinal))
+            .Select(branch => branch.DestinationBlockOrdinal)
+            .ToHashSet();
+        if (!actualExits.SetEquals(loop.ExitBlockOrdinals))
+        {
+            return false;
+        }
+
+        if (body.Regions.Any(region => region.Parent is { } parent
+                && (!body.Regions.Any(candidate => candidate.Id == parent)
+                    || !body.Regions.Any(candidate => candidate.Id == parent
+                        && candidate.StartBlockOrdinal <= region.StartBlockOrdinal
+                        && candidate.EndBlockOrdinal >= region.EndBlockOrdinal))))
+        {
+            return false;
+        }
+
+        foreach (var branch in completeMemberEdges.Where(branch =>
+                     members.Contains(branch.SourceBlockOrdinal)
+                     && (members.Contains(branch.DestinationBlockOrdinal) || loop.ExitBlockOrdinals.Contains(branch.DestinationBlockOrdinal))))
+        {
+            var sourceRegions = body.Regions.Where(region => region.StartBlockOrdinal <= branch.SourceBlockOrdinal && region.EndBlockOrdinal >= branch.SourceBlockOrdinal).Select(region => region.Id).ToHashSet();
+            var destinationRegions = body.Regions.Where(region => region.StartBlockOrdinal <= branch.DestinationBlockOrdinal && region.EndBlockOrdinal >= branch.DestinationBlockOrdinal).Select(region => region.Id).ToHashSet();
+            var expectedEntering = destinationRegions.Except(sourceRegions).ToHashSet();
+            var expectedLeaving = sourceRegions.Except(destinationRegions).ToHashSet();
+            if (!branch.EnteringRegions.ToHashSet().SetEquals(expectedEntering)
+                || !branch.LeavingRegions.ToHashSet().SetEquals(expectedLeaving))
+            {
+                return false;
+            }
+        }
+
+        return true;
+
+        static IEnumerable<int> GetSuccessors(ExtractedBasicBlock block)
+        {
+            if (block.FallThroughSuccessor is { } fallThrough)
+            {
+                yield return fallThrough;
+            }
+
+            foreach (var conditional in block.ConditionalSuccessors)
+            {
+                yield return conditional;
+            }
+        }
     }
 
     private static HashSet<int> ComputeNaturalLoop(

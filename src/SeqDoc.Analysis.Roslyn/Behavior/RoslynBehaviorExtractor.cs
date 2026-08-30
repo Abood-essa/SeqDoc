@@ -1615,7 +1615,7 @@ internal static class RoslynBehaviorExtractor
         // order, and unrelated fingerprints.
         var loopAnchors = new Dictionary<ILoopOperation, OperationId>(ReferenceEqualityComparer.Instance);
         var extractedAnchors = ImmutableArray.CreateBuilder<ExtractedLoopAnchor>();
-        foreach (var loop in EnumerateSelfAndChildren(bodyOperation).OfType<ILoopOperation>())
+        foreach (var loop in EnumerateLoopOperations(bodyOperation))
         {
             var anchorId = CreateOperationId(loop, methodId, "LoopAnchor", 0, loop.Syntax?.SpanStart ?? 0, 0, documents);
             loopAnchors[loop] = anchorId;
@@ -1656,6 +1656,7 @@ internal static class RoslynBehaviorExtractor
                 bodyOperation,
                 ordinaryBranches,
                 loopAnchors,
+                methodId,
                 regionById,
                 evidence,
                 documents,
@@ -1743,6 +1744,7 @@ internal static class RoslynBehaviorExtractor
         IMethodBodyOperation bodyOperation,
         ImmutableArray<ExtractedOrdinaryBranch> branches,
         Dictionary<ILoopOperation, OperationId> loopAnchors,
+        MethodId methodId,
         Dictionary<ControlFlowRegion, FlowRegionId> regionById,
         ImmutableArray<EvidenceRef> methodEvidence,
         IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents,
@@ -1843,7 +1845,7 @@ internal static class RoslynBehaviorExtractor
             }
         }
 
-        var loopOperations = EnumerateSelfAndChildren(bodyOperation).OfType<ILoopOperation>()
+        var loopOperations = EnumerateLoopOperations(bodyOperation)
             .Where(loopAnchors.ContainsKey)
             .Select(operation => (Operation: operation, Id: loopAnchors[operation]))
             .ToArray();
@@ -1863,13 +1865,13 @@ internal static class RoslynBehaviorExtractor
         {
             if (candidate.Members.Any(member => componentByBlock.GetValueOrDefault(member) != componentByBlock.GetValueOrDefault(candidate.Header)))
             {
-                diagnostics.Add(CreateLoopDiagnostic(bodyOperation, "irreducible or cross-component candidate", candidate.Header));
+                diagnostics.Add(CreateLoopDiagnostic(bodyOperation, methodId, "irreducible or cross-component candidate", candidate.Header));
                 continue;
             }
             var entries = branches.Where(branch => candidate.Members.Contains(branch.DestinationBlockOrdinal) && !candidate.Members.Contains(branch.SourceBlockOrdinal) && branch.DestinationBlockOrdinal != candidate.Header).ToArray();
             if (entries.Length > 0)
             {
-                diagnostics.Add(CreateLoopDiagnostic(bodyOperation, "multi-entry candidate", candidate.Header));
+                diagnostics.Add(CreateLoopDiagnostic(bodyOperation, methodId, "multi-entry candidate", candidate.Header));
                 continue;
             }
             var matches = loopOperations
@@ -1881,7 +1883,7 @@ internal static class RoslynBehaviorExtractor
                 {
                     rejectedAnchors.Add(matchingAnchor.Id);
                 }
-                diagnostics.Add(CreateLoopDiagnostic(bodyOperation, "duplicate or inconsistent anchor mapping", candidate.Header));
+                diagnostics.Add(CreateLoopDiagnostic(bodyOperation, methodId, "duplicate or inconsistent anchor mapping", candidate.Header));
                 continue;
             }
             var match = matches[0];
@@ -1907,7 +1909,7 @@ internal static class RoslynBehaviorExtractor
         }
         foreach (var unmatched in loopOperations.Where(item => !usedAnchors.Contains(item.Id) && !rejectedAnchors.Contains(item.Id)))
         {
-            diagnostics.Add(CreateLoopDiagnostic(bodyOperation, "unmatched compiler loop operation", unmatched.Operation.Syntax?.SpanStart ?? 0));
+            diagnostics.Add(CreateLoopDiagnostic(bodyOperation, methodId, "unmatched compiler loop operation", unmatched.Operation.Syntax?.SpanStart ?? 0));
         }
         return result.OrderBy(loop => loop.HeaderBlockOrdinal).ThenBy(loop => loop.LoopOperation.Value, StringComparer.Ordinal).ToImmutableArray();
 
@@ -1974,11 +1976,11 @@ internal static class RoslynBehaviorExtractor
 
         }
 
-        static AnalysisDiagnostic CreateLoopDiagnostic(IOperation operation, string reason, int ordinal)
+        static AnalysisDiagnostic CreateLoopDiagnostic(IOperation operation, MethodId methodId, string reason, int ordinal)
         {
             var id = StableIdentity.CreateDiagnosticId(new DiagnosticIdentityDescriptor("BE2010", AnalysisStage.BaselineIndex, null, operation.Syntax?.ToString() ?? "loop", Math.Max(0, ordinal)));
             return new AnalysisDiagnostic(id, "BE2010", SeqDoc.Core.Diagnostics.DiagnosticSeverity.Warning, AnalysisStage.BaselineIndex,
-                $"A compiler natural-loop candidate was withheld ({reason}).", new DiagnosticLocation("behavior extraction"),
+                $"A compiler natural-loop candidate was withheld ({reason}).", new DiagnosticLocation($"behavior extraction ({methodId.Value})"),
                 "The compiler control-flow facts do not prove one supported natural loop.",
                 "No natural-loop descriptor is produced.", "Treat loop topology conservatively.", CertaintyLevel.Conservative,
                 internalDetail: reason);
@@ -4075,6 +4077,29 @@ internal static class RoslynBehaviorExtractor
         while (pending.TryPop(out var operation))
         {
             yield return operation;
+            foreach (var child in operation.ChildOperations)
+            {
+                pending.Push(child);
+            }
+        }
+    }
+
+    private static IEnumerable<ILoopOperation> EnumerateLoopOperations(IOperation root)
+    {
+        var pending = new Stack<IOperation>();
+        pending.Push(root);
+        while (pending.TryPop(out var operation))
+        {
+            if (operation is IAnonymousFunctionOperation or ILocalFunctionOperation)
+            {
+                continue;
+            }
+
+            if (operation is ILoopOperation loop)
+            {
+                yield return loop;
+            }
+
             foreach (var child in operation.ChildOperations)
             {
                 pending.Push(child);

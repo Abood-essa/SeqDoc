@@ -239,6 +239,74 @@ public static class DispatchShapes
         }
     }
 
+    public static int LocalFunctionNestedLoopShape(int limit)
+    {
+        int LocalLoop(int value)
+        {
+            while (value-- > 0)
+            {
+            }
+
+            return value;
+        }
+
+        return LocalLoop(limit);
+    }
+
+    public static int AnonymousFunctionNestedLoopShape(int limit)
+    {
+        Func<int, int> loop = value =>
+        {
+            while (value-- > 0)
+            {
+            }
+
+            return value;
+        };
+        return loop(limit);
+    }
+
+    public static int CatchToLoopShape(int limit)
+    {
+        while (limit-- > 0)
+        {
+            try
+            {
+                _ = int.Parse(limit.ToString());
+            }
+            catch (FormatException)
+            {
+                continue;
+            }
+        }
+
+        return limit;
+    }
+
+    public static int NestedTryCatchLoopShape(int limit)
+    {
+        while (limit-- > 0)
+        {
+            try
+            {
+                try
+                {
+                    _ = int.Parse(limit.ToString());
+                }
+                catch (FormatException)
+                {
+                    continue;
+                }
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+        }
+
+        return limit;
+    }
+
     public static int UnreachableLoopShape(int limit)
     {
         return 0;
