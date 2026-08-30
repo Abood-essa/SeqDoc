@@ -2,6 +2,21 @@
 
 ## Current state
 
+### Durable state reconciliation
+
+The canonical `main` head is `01c3c2b` (`PR #40`). PR #42 merged at
+`753a193b77cc656552a856cfd41ab37cbbf36f65` and closed Issue #41. Issue #6 was closed separately. PR #42 preserves
+exact measured WCF compatibility tuples and fail-closed `FaultContract` handling, with Qais's attribution intact. PR #40
+preserves Abood's commits `0331779` and `f3011a5`, with maintainer completion `fd535ff`
+adding entry-reachability validation and a disconnected-loop regression; its focused lane was 27/27 and complete
+Analysis was 257/257.
+
+PR #32 is closed and unmerged at superseded head `91ccdf373be45cace843db39f4616a2425ce70c7`; its contributor work
+is preserved, but future Issue #16 work must use a fresh branch and selectively reuse compatible changes. Issue #8 is
+open and ready as acceptance-only work, pending Qais's mandatory `Readiness: PASS` comment and exact external-lane
+evidence. Issues #11, #12, and #16 are ready; #13 is blocked by persistence prerequisites, and #17/#18 by worker
+prerequisites. No product checkpoint is active; public ready status does not make durable execution active.
+
 The clean canonical repository begins at `42f8819` (`Initial public release`) and contains the accepted product
 snapshot through selected dispatch handler-flow expansion. The historical repository remains historical evidence;
 new work proceeds only in this repository.
@@ -30,12 +45,12 @@ a stop. Owner-authorized repairs subsequently passed focused verification and th
 Release CLI build also passed, but local command policy blocked `dotnet run`; the existing Desktop diagrams are stale
 and external regeneration remains pending. Catch, filter, finally, switch, loop, and exception-flow presentation
 remain outside this checkpoint.
-CT-5 is active for generic configurable exact method roots. It uses complete cataloged `MethodId` values, rejects
+CT-5 closed after generic configurable exact method-root support. It uses complete cataloged `MethodId` values, rejects
 ambiguous profile routing, adds neutral non-HTTP root presentation, and reuses only root-local Method Flow; bounded
 callee traversal remains the next checkpoint. Independent review found and resolved five configuration, contract,
 coverage, YAML-shape, and profile-isolation gaps. Focused verification and the four-project final gate passed, so CT-5
 is closed.
-CT-6 is active for fixed-budget same-project `DirectExact` traversal from configured roots. It projects a deterministic
+CT-6 closed after fixed-budget same-project `DirectExact` traversal from configured roots. It projects a deterministic
 depth-2 call-site tree, preserves caller guards, and stops explicitly at cycles, budgets, unavailable bodies,
 cross-project targets, and locally guarded child calls. Independent review found and resolved duplicate-anchor,
 foreign-snapshot, and reversed-input determinism gaps. Focused verification and the Scenario/Wording final gate passed,
@@ -77,14 +92,14 @@ GitHub parents #1–#4 and sub-issues #5–#23 now encode those workstreams, own
 dependencies. Initial ready issues are #5, #9, #14, #15, and maintainer issue #20.
 Maintainer Issue #20 is closed: configuration now resolves finite per-field method, call, material-message, participant,
 and 45,000-character Mermaid budgets with provenance and CLI visibility, while preserving current traversal/output and
-the public configuration ABI. Issue #19 is the next maintainer implementation boundary. Its independent review found
+the public configuration ABI. Issue #19 was the maintainer implementation boundary. Its independent review found
 legacy-branch, irreducible Mermaid-size, diagnostic-visibility, chronological participant-budget, and deep-stack gaps.
 Owner-authorized repairs resolved those findings, replaced recursive traversal with deterministic work frames, and
-passed focused verification plus the four-project final gate; Issue #19 is merged. Issue #22 began locally and is
-preserved while the maintainer completes a bounded integration repair on contributor PR #26 after two repair rounds.
+passed focused verification plus the four-project final gate; Issue #19 is merged. Issue #22 completed through the
+original contributor PR after bounded maintainer integration.
 The integration repair found and resolved snapshot, placement-boundary, observable-evidence, cancellation-wording, and
 generic constructed-type projection regressions. Focused verification and the complete FrameworkModels, Analysis,
-Scenario, Wording, and Rendering gate pass; the original contributor PR remains the publication vehicle.
+Scenario, Wording, and Rendering gate passed; PR #26 is historical merged work, not pending execution.
 
 ## Next execution order
 

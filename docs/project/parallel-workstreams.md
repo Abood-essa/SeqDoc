@@ -6,6 +6,9 @@ Make SeqDoc fully useful for large real solutions as quickly as possible. Credit
 acceptance target; FraudManagement, SMSGateway, TicketReservation, and the training corpus protect generality. Project
 names may appear publicly, but their source, configuration, and detailed behavioral findings remain external.
 
+Point-in-time issue and PR state is maintained in `docs/project/status.md` and GitHub; this document records durable
+workstream structure and approved boundaries rather than a duplicated mutable execution ledger.
+
 The original A–H plan is background architecture, not the execution target. Approximately 45–50% of its complete
 scope and 60–65% of the current essential functional scope are implemented. Near-term work excludes CI, packaging,
 release automation, broad platform matrices, and speculative performance infrastructure.
@@ -21,9 +24,10 @@ Public execution graph:
 - persistence/state: parent [#3](https://github.com/Bilaltariq41/SeqDoc/issues/3), sub-issues #9–#13;
 - worker/recovery: parent [#4](https://github.com/Bilaltariq41/SeqDoc/issues/4), sub-issues #14–#18.
 
-Issues #14 and #15 merged through the original contributor PR after bounded maintainer integration. Issue #16 is the
-next ready worker package boundary; #17 remains blocked by the persistence-state contract. Issues #5 and #9 remain
-contributor-ready. GitHub sub-issue and `blocked by` relationships are authoritative for availability.
+Foundational service, persistence, worker, and traversal slices are retained as separate delivery boundaries. Issue #16
+must use a fresh branch and selectively reuse compatible work rather than copying superseded PR #32 wholesale. The
+Issue #8 supplied-project slice is acceptance-only and starts only after its readiness gate and external evidence; it is
+not an implementation stream. GitHub sub-issue and `blocked by` relationships remain authoritative for availability.
 
 ## Maintainer stream — Depthless traversal and large diagrams
 
