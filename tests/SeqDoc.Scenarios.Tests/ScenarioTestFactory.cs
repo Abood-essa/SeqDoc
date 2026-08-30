@@ -666,6 +666,42 @@ internal static class ScenarioTestFactory
         return request with { ConfiguredRoots = roots.ToImmutableArray() };
     }
 
+    /// <summary>
+    /// A ConfiguredMethod root whose own body contains one root-local DirectExact invocation
+    /// (<see cref="RootDirectCallOperation"/>) — the exact call shape <see cref="CreateRootDirectCallRequest"/>
+    /// builds for the HTTP controller-action path, re-rooted as a configured method: the
+    /// <see cref="HttpEntryPointFact"/> is removed and <see cref="ActionMethod"/> is added to
+    /// <see cref="ScenarioAnalysisRequest.ConfiguredRoots"/> with a non-null body fingerprint so the
+    /// configured branch admits its Method Flow. Used to exercise the service-client-invocation join on
+    /// the configured branch with the same fixture the HTTP-path join tests use.
+    /// </summary>
+    internal static ScenarioAnalysisRequest CreateConfiguredRootDirectCallRequest(
+        bool reverseConstruction = false,
+        bool decisionGuarded = false,
+        CompilationProfileId? foreignFactProfile = null,
+        string? foreignFactFingerprint = null)
+    {
+        var baseRequest = CreateRootDirectCallRequest(
+            decisionGuarded: decisionGuarded,
+            reverseConstruction: reverseConstruction);
+        var methods = baseRequest.ProgramIndex.Methods
+            .Select(method => method.Id == ActionMethod && method.BodyFingerprint is null
+                ? method with { BodyFingerprint = "action-configured-body" }
+                : method)
+            .ToImmutableArray();
+        return baseRequest with
+        {
+            ProgramIndex = baseRequest.ProgramIndex with { Methods = methods },
+            FrameworkFacts = baseRequest.FrameworkFacts with
+            {
+                Facts = baseRequest.FrameworkFacts.Facts.RemoveAll(fact => fact is HttpEntryPointFact),
+                ProfileId = foreignFactProfile ?? baseRequest.Profile.Id,
+                ProgramIndexFingerprint = foreignFactFingerprint ?? baseRequest.ProgramIndex.IndexFingerprint,
+            },
+            ConfiguredRoots = ImmutableArray.Create(ActionMethod),
+        };
+    }
+
     internal static ScenarioAnalysisRequest CreateRootDirectCallRequest(
         bool decisionGuarded = false,
         string? exclusion = null,

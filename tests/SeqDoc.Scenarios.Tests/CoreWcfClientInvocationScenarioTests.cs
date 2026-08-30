@@ -99,6 +99,288 @@ public sealed class CoreWcfClientInvocationScenarioTests
         };
     }
 
+    private static ScenarioAnalysisRequest CreateConfiguredRequest(params BehaviorFact[] additionalFacts)
+    {
+        var baseRequest = ScenarioTestFactory.CreateConfiguredRootDirectCallRequest();
+        return baseRequest with
+        {
+            FrameworkFacts = baseRequest.FrameworkFacts with
+            {
+                Facts = baseRequest.FrameworkFacts.Facts.AddRange(additionalFacts),
+                ProfileId = baseRequest.Profile.Id,
+                ProgramIndexFingerprint = baseRequest.ProgramIndex.IndexFingerprint,
+            },
+        };
+    }
+
+    [Fact]
+    public void ConfiguredMethodRootMatchingClientBoundaryReplacesTheGenericMethodCallNodeWithATypedClientOperationInvocationNode()
+    {
+        // Mirrors MatchingClientBoundaryReplacesTheGenericMethodCallNodeWithATypedClientOperationInvocationNode
+        // for a ConfiguredMethod root: the join is wired into the configured branch, not just the HTTP
+        // controller-action (SC001) branch.
+        var request = CreateConfiguredRequest(CreateInvocationFact(), CreateBoundaryFact());
+
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(request).Graphs);
+
+        Assert.Equal(ScenarioRootKind.ConfiguredMethod, graph.RootKind);
+        Assert.DoesNotContain(graph.Nodes, node => node.Kind == ScenarioNodeKind.MethodCall);
+        var node = Assert.Single(graph.Nodes, node => node.Kind == ScenarioNodeKind.ClientOperationInvocation);
+        Assert.Equal(ScenarioTestFactory.RootDirectCallOperation, node.Operation);
+        Assert.Equal(ClientType, node.Presentation?.ClientTypeName);
+        Assert.Equal("SendAsync", node.Presentation?.CalledMemberName);
+        Assert.Equal(ServiceClientKind.SourceClient, node.Presentation?.ClientKind);
+        Assert.Equal(CertaintyLevel.Exact, node.Certainty);
+
+        // The new node is parented to the configured action node exactly like the HTTP path.
+        var edge = Assert.Single(graph.Edges, edge => edge.Target == node.Id);
+        var actionNode = Assert.Single(graph.Nodes, item => item.Kind == ScenarioNodeKind.Action);
+        Assert.Equal(actionNode.Id, edge.Source);
+        Assert.Equal(ScenarioEdgeKind.Call, edge.Kind);
+        Assert.DoesNotContain(graph.Diagnostics, diagnostic => diagnostic.Code == "SC-CLIENT-UNSUPPORTED-INVOCATION");
+    }
+
+    [Fact]
+    public void ConfiguredMethodRootInvocationWithoutAMatchingClientBoundaryProducesNoNodeAndAConservativeDiagnostic()
+    {
+        var request = CreateConfiguredRequest(CreateInvocationFact());
+
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(request).Graphs);
+
+        Assert.DoesNotContain(graph.Nodes, node => node.Kind == ScenarioNodeKind.ClientOperationInvocation);
+        Assert.DoesNotContain(graph.Nodes, node => node.Kind == ScenarioNodeKind.MethodCall);
+        var diagnostic = Assert.Single(graph.Diagnostics, diagnostic => diagnostic.Code == "SC-CLIENT-UNSUPPORTED-INVOCATION");
+        Assert.Contains(ClientType, diagnostic.Detail);
+        Assert.Contains("SendAsync", diagnostic.Detail);
+    }
+
+    [Fact]
+    public void ConfiguredMethodRootForeignFrameworkFactProfileFailsOpenWithoutSuppressingTheGenericRootLocalCall()
+    {
+        // FrameworkFactsBound(request) is false because FrameworkFacts.ProfileId is a foreign
+        // compilation profile: the typed client join is suppressed AND the generic-node exclusion is
+        // never armed, so the valid root-local non-client direct call still renders and no
+        // SC-CLIENT-* diagnostic is fabricated from the unbound fact set.
+        var baseRequest = ScenarioTestFactory.CreateConfiguredRootDirectCallRequest(
+            decisionGuarded: true,
+            foreignFactProfile: ScenarioTestFactory.ForeignProfile.Id);
+        var request = baseRequest with
+        {
+            FrameworkFacts = baseRequest.FrameworkFacts with
+            {
+                Facts = baseRequest.FrameworkFacts.Facts.AddRange(CreateInvocationFact(), CreateBoundaryFact()),
+            },
+        };
+
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(request).Graphs);
+
+        Assert.Equal(ScenarioRootKind.ConfiguredMethod, graph.RootKind);
+        Assert.DoesNotContain(graph.Nodes, node => node.Kind == ScenarioNodeKind.ClientOperationInvocation);
+        Assert.Contains(graph.Nodes, node => node.Kind == ScenarioNodeKind.MethodCall
+            && node.Operation == new OperationId("operation:v1:root.validate"));
+        Assert.DoesNotContain(graph.Diagnostics,
+            diagnostic => diagnostic.Code.StartsWith("SC-CLIENT-", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ConfiguredMethodRootForeignFrameworkFactFingerprintFailsOpenWithoutSuppressingTheGenericRootLocalCall()
+    {
+        // Same fail-open proof as the foreign-profile case, driven by a foreign Program Index
+        // fingerprint on the framework fact set.
+        var baseRequest = ScenarioTestFactory.CreateConfiguredRootDirectCallRequest(
+            decisionGuarded: true,
+            foreignFactFingerprint: "foreign-fingerprint");
+        var request = baseRequest with
+        {
+            FrameworkFacts = baseRequest.FrameworkFacts with
+            {
+                Facts = baseRequest.FrameworkFacts.Facts.AddRange(CreateInvocationFact(), CreateBoundaryFact()),
+            },
+        };
+
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(request).Graphs);
+
+        Assert.Equal(ScenarioRootKind.ConfiguredMethod, graph.RootKind);
+        Assert.DoesNotContain(graph.Nodes, node => node.Kind == ScenarioNodeKind.ClientOperationInvocation);
+        Assert.Contains(graph.Nodes, node => node.Kind == ScenarioNodeKind.MethodCall
+            && node.Operation == new OperationId("operation:v1:root.validate"));
+        Assert.DoesNotContain(graph.Diagnostics,
+            diagnostic => diagnostic.Code.StartsWith("SC-CLIENT-", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ConfiguredMethodRootClientInvocationAdmitsDeterministicallyRegardlessOfFrameworkFactInputOrder()
+    {
+        ScenarioAnalysisRequest BuildRequest(bool reversed)
+        {
+            var baseRequest = ScenarioTestFactory.CreateConfiguredRootDirectCallRequest(reverseConstruction: reversed);
+            BehaviorFact[] extra = reversed
+                ? [CreateBoundaryFact(), CreateInvocationFact()]
+                : [CreateInvocationFact(), CreateBoundaryFact()];
+            return baseRequest with
+            {
+                FrameworkFacts = baseRequest.FrameworkFacts with
+                {
+                    Facts = baseRequest.FrameworkFacts.Facts.AddRange(extra),
+                    ProfileId = baseRequest.Profile.Id,
+                    ProgramIndexFingerprint = baseRequest.ProgramIndex.IndexFingerprint,
+                },
+            };
+        }
+
+        var forward = Assert.Single(ScenarioGraphBuilder.Build(BuildRequest(reversed: false)).Graphs);
+        var reversedGraph = Assert.Single(ScenarioGraphBuilder.Build(BuildRequest(reversed: true)).Graphs);
+
+        var forwardNode = Assert.Single(forward.Nodes, node => node.Kind == ScenarioNodeKind.ClientOperationInvocation);
+        var reversedNode = Assert.Single(reversedGraph.Nodes, node => node.Kind == ScenarioNodeKind.ClientOperationInvocation);
+        Assert.Equal(ProjectNode(forwardNode), ProjectNode(reversedNode));
+
+        var forwardPlan = DocumentationPlanner.Plan(forward);
+        var reversedPlan = DocumentationPlanner.Plan(reversedGraph);
+
+        // Reversed-input determinism must compare the full message projection in output order,
+        // not just labels: id/key, source, target, label, kind, ordered evidence (id + certainty),
+        // and the message certainty.
+        Assert.Equal(
+            forwardPlan.Diagram.Messages.Select(ProjectMessage).ToArray(),
+            reversedPlan.Diagram.Messages.Select(ProjectMessage).ToArray());
+    }
+
+    private static string ProjectNode(ScenarioNode node)
+        => string.Join('|',
+            node.Id.Value,
+            node.Detail,
+            node.Certainty.ToString(),
+            string.Join(',', node.Evidence.Select(item => $"{item.Id.Value}:{item.Certainty}")));
+
+    private static string ProjectMessage(SeqDoc.Core.DiagramPlan.DiagramMessage message)
+        => string.Join('|',
+            message.Id.Value,
+            message.Key,
+            message.Source,
+            message.Target,
+            message.Label,
+            message.Kind.ToString(),
+            message.Certainty.ToString(),
+            string.Join(',', message.Evidence.Select(item => $"{item.Id.Value}:{item.Certainty}")));
+
+    [Fact]
+    public void ConfiguredMethodRootDoesNotJoinACalleeAnchoredClientInvocationAndDoesNotOverExcludeRootLocalGenericCalls()
+    {
+        // The residual boundary of the configured-branch wiring: the join is root-local only
+        // (AddServiceClientInvocations filters CallerMethod == RootMethod and requires the call site to
+        // be a root-local DirectExact call). A ServiceClientInvocationFact anchored to a CALLEE of the
+        // configured root is therefore neither joined as a ClientOperationInvocation nor turned into a
+        // conservative diagnostic; the callee's client call at best stays a generic MethodCall under the
+        // depth/traversal rules. The generic-MethodCall exclusion must also stay scoped to the proven
+        // root-local client call site: a root-local non-client direct call still renders, and a genuine
+        // root-local client invocation still joins exactly once with no duplicate.
+        var calleeMethod = ScenarioTestFactory.RootDirectCallTarget;
+        var calleeClientOperation = new OperationId("operation:v1:callee.notify");
+        var validateOperation = new OperationId("operation:v1:root.validate");
+
+        var calleeInvocation = new ServiceClientInvocationFact
+        {
+            Id = new BehaviorFactId("behavior-fact:v1:service-client-invocation:callee"),
+            Evidence = [ScenarioTestFactory.SourceEvidence("service-client-invocation-callee")],
+            Certainty = CertaintyLevel.Exact,
+            CallerMethod = calleeMethod,
+            InvocationOperation = calleeClientOperation,
+            ServiceContractType = ContractType,
+            ServiceContractTypeSymbol = ContractTypeSymbol,
+            ClientType = ClientType,
+            ClientTypeSymbol = ClientTypeSymbol,
+            OperationName = "NotifyAsync",
+            OperationSymbol = new SymbolId($"symbol:v1:{ContractType}.NotifyAsync"),
+            OperationKey = $"{ContractType}.NotifyAsync",
+            ResultClaim = ClientInvocationResultClaimKind.Discarded,
+            IsAwaited = false,
+            ResultBindingName = null,
+            DeclaredResultType = "System.Void",
+        };
+        var calleeBoundary = CreateBoundaryFact(idSuffix: "callee");
+
+        var baseRequest = ScenarioTestFactory.CreateConfiguredRootDirectCallRequest(decisionGuarded: true);
+        var request = baseRequest with
+        {
+            FrameworkFacts = baseRequest.FrameworkFacts with
+            {
+                Facts = baseRequest.FrameworkFacts.Facts.AddRange(
+                    CreateInvocationFact(), CreateBoundaryFact(), calleeInvocation, calleeBoundary),
+                ProfileId = baseRequest.Profile.Id,
+                ProgramIndexFingerprint = baseRequest.ProgramIndex.IndexFingerprint,
+            },
+        };
+
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(request).Graphs);
+
+        Assert.Equal(ScenarioRootKind.ConfiguredMethod, graph.RootKind);
+
+        // The callee-anchored invocation never joins and never fabricates a diagnostic.
+        Assert.DoesNotContain(graph.Nodes, node =>
+            node.Kind == ScenarioNodeKind.ClientOperationInvocation && node.Operation == calleeClientOperation);
+        Assert.DoesNotContain(graph.Diagnostics, diagnostic =>
+            diagnostic.Code == "SC-CLIENT-UNSUPPORTED-INVOCATION" && diagnostic.Detail.Contains("NotifyAsync"));
+
+        // The genuine root-local client invocation still joins exactly once.
+        var clientNode = Assert.Single(graph.Nodes, node => node.Kind == ScenarioNodeKind.ClientOperationInvocation);
+        Assert.Equal(ScenarioTestFactory.RootDirectCallOperation, clientNode.Operation);
+
+        // The root-local non-client direct call is not over-excluded by the client-operation filter.
+        Assert.Contains(graph.Nodes, node =>
+            node.Kind == ScenarioNodeKind.MethodCall && node.Operation == validateOperation);
+    }
+
+    [Fact]
+    public void ConfiguredMethodRootGuardedClientInvocationHasNoTopologyArmMembershipAndNoGenericDuplicate()
+    {
+        // Behavior-pinning only (no production change): ScenarioNodeKind.ClientOperationInvocation is
+        // deliberately NOT in ScenarioGraphBuilder.IsMaterialTopologyNode, so BuildTopology assigns a
+        // client-invocation node no arm membership on EITHER arm of a guarded configured root. This is
+        // pre-existing and identical on the HTTP controller-action path; giving client nodes arm
+        // membership would be a scope-expanding production change that also alters the HTTP path. This
+        // test locks the current behavior so a future reviewer sees the gap is known, not an oversight.
+        var baseRequest = ScenarioTestFactory.CreateConfiguredRootDirectCallRequest(decisionGuarded: true);
+        var request = baseRequest with
+        {
+            FrameworkFacts = baseRequest.FrameworkFacts with
+            {
+                Facts = baseRequest.FrameworkFacts.Facts.AddRange(CreateInvocationFact(), CreateBoundaryFact()),
+                ProfileId = baseRequest.Profile.Id,
+                ProgramIndexFingerprint = baseRequest.ProgramIndex.IndexFingerprint,
+            },
+        };
+
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(request).Graphs);
+
+        Assert.Equal(ScenarioRootKind.ConfiguredMethod, graph.RootKind);
+
+        // Exactly one typed client node, parented to the action node by a Call edge.
+        var clientNode = Assert.Single(graph.Nodes, node => node.Kind == ScenarioNodeKind.ClientOperationInvocation);
+        Assert.Equal(ScenarioTestFactory.RootDirectCallOperation, clientNode.Operation);
+        var actionNode = Assert.Single(graph.Nodes, node => node.Kind == ScenarioNodeKind.Action);
+        var edge = Assert.Single(graph.Edges, item => item.Target == clientNode.Id);
+        Assert.Equal(actionNode.Id, edge.Source);
+        Assert.Equal(ScenarioEdgeKind.Call, edge.Kind);
+
+        // The guarded fixture really does populate topology arms, so "no membership under either arm"
+        // is a meaningful claim: graph.Topology exposes Decisions, Arms, and Memberships
+        // (ImmutableArray<ScenarioMembership>, each carrying .Arm and .ScenarioNode). The client node
+        // appears in NO membership row, i.e. under neither arm.
+        Assert.NotEmpty(graph.Topology.Arms);
+        Assert.DoesNotContain(graph.Topology.Memberships, membership => membership.ScenarioNode == clientNode.Id);
+
+        // The generic-MethodCall exclusion still applied under the guard: no generic node (and hence no
+        // generic-node membership) for the same call-site operation.
+        Assert.DoesNotContain(graph.Nodes, node =>
+            node.Kind == ScenarioNodeKind.MethodCall && node.Operation == ScenarioTestFactory.RootDirectCallOperation);
+
+        // The observable proof survives: exactly one client-operation-invocation message for the call site.
+        var plan = DocumentationPlanner.Plan(graph);
+        Assert.Single(plan.Wording.Phrases, phrase => phrase.Key == "client-operation-invocation");
+        Assert.Single(plan.Diagram.Messages, message => message.Label == "SendAsync");
+    }
+
     [Fact]
     public void MatchingClientBoundaryReplacesTheGenericMethodCallNodeWithATypedClientOperationInvocationNode()
     {
