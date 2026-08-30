@@ -194,6 +194,33 @@ public sealed class NaturalLoopProjectionTests
     }
 
     [Fact]
+    public void DisconnectedNaturalLoopProducesOneConservativeDiagnostic()
+    {
+        var operation = new OperationId("behavior-operation:v1:disconnected-loop");
+        var evidence = new EvidenceRef(new EvidenceId("evidence:v1:disconnected-loop"), EvidenceKind.Source, "loop.cs", null, "while", "test", CertaintyLevel.Exact);
+        var loop = new ExtractedNaturalLoop(operation, ExtractedLoopKind.WhileLoop, 1, [2], [2], [3],
+            [new ExtractedOrdinaryBranch(2, 1, [], [], [evidence], evidence.Certainty)], [evidence], evidence.Certainty);
+        var connected = CreateHandBuiltBody([loop], operation, evidence);
+        var body = connected with
+        {
+            Blocks = connected.Blocks.Select(block => block.Ordinal switch
+            {
+                0 => block with { FallThroughSuccessor = null },
+                1 => block with { Predecessors = [2] },
+                _ => block,
+            }).ToImmutableArray(),
+            OrdinaryBranches = connected.OrdinaryBranches
+                .Where(branch => branch.SourceBlockOrdinal != 0).ToImmutableArray(),
+        };
+
+        var result = MethodFlowBuilder.Build(body);
+
+        Assert.DoesNotContain(result.Snapshot.Nodes, node => node.Kind == FlowNodeKind.Loop);
+        Assert.DoesNotContain(result.Snapshot.Regions, region => region.Kind == FlowRegionKind.NaturalLoop);
+        Assert.Single(result.Diagnostics, diagnostic => diagnostic.Code == "BD2011");
+    }
+
+    [Fact]
     public void ValidHandBuiltLoopPreservesMappingEvidenceAndCertainty()
     {
         var operation = new OperationId("behavior-operation:v1:valid-loop");

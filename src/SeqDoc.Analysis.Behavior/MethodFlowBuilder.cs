@@ -769,6 +769,33 @@ public static class MethodFlowBuilder
             return false;
         }
 
+        if (!blocksByOrdinal.ContainsKey(0))
+        {
+            return false;
+        }
+
+        var entryReachable = new HashSet<int> { 0 };
+        var pendingFromEntry = new Stack<int>();
+        pendingFromEntry.Push(0);
+        while (pendingFromEntry.TryPop(out var current))
+        {
+            foreach (var successor in verified
+                         .Where(branch => branch.SourceBlockOrdinal == current)
+                         .Select(branch => branch.DestinationBlockOrdinal))
+            {
+                if (entryReachable.Add(successor))
+                {
+                    pendingFromEntry.Push(successor);
+                }
+            }
+        }
+
+        if (!entryReachable.Contains(loop.HeaderBlockOrdinal)
+            || loop.BodyBlockOrdinals.Any(ordinal => !entryReachable.Contains(ordinal)))
+        {
+            return false;
+        }
+
         var verifiedByPair = verified.ToDictionary(branch => (branch.SourceBlockOrdinal, branch.DestinationBlockOrdinal));
         var actualMemberPairs = members
             .SelectMany(source => GetSuccessors(blocksByOrdinal[source]).Select(destination => (Source: source, Destination: destination)))
