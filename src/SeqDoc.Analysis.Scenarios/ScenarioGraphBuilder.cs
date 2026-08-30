@@ -311,6 +311,7 @@ public static class ScenarioGraphBuilder
             ScenarioEdgeKind.Entry,
             string.Empty,
             entryPoint.Evidence));
+        JoinEdmxMetadata(request, profileId, entryPointId, entryPoint.RootMethod, actionNode, nodes, edges);
 
         if (entryPoint.ActionKind == ScenarioActionKind.HostedWorker)
         {
@@ -2033,10 +2034,18 @@ public static class ScenarioGraphBuilder
             return;
         }
 
-        foreach (var mutation in request.NonGetSemanticFacts.EntityFrameworkMutations
-                     .Where(fact => fact.Method == serviceMethod)
-                      .OrderBy(fact => fact.SequenceOrdinal)
-                      .ThenBy(fact => fact.Operation.Value, StringComparer.Ordinal))
+        var semanticMutations = NonGetFactsBound(request)
+            ? request.NonGetSemanticFacts!.EntityFrameworkMutations.Where(fact => fact.Method == serviceMethod)
+            : [];
+        var frameworkMutations = FrameworkFactsBound(request)
+            ? request.FrameworkFacts.Facts.OfType<EntityFrameworkMutationFact>().Where(fact => fact.Method == serviceMethod)
+            : [];
+        foreach (var mutation in semanticMutations
+                     .Concat(frameworkMutations)
+                     .GroupBy(fact => fact.Operation.Value, StringComparer.Ordinal)
+                     .Select(group => group.First())
+                     .OrderBy(fact => fact.SequenceOrdinal)
+                     .ThenBy(fact => fact.Operation.Value, StringComparer.Ordinal))
         {
             var mutationNode = CreateNode(
                 profileId,
@@ -2116,6 +2125,50 @@ public static class ScenarioGraphBuilder
                 ScenarioEdgeKind.Observation,
                 "source observation (non-interaction)",
                 observation.Evidence));
+        }
+    }
+
+    private static void JoinEdmxMetadata(
+        ScenarioAnalysisRequest request,
+        CompilationProfileId profileId,
+        EntryPointId entryPointId,
+        MethodId actionMethod,
+        ScenarioNode actionNode,
+        List<ScenarioNode> nodes,
+        List<ScenarioEdge> edges)
+    {
+        if (!FrameworkFactsBound(request))
+        {
+            return;
+        }
+
+        var owningProject = request.ProgramIndex.Methods.FirstOrDefault(method => method.Id == actionMethod) is { } method
+            ? request.ProgramIndex.Types.FirstOrDefault(type => type.Id == method.ContainingType)?.Project
+            : null;
+        if (owningProject is not { } project)
+        {
+            return;
+        }
+
+        foreach (var metadata in request.FrameworkFacts.Facts
+                     .OfType<EntityFrameworkEdmxMetadataFact>()
+                     .Where(fact => fact.Project == project)
+                     .OrderBy(fact => fact.RepositoryRelativePath, StringComparer.Ordinal)
+                     .ThenBy(fact => fact.ContentFingerprint, StringComparer.Ordinal))
+        {
+            var metadataNode = CreateNode(
+                profileId,
+                entryPointId,
+                ScenarioNodeKind.SourceObservation,
+                $"observation:{metadata.Id.Value}",
+                actionMethod,
+                null,
+                $"EDMX metadata boundary: {metadata.RepositoryRelativePath}; FunctionImport declaration present: {metadata.HasFunctionImport}; store-function declaration present: {metadata.HasStoreFunction}; unsupported declaration-only metadata boundary; database mapping and runtime behavior are not inferred.",
+                metadata.Evidence,
+                metadata.Certainty);
+            nodes.Add(metadataNode);
+            edges.Add(CreateEdge(profileId, entryPointId, actionNode, metadataNode,
+                ScenarioEdgeKind.Observation, "independent metadata boundary", metadata.Evidence, metadata.Certainty));
         }
     }
 
@@ -2632,13 +2685,15 @@ public static class ScenarioGraphBuilder
     /// <summary>
     /// True for the exact single-value EF query terminals that carry a fact-level predicate anchor:
     /// <see cref="EntityFrameworkQueryOperatorKind.SingleOrDefaultAsync"/> and
-    /// <see cref="EntityFrameworkQueryOperatorKind.FirstOrDefaultAsync"/>. The CountAsync aggregation
+    /// <see cref="EntityFrameworkQueryOperatorKind.FirstOrDefaultAsync"/> (and the supported
+    /// synchronous FirstOrDefault terminal). The CountAsync aggregation
     /// has no terminal predicate, so it is deliberately excluded from the single-value set and keeps
     /// its count-only handling everywhere in this builder.
     /// </summary>
     private static bool IsSingleValueQueryTerminal(EntityFrameworkQueryOperatorKind? terminal)
         => terminal is EntityFrameworkQueryOperatorKind.SingleOrDefaultAsync
-            or EntityFrameworkQueryOperatorKind.FirstOrDefaultAsync;
+            or EntityFrameworkQueryOperatorKind.FirstOrDefaultAsync
+            or EntityFrameworkQueryOperatorKind.FirstOrDefault;
 
     private static ScenarioNode BuildEntityQueryNode(
         ScenarioAnalysisRequest request,
@@ -2679,7 +2734,8 @@ public static class ScenarioGraphBuilder
             && request.SemanticFacts.Comparisons.All(candidate => candidate.Method != serviceMethod || candidate.Operation != degradedPredicate)
             ? CertaintyLevel.Conservative
             : evidence.Min(item => item.Certainty);
-        var presentationOperator = IsSingleValueQueryTerminal(terminal) || terminal == EntityFrameworkQueryOperatorKind.CountAsync
+        var presentationOperator = IsSingleValueQueryTerminal(terminal)
+            || terminal is EntityFrameworkQueryOperatorKind.CountAsync or EntityFrameworkQueryOperatorKind.Count
             ? terminal
             : null;
         return CreateNode(

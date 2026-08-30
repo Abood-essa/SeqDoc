@@ -1,0 +1,14 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="EntityFramework" Version="6.4.4" />
+    <PackageVersion Include="Microsoft.CSharp" Version="4.7.0" />
+    <PackageVersion Include="System.CodeDom" Version="9.0.0" />
+    <PackageVersion Include="System.ComponentModel.Annotations" Version="4.7.0" />
+    <PackageVersion Include="System.Configuration.ConfigurationManager" Version="9.0.9" />
+    <PackageVersion Include="System.Data.SqlClient" Version="4.8.6" />
+  </ItemGroup>
+</Project>
