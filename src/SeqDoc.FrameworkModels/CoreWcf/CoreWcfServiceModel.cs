@@ -20,7 +20,12 @@ namespace SeqDoc.FrameworkModels.CoreWcf;
 /// <c>CoreWCF.ServiceContractAttribute</c>/<c>CoreWCF.OperationContractAttribute</c>/<c>CoreWCF.FaultContractAttribute</c>
 /// (assembly <c>CoreWCF.Primitives</c> 1.9.0.0) and classic WCF's
 /// <c>System.ServiceModel.ServiceContractAttribute</c>/<c>System.ServiceModel.OperationContractAttribute</c>/<c>System.ServiceModel.FaultContractAttribute</c>
-/// (assembly <c>System.ServiceModel.Primitives</c> 8.1.2.0) are both admitted, matched by exact original
+/// are both admitted. Classic WCF is admitted through the atomic compatibility table, which pairs each
+/// supported <c>System.ServiceModel.Primitives</c> assembly version — <c>8.0.0.0</c>, <c>8.1.0.0</c>,
+/// and <c>8.1.2.0</c> — with its exact <c>System.Runtime</c> generated-marker facade version
+/// (<c>9.0.0.0</c>, <c>9.0.0.0</c>, and <c>10.0.0.0</c> respectively); every ServiceContract,
+/// OperationContract, FaultContract, and <c>ClientBase</c> identity on one member must resolve to the
+/// same tuple. Both families are matched by exact original
 /// attribute-class identity (never a display-name string) via
 /// <see cref="FrameworkInterfaceMemberIdentity.InterfaceTypeAttributes"/>/<c>InterfaceMethodAttributes</c>;
 /// a ServiceContract/OperationContract/FaultContract pair is admitted only when every attribute in the
@@ -54,7 +59,6 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         public const string CoreWcfFaultContractAttribute = "CoreWCF.FaultContractAttribute";
 
         public const string SystemServiceModelAssembly = "System.ServiceModel.Primitives";
-        public const string SystemServiceModelAssemblyVersion = "8.1.2.0";
         public const string SystemServiceModelServiceContractAttribute = "System.ServiceModel.ServiceContractAttribute";
         public const string SystemServiceModelOperationContractAttribute = "System.ServiceModel.OperationContractAttribute";
         public const string SystemServiceModelFaultContractAttribute = "System.ServiceModel.FaultContractAttribute";
@@ -65,9 +69,68 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         // GeneratedCodeAttribute is implemented in System.Private.CoreLib at run time, but the compiler
         // resolves ContainingAssembly to the System.Runtime reference-assembly facade it is type-forwarded
         // through, so the exact-identity match must target that compile-time assembly, not the runtime one.
-        public const string CoreLibAssembly = "System.Runtime";
-        public const string CoreLibAssemblyVersion = "10.0.0.0";
+        public const string GeneratedMarkerAssembly = "System.Runtime";
+
+        /// <summary>
+        /// One atomic classic-WCF compatibility tuple: the exact <c>System.ServiceModel.Primitives</c>
+        /// assembly version carried by the ServiceContract/OperationContract/FaultContract attributes and
+        /// by the <c>System.ServiceModel.ClientBase`1</c> base type, bound together with the exact
+        /// <c>System.Runtime</c> assembly version of the <c>GeneratedCodeAttribute</c> marker facade the
+        /// same toolchain emits for a generated client of that version. Each tuple is measured through
+        /// MSBuildWorkspace <c>ContainingAssembly.Identity</c>. The discriminator is the assembly simple
+        /// name plus the exact assembly version plus the metadata name, consistent with every other
+        /// identity match in this model (see <see cref="FrameworkTypeIdentity"/>); PublicKeyToken is not
+        /// compared anywhere here. As an informational note only, the measured assemblies also carry
+        /// PublicKeyToken <c>b03f5f7f11d50a3a</c>. This is a small enumerated set, not a range, minimum
+        /// version, major-only match, or <c>StartsWith</c>.
+        /// </summary>
+        internal readonly record struct ClassicWcfCompatibilityTuple(
+            string ServiceModelAssemblyVersion,
+            string GeneratedMarkerAssemblyVersion);
+
+        public static readonly ImmutableArray<ClassicWcfCompatibilityTuple> ClassicWcfCompatibilityTuples =
+        [
+            // net10.0 marker facade (preserved from model 2.0.0).
+            new ClassicWcfCompatibilityTuple("8.1.2.0", "10.0.0.0"),
+            // net9.0 marker facade, System.ServiceModel.Primitives 8.0.0.
+            new ClassicWcfCompatibilityTuple("8.0.0.0", "9.0.0.0"),
+            // net9.0 marker facade, System.ServiceModel.Primitives 8.1.0.
+            new ClassicWcfCompatibilityTuple("8.1.0.0", "9.0.0.0"),
+        ];
+
+        // CoreWCF family (out of scope for issue #41): its System.ServiceModel.ClientBase`1 base type and
+        // GeneratedCodeAttribute marker identities are unchanged from model version 2.0.0.
+        public const string CoreWcfClientBaseAssemblyVersion = "8.1.2.0";
+        public const string CoreWcfGeneratedMarkerAssemblyVersion = "10.0.0.0";
+
+        /// <summary>
+        /// Every <c>System.ServiceModel.Primitives</c> assembly version that a supported
+        /// <c>ClientBase`1</c> base type may carry (the union of the classic tuples above and the CoreWCF
+        /// client-base version). Used only by the coarse <c>HasClientBase</c> gate; the exact per-member
+        /// version is still checked atomically against the resolved <see cref="AdmittedContract"/>.
+        /// </summary>
+        public static readonly ImmutableArray<string> SupportedClientBaseAssemblyVersions =
+        [
+            "8.1.2.0",
+            "8.0.0.0",
+            "8.1.0.0",
+        ];
     }
+
+    /// <summary>
+    /// An admitted contract identity resolved atomically for one interface member: the family plus, bound
+    /// together, the exact <c>System.ServiceModel.Primitives</c> <c>ClientBase`1</c> assembly version and
+    /// the exact <c>System.Runtime</c> <c>GeneratedCodeAttribute</c> marker assembly version that must be
+    /// used for that same member. For classic WCF this is exactly one
+    /// <see cref="Identity.ClassicWcfCompatibilityTuple"/>; for CoreWCF it is the unchanged model-2.0.0
+    /// pair. Every ServiceContract/OperationContract/FaultContract attribute in the pair, the
+    /// <c>ClientBase</c> base type, and the generated-marker check all resolve against this one value —
+    /// never independent version lists or a cross product.
+    /// </summary>
+    private readonly record struct AdmittedContract(
+        ContractFamily Family,
+        string ClientBaseAssemblyVersion,
+        string GeneratedMarkerAssemblyVersion);
 
     public FrameworkModelDescriptor Descriptor { get; } = new(
         ModelIdValue,
@@ -159,9 +222,9 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         }
 
         var admittedMembers = shape.ImplementedInterfaceMembers
-            .Select(member => (Member: member, Family: TryGetAdmittedFamily(member)))
-            .Where(entry => entry.Family is not null)
-            .Select(entry => (entry.Member, Family: entry.Family!.Value))
+            .Select(member => (Member: member, Admitted: TryGetAdmittedContract(member)))
+            .Where(entry => entry.Admitted is not null)
+            .Select(entry => (entry.Member, Admitted: entry.Admitted!.Value))
             .OrderBy(entry => entry.Member.InterfaceMethodSymbol.Value, StringComparer.Ordinal)
             .ToArray();
 
@@ -171,19 +234,24 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         // in the base-type chain": a class deriving ClientBase<IContractA> that also separately
         // implements an unrelated admitted IContractB must never emit a client boundary for IContractB.
         var clientMembers = admittedMembers
-            .Where(entry => IsClientBaseDerivedForContract(shape.DeclaringType, entry.Member.InterfaceType))
+            .Where(entry => IsClientBaseDerivedForContract(shape.DeclaringType, entry.Member.InterfaceType, entry.Admitted))
             .ToArray();
         if (HasClientBase(shape.DeclaringType))
         {
-            if (clientMembers.Length == 0 || clientMembers.Any(entry => !HasRequiredClientAttributeEvidence(entry.Member, entry.Family)))
+            if (clientMembers.Length == 0 || clientMembers.Any(entry => !HasRequiredClientAttributeEvidence(entry.Member, entry.Admitted)))
             {
                 return new ModelResult(false, diagnostics:
                     [CoreWcfServiceModelDiagnostics.EligibilityShapeUnavailable(profileId, $"{method.Id.Value}\u001fclient-evidence-unavailable")]);
             }
 
-            var hasGeneratedMarker = HasGeneratedCodeMarker(shape.DeclaringTypeAttributes);
+            // clientMembers is tuple-homogeneous by construction: a class has exactly one base type, and
+            // IsClientBaseDerivedForContract requires the ClientBase<T> constructed argument to equal
+            // member.InterfaceType, so every surviving entry resolved against that one ClientBase<T> and
+            // therefore shares one AdmittedContract tuple. clientMembers[0].Admitted's marker version
+            // consequently applies to all of them.
+            var hasGeneratedMarker = HasGeneratedCodeMarker(shape.DeclaringTypeAttributes, clientMembers[0].Admitted);
             var generatedMarkerEvidence = hasGeneratedMarker
-                ? FindGeneratedCodeMarkerEvidence(shape.DeclaringTypeAttributes)
+                ? FindGeneratedCodeMarkerEvidence(shape.DeclaringTypeAttributes, clientMembers[0].Admitted)
                 : ImmutableArray<EvidenceRef>.Empty;
             if (hasGeneratedMarker && generatedMarkerEvidence.IsDefaultOrEmpty)
             {
@@ -201,12 +269,13 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
             // ServiceClientBoundaryFact is not a GeneralBehaviorFact the host's exact-payload dedup never
             // applies, so the repeated identity would report as a genuine conflict and admit none of them.
             var clientFacts = clientMembers
-                .DistinctBy(entry => (entry.Member.InterfaceType.MetadataName, entry.Family))
+                .DistinctBy(entry => (entry.Member.InterfaceType.MetadataName, entry.Admitted))
                 .OrderBy(entry => entry.Member.InterfaceType.MetadataName, StringComparer.Ordinal)
-                .ThenBy(entry => entry.Family)
+                .ThenBy(entry => entry.Admitted.Family)
+                .ThenBy(entry => entry.Admitted.ClientBaseAssemblyVersion, StringComparer.Ordinal)
                 .Select((entry, ordinal) => (BehaviorFact)BuildClientBoundaryFact(
                     type, symbol.Id, symbol.Certainty, symbol.Evidence, generatedMarkerEvidence,
-                    entry.Member, entry.Family, clientKind, profileId, ordinal))
+                    entry.Member, entry.Admitted, clientKind, profileId, ordinal))
                 .ToImmutableArray();
             return new ModelResult(true, facts: clientFacts);
         }
@@ -222,7 +291,7 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
                 [CoreWcfServiceModelDiagnostics.AmbiguousOperationImplementation(profileId, method.Id.Value)]);
         }
 
-        var (member, family) = admittedMembers[0];
+        var (member, admitted) = admittedMembers[0];
         if (!IsEligibleServiceOperation(shape, member))
         {
             return ModelResult.Unrecognized;
@@ -238,13 +307,13 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         }
 
         var contractEvidence = member.InterfaceTypeAttributes
-            .Where(attribute => ServiceContractFamily(attribute.AttributeType) == family)
+            .Where(attribute => MatchesAdmittedServiceContract(attribute.AttributeType, admitted))
             .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence)
             .DistinctBy(item => item.Id.Value)
             .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
             .ToImmutableArray();
         var operationEvidence = member.InterfaceMethodAttributes
-            .Where(attribute => OperationContractFamily(attribute.AttributeType) == family)
+            .Where(attribute => MatchesAdmittedOperationContract(attribute.AttributeType, admitted))
             .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence)
             .DistinctBy(item => item.Id.Value)
             .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
@@ -289,7 +358,7 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         var faultAttributes = member.InterfaceMethodAttributes.IsDefault
             ? Enumerable.Empty<FrameworkAttributeApplicationIdentity>()
             : member.InterfaceMethodAttributes
-                .Where(attribute => FaultContractFamily(attribute.AttributeType) == family
+                .Where(attribute => MatchesAdmittedFaultContract(attribute.AttributeType, admitted)
                     && !attribute.Evidence.IsDefaultOrEmpty)
                 .OrderBy(attribute => attribute.AttributeType.MetadataName, StringComparer.Ordinal);
         foreach (var faultAttribute in faultAttributes)
@@ -426,10 +495,10 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         var admittedMembers = (methodShape.ImplementedInterfaceMembers.IsDefaultOrEmpty
                 ? Enumerable.Empty<FrameworkInterfaceMemberIdentity>()
                 : methodShape.ImplementedInterfaceMembers)
-            .Select(member => (Member: member, Family: TryGetAdmittedFamily(member)))
-            .Where(entry => entry.Family is not null)
-            .Select(entry => (entry.Member, Family: entry.Family!.Value))
-            .Where(entry => IsClientBaseDerivedForContract(methodShape.DeclaringType, entry.Member.InterfaceType))
+            .Select(member => (Member: member, Admitted: TryGetAdmittedContract(member)))
+            .Where(entry => entry.Admitted is not null)
+            .Select(entry => (entry.Member, Admitted: entry.Admitted!.Value))
+            .Where(entry => IsClientBaseDerivedForContract(methodShape.DeclaringType, entry.Member.InterfaceType, entry.Admitted))
             .ToArray();
         if (admittedMembers.Length != 1)
         {
@@ -438,15 +507,15 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
             return ModelResult.Unrecognized;
         }
 
-        var (member, family) = admittedMembers[0];
+        var (member, admitted) = admittedMembers[0];
         var contractEvidence = member.InterfaceTypeAttributes
-            .Where(attribute => ServiceContractFamily(attribute.AttributeType) == family)
+            .Where(attribute => MatchesAdmittedServiceContract(attribute.AttributeType, admitted))
             .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence)
             .DistinctBy(item => item.Id.Value)
             .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
             .ToImmutableArray();
         var operationEvidence = member.InterfaceMethodAttributes
-            .Where(attribute => OperationContractFamily(attribute.AttributeType) == family)
+            .Where(attribute => MatchesAdmittedOperationContract(attribute.AttributeType, admitted))
             .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence)
             .DistinctBy(item => item.Id.Value)
             .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
@@ -495,29 +564,137 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         return new ModelResult(true, facts: [fact], diagnostics: diagnostics);
     }
 
-    private static ContractFamily? TryGetAdmittedFamily(FrameworkInterfaceMemberIdentity member)
+    /// <summary>
+    /// Resolves the one <see cref="AdmittedContract"/> for an interface member, atomically. The
+    /// ServiceContract attributes on the interface and the OperationContract attributes on the member
+    /// must each resolve to exactly one admitted identity and it must be the same one — same family
+    /// and, for classic WCF, the same <see cref="Identity.ClassicWcfCompatibilityTuple"/>. A missing,
+    /// ambiguous-family, mixed-family (CoreWCF ServiceContract with a classic OperationContract or vice
+    /// versa), or mixed-tuple (an <c>8.0.0.0</c> ServiceContract paired with an <c>8.1.0.0</c>
+    /// OperationContract) pair is never admitted.
+    /// </summary>
+    private static AdmittedContract? TryGetAdmittedContract(FrameworkInterfaceMemberIdentity member)
     {
-        var contractFamilies = (member.InterfaceTypeAttributes.IsDefault ? [] : member.InterfaceTypeAttributes)
-            .Select(attribute => ServiceContractFamily(attribute.AttributeType))
-            .Where(family => family is not null)
-            .Select(family => family!.Value)
-            .Distinct()
-            .ToArray();
-        var operationFamilies = (member.InterfaceMethodAttributes.IsDefault ? [] : member.InterfaceMethodAttributes)
-            .Select(attribute => OperationContractFamily(attribute.AttributeType))
-            .Where(family => family is not null)
-            .Select(family => family!.Value)
-            .Distinct()
-            .ToArray();
-        if (contractFamilies.Length != 1 || operationFamilies.Length != 1 || contractFamilies[0] != operationFamilies[0])
+        var contract = ResolveContracts(
+            member.InterfaceTypeAttributes,
+            Identity.CoreWcfServiceContractAttribute,
+            Identity.SystemServiceModelServiceContractAttribute);
+        var operation = ResolveContracts(
+            member.InterfaceMethodAttributes,
+            Identity.CoreWcfOperationContractAttribute,
+            Identity.SystemServiceModelOperationContractAttribute);
+        if (contract.Count != 1 || operation.Count != 1 || !contract.First().Equals(operation.First()))
         {
-            // Missing, ambiguous-family, or mixed-family (CoreWCF ServiceContract with a classic
-            // OperationContract, or vice versa) pairs are never admitted.
             return null;
         }
 
-        return contractFamilies[0];
+        var admitted = contract.First();
+
+        // Frozen atomic contract: every present ServiceContract, OperationContract, and FaultContract on
+        // the member must agree with one resolved tuple/family. ResolveContracts only returns *matched*
+        // tuples, so a recognized-but-unsupported-version FaultContract would otherwise be invisible
+        // here and silently dropped downstream. Inspect the member's method attributes for any
+        // recognized WCF FaultContract attribute (correct metadata name in the family-appropriate WCF
+        // assembly, at any version) and require it to match the resolved contract exactly; a mismatched
+        // family, tuple, or unsupported version fails the member closed.
+        if (!member.InterfaceMethodAttributes.IsDefault)
+        {
+            foreach (var attribute in member.InterfaceMethodAttributes)
+            {
+                if (IsRecognizedWcfFaultContractAttribute(attribute.AttributeType)
+                    && !MatchesAdmittedFaultContract(attribute.AttributeType, admitted))
+                {
+                    return null;
+                }
+            }
+        }
+
+        return admitted;
     }
+
+    /// <summary>
+    /// True when <paramref name="attributeType"/> is a WCF FaultContract attribute by exact metadata
+    /// name in the family-appropriate WCF assembly simple name, at <em>any</em> assembly version:
+    /// metadata name <c>System.ServiceModel.FaultContractAttribute</c> in
+    /// <c>System.ServiceModel.Primitives</c>, or <c>CoreWCF.FaultContractAttribute</c> in
+    /// <c>CoreWCF.Primitives</c>. Version-agnostic on purpose so a recognized-but-unsupported-version
+    /// fault can still fail a member closed; the exact-version decision stays with
+    /// <see cref="MatchesAdmittedFaultContract"/>.
+    /// </summary>
+    private static bool IsRecognizedWcfFaultContractAttribute(FrameworkTypeIdentity attributeType)
+        => (attributeType.AssemblyIdentity == Identity.SystemServiceModelAssembly
+                && attributeType.MetadataName == Identity.SystemServiceModelFaultContractAttribute)
+            || (attributeType.AssemblyIdentity == Identity.CoreWcfAssembly
+                && attributeType.MetadataName == Identity.CoreWcfFaultContractAttribute);
+
+    private static HashSet<AdmittedContract> ResolveContracts(
+        ImmutableArray<FrameworkAttributeApplicationIdentity> attributes,
+        string coreWcfMetadataName,
+        string classicMetadataName)
+    {
+        var resolutions = new HashSet<AdmittedContract>();
+        if (attributes.IsDefault)
+        {
+            return resolutions;
+        }
+
+        foreach (var attribute in attributes)
+        {
+            var attributeType = attribute.AttributeType;
+            if (IsExactAttribute(attributeType, Identity.CoreWcfAssembly, Identity.CoreWcfAssemblyVersion, coreWcfMetadataName))
+            {
+                resolutions.Add(new AdmittedContract(
+                    ContractFamily.CoreWcf,
+                    Identity.CoreWcfClientBaseAssemblyVersion,
+                    Identity.CoreWcfGeneratedMarkerAssemblyVersion));
+                continue;
+            }
+
+            if (attributeType.AssemblyIdentity != Identity.SystemServiceModelAssembly
+                || attributeType.MetadataName != classicMetadataName)
+            {
+                continue;
+            }
+
+            foreach (var tuple in Identity.ClassicWcfCompatibilityTuples)
+            {
+                if (attributeType.AssemblyVersion == tuple.ServiceModelAssemblyVersion)
+                {
+                    resolutions.Add(new AdmittedContract(
+                        ContractFamily.ClassicWcf,
+                        tuple.ServiceModelAssemblyVersion,
+                        tuple.GeneratedMarkerAssemblyVersion));
+                }
+            }
+        }
+
+        return resolutions;
+    }
+
+    private static bool MatchesAdmittedServiceContract(FrameworkTypeIdentity attributeType, AdmittedContract admitted)
+        => MatchesAdmittedAttribute(attributeType, admitted, Identity.CoreWcfServiceContractAttribute, Identity.SystemServiceModelServiceContractAttribute);
+
+    private static bool MatchesAdmittedOperationContract(FrameworkTypeIdentity attributeType, AdmittedContract admitted)
+        => MatchesAdmittedAttribute(attributeType, admitted, Identity.CoreWcfOperationContractAttribute, Identity.SystemServiceModelOperationContractAttribute);
+
+    private static bool MatchesAdmittedFaultContract(FrameworkTypeIdentity attributeType, AdmittedContract admitted)
+        => MatchesAdmittedAttribute(attributeType, admitted, Identity.CoreWcfFaultContractAttribute, Identity.SystemServiceModelFaultContractAttribute);
+
+    /// <summary>
+    /// True only when <paramref name="attributeType"/> is the exact ServiceContract/OperationContract/
+    /// FaultContract attribute identity for the already-resolved <paramref name="admitted"/> contract.
+    /// For classic WCF the attribute's <c>System.ServiceModel.Primitives</c> assembly version must equal
+    /// the resolved tuple's version (which is the same value threaded to the <c>ClientBase</c> and
+    /// generated-marker checks), so every attribute in the pair stays on one atomic tuple.
+    /// </summary>
+    private static bool MatchesAdmittedAttribute(
+        FrameworkTypeIdentity attributeType,
+        AdmittedContract admitted,
+        string coreWcfMetadataName,
+        string classicMetadataName)
+        => admitted.Family == ContractFamily.CoreWcf
+            ? IsExactAttribute(attributeType, Identity.CoreWcfAssembly, Identity.CoreWcfAssemblyVersion, coreWcfMetadataName)
+            : IsExactAttribute(attributeType, Identity.SystemServiceModelAssembly, admitted.ClientBaseAssemblyVersion, classicMetadataName);
 
     private static bool IsEligibleServiceOperation(FrameworkMethodShape shape, FrameworkInterfaceMemberIdentity member)
         => (shape.IsOrdinary || member.IsExplicitImplementation)
@@ -541,11 +718,11 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
     /// in the chain without proving the constructed argument matches this specific contract is not
     /// sufficient.
     /// </summary>
-    private static bool IsClientBaseDerivedForContract(FrameworkTypeShape type, FrameworkTypeIdentity contract)
+    private static bool IsClientBaseDerivedForContract(FrameworkTypeShape type, FrameworkTypeIdentity contract, AdmittedContract admitted)
         => !type.BaseTypeChainWithArguments.IsDefault
             && type.BaseTypeChainWithArguments.Any(baseType =>
                 baseType.Identity.AssemblyIdentity == Identity.SystemServiceModelAssembly
-                && baseType.Identity.AssemblyVersion == Identity.SystemServiceModelAssemblyVersion
+                && baseType.Identity.AssemblyVersion == admitted.ClientBaseAssemblyVersion
                 && baseType.Identity.MetadataName == Identity.ClientBaseMetadataName
                 && !baseType.TypeArguments.IsDefault
                 && baseType.TypeArguments.Length == 1
@@ -555,58 +732,51 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         => !type.BaseTypeChainWithArguments.IsDefault
             && type.BaseTypeChainWithArguments.Any(baseType =>
                 baseType.Identity.AssemblyIdentity == Identity.SystemServiceModelAssembly
-                && baseType.Identity.AssemblyVersion == Identity.SystemServiceModelAssemblyVersion
+                && Identity.SupportedClientBaseAssemblyVersions.Contains(baseType.Identity.AssemblyVersion)
                 && baseType.Identity.MetadataName == Identity.ClientBaseMetadataName
                 && !baseType.TypeArguments.IsDefault
                 && baseType.TypeArguments.Length == 1);
 
-    private static bool HasRequiredClientAttributeEvidence(FrameworkInterfaceMemberIdentity member, ContractFamily family)
+    private static bool HasRequiredClientAttributeEvidence(FrameworkInterfaceMemberIdentity member, AdmittedContract admitted)
     {
         var contractEvidence = member.InterfaceTypeAttributes
-            .Where(attribute => ServiceContractFamily(attribute.AttributeType) == family)
+            .Where(attribute => MatchesAdmittedServiceContract(attribute.AttributeType, admitted))
             .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence);
         var operationEvidence = member.InterfaceMethodAttributes
-            .Where(attribute => OperationContractFamily(attribute.AttributeType) == family)
+            .Where(attribute => MatchesAdmittedOperationContract(attribute.AttributeType, admitted))
             .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence);
         return contractEvidence.Any() && operationEvidence.Any();
     }
 
-    private static bool HasGeneratedCodeMarker(ImmutableArray<FrameworkAttributeApplicationIdentity> declaringTypeAttributes)
+    private static bool HasGeneratedCodeMarker(
+        ImmutableArray<FrameworkAttributeApplicationIdentity> declaringTypeAttributes,
+        AdmittedContract admitted)
         => !declaringTypeAttributes.IsDefault
-            && declaringTypeAttributes.Any(attribute =>
-                attribute.AttributeType.AssemblyIdentity == Identity.CoreLibAssembly
-                && attribute.AttributeType.AssemblyVersion == Identity.CoreLibAssemblyVersion
-                && attribute.AttributeType.MetadataName == Identity.GeneratedCodeAttribute);
+            && declaringTypeAttributes.Any(attribute => IsGeneratedCodeMarker(attribute.AttributeType, admitted));
 
     private static ImmutableArray<EvidenceRef> FindGeneratedCodeMarkerEvidence(
-        ImmutableArray<FrameworkAttributeApplicationIdentity> declaringTypeAttributes)
+        ImmutableArray<FrameworkAttributeApplicationIdentity> declaringTypeAttributes,
+        AdmittedContract admitted)
     {
         if (declaringTypeAttributes.IsDefault)
         {
             return ImmutableArray<EvidenceRef>.Empty;
         }
 
-        var marker = declaringTypeAttributes.FirstOrDefault(attribute =>
-            attribute.AttributeType.AssemblyIdentity == Identity.CoreLibAssembly
-            && attribute.AttributeType.AssemblyVersion == Identity.CoreLibAssemblyVersion
-            && attribute.AttributeType.MetadataName == Identity.GeneratedCodeAttribute);
+        var marker = declaringTypeAttributes.FirstOrDefault(attribute => IsGeneratedCodeMarker(attribute.AttributeType, admitted));
         return marker is null || marker.Evidence.IsDefault ? ImmutableArray<EvidenceRef>.Empty : marker.Evidence;
     }
 
-    private static ContractFamily? ServiceContractFamily(FrameworkTypeIdentity attributeType)
-        => IsExactAttribute(attributeType, Identity.CoreWcfAssembly, Identity.CoreWcfAssemblyVersion, Identity.CoreWcfServiceContractAttribute) ? ContractFamily.CoreWcf
-            : IsExactAttribute(attributeType, Identity.SystemServiceModelAssembly, Identity.SystemServiceModelAssemblyVersion, Identity.SystemServiceModelServiceContractAttribute) ? ContractFamily.ClassicWcf
-            : null;
-
-    private static ContractFamily? OperationContractFamily(FrameworkTypeIdentity attributeType)
-        => IsExactAttribute(attributeType, Identity.CoreWcfAssembly, Identity.CoreWcfAssemblyVersion, Identity.CoreWcfOperationContractAttribute) ? ContractFamily.CoreWcf
-            : IsExactAttribute(attributeType, Identity.SystemServiceModelAssembly, Identity.SystemServiceModelAssemblyVersion, Identity.SystemServiceModelOperationContractAttribute) ? ContractFamily.ClassicWcf
-            : null;
-
-    private static ContractFamily? FaultContractFamily(FrameworkTypeIdentity attributeType)
-        => IsExactAttribute(attributeType, Identity.CoreWcfAssembly, Identity.CoreWcfAssemblyVersion, Identity.CoreWcfFaultContractAttribute) ? ContractFamily.CoreWcf
-            : IsExactAttribute(attributeType, Identity.SystemServiceModelAssembly, Identity.SystemServiceModelAssemblyVersion, Identity.SystemServiceModelFaultContractAttribute) ? ContractFamily.ClassicWcf
-            : null;
+    /// <summary>
+    /// The <c>GeneratedCodeAttribute</c> marker check for a client type is threaded through the exact
+    /// same atomically resolved <paramref name="admitted"/> tuple as its contract/<c>ClientBase</c>
+    /// identity: the <c>System.Runtime</c> facade version must be that tuple's marker version, never a
+    /// value taken from an independent list. A marker from a different tuple simply does not match.
+    /// </summary>
+    private static bool IsGeneratedCodeMarker(FrameworkTypeIdentity attributeType, AdmittedContract admitted)
+        => attributeType.AssemblyIdentity == Identity.GeneratedMarkerAssembly
+            && attributeType.AssemblyVersion == admitted.GeneratedMarkerAssemblyVersion
+            && attributeType.MetadataName == Identity.GeneratedCodeAttribute;
 
     private static bool IsExactAttribute(FrameworkTypeIdentity attributeType, string assembly, string assemblyVersion, string metadataName)
         => attributeType.AssemblyIdentity == assembly
@@ -671,7 +841,7 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         ImmutableArray<EvidenceRef> triggeringMethodEvidence,
         ImmutableArray<EvidenceRef> generatedMarkerEvidence,
         FrameworkInterfaceMemberIdentity member,
-        ContractFamily family,
+        AdmittedContract admitted,
         ServiceClientKind clientKind,
         CompilationProfileId profileId,
         int ordinal)
@@ -679,10 +849,10 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
         var underlyingEvidence = type.Evidence
             .Concat(triggeringMethodEvidence.IsDefault ? [] : triggeringMethodEvidence)
             .Concat(member.InterfaceTypeAttributes
-                .Where(attribute => ServiceContractFamily(attribute.AttributeType) == family)
+                .Where(attribute => MatchesAdmittedServiceContract(attribute.AttributeType, admitted))
                 .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence))
             .Concat(member.InterfaceMethodAttributes
-                .Where(attribute => OperationContractFamily(attribute.AttributeType) == family)
+                .Where(attribute => MatchesAdmittedOperationContract(attribute.AttributeType, admitted))
                 .SelectMany(attribute => attribute.Evidence.IsDefault ? [] : attribute.Evidence))
             .Concat(generatedMarkerEvidence.IsDefault ? [] : generatedMarkerEvidence)
             .DistinctBy(item => item.Id.Value)

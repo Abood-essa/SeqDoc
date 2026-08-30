@@ -326,6 +326,148 @@ public sealed class CoreWcfClientInvocationProjectionTests
         Assert.True(addIndexes[0] < addIndexes[1], "Expected the 'first' (a,b) call to be rendered before the 'second' (c,d) call.");
     }
 
+    // ---- Issue #41: measured net9.0 classic-WCF compatibility tuples through the real producer ----
+
+    public static TheoryData<string, string> Net9CompatibilityFixtures() => new()
+    {
+        { "tests/fixtures/PassC/ClassicWcfNet9Compatibility/ClassicWcfNet9V800/ClassicWcfNet9V800.csproj", "ClassicWcfNet9V800" },
+        { "tests/fixtures/PassC/ClassicWcfNet9Compatibility/ClassicWcfNet9V810/ClassicWcfNet9V810.csproj", "ClassicWcfNet9V810" },
+    };
+
+    [Theory]
+    [MemberData(nameof(Net9CompatibilityFixtures))]
+    public async Task Net9CompatibilityTupleGeneratedClientCallSiteAdmitsExactlyOneInvocationThroughTheRealProducer(
+        string fixtureRelativePath,
+        string rootNamespace)
+    {
+        var (programIndex, framework) = await AnalyzeFixtureAsync(fixtureRelativePath, "net9.0");
+        var caller = FindMethod(programIndex, $"{rootNamespace}.CalculatorCaller", "CallAdd");
+
+        var invocation = Assert.Single(
+            framework.Facts.OfType<ServiceClientInvocationFact>(),
+            fact => fact.CallerMethod == caller.Id);
+        Assert.Equal($"{rootNamespace}.CalculatorClient", invocation.ClientType);
+        Assert.Equal($"{rootNamespace}.ICalculatorClient", invocation.ServiceContractType);
+        Assert.Equal("Add", invocation.OperationName);
+        Assert.Equal(ClientInvocationResultClaimKind.ResultAssigned, invocation.ResultClaim);
+        Assert.Equal("sum", invocation.ResultBindingName);
+        Assert.Equal(CertaintyLevel.Exact, invocation.Certainty);
+
+        var boundaries = framework.Facts.OfType<ServiceClientBoundaryFact>()
+            .Where(fact => fact.ClientTypeSymbol == invocation.ClientTypeSymbol)
+            .ToArray();
+        Assert.NotEmpty(boundaries);
+        Assert.All(boundaries, boundary => Assert.Equal(ServiceClientKind.GeneratedClient, boundary.ClientKind));
+
+        // The net9.0 generated client type never admits ordinary service capability.
+        Assert.DoesNotContain(
+            framework.Facts.OfType<ServiceOperationCapabilityFact>(),
+            fact => fact.ImplementationType == $"{rootNamespace}.CalculatorClient");
+    }
+
+    [Theory]
+    [MemberData(nameof(Net9CompatibilityFixtures))]
+    public async Task Net9CompatibilityTupleCallSiteProducesExactlyOneVisibleClientInvocationMessageThroughScenarioAndPlanner(
+        string fixtureRelativePath,
+        string rootNamespace)
+    {
+        var (programIndex, behavior, framework, profile) = await AnalyzeFullPipelineAsync(fixtureRelativePath, "net9.0");
+        var caller = FindMethod(programIndex, $"{rootNamespace}.CalculatorCaller", "CallAdd");
+        var entryFact = new HttpEntryPointFact
+        {
+            Id = new BehaviorFactId($"behavior-fact:v1:test:net9-tuple-{rootNamespace}"),
+            Evidence = caller.Evidence,
+            Certainty = CertaintyLevel.Exact,
+            EntryPointId = new EntryPointId($"entry-point:v1:test:net9-tuple-{rootNamespace}"),
+            RootMethod = caller.Id,
+            HttpMethod = HttpMethodKind.Get,
+            CanonicalRoute = "test/net9-tuple",
+            OperationKey = "Test.Net9Tuple",
+        };
+        framework = framework with { Facts = framework.Facts.Add(entryFact) };
+
+        var request = new ScenarioAnalysisRequest(
+            profile, programIndex, behavior, framework,
+            new SemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], "semantic-test"),
+            new DependencyInjectionFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], "di-test"),
+            new StructuralResultFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], "structural-test"),
+            new NonGetSemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], [], [], [], [], "non-get-test"));
+
+        var graphSet = ScenarioGraphBuilder.Build(request);
+        var graph = Assert.Single(graphSet.Graphs, item => item.RootMethod == caller.Id);
+        var node = Assert.Single(graph.Nodes, item => item.Kind == ScenarioNodeKind.ClientOperationInvocation);
+        Assert.DoesNotContain(graph.Nodes, item => item.Kind == ScenarioNodeKind.MethodCall);
+        Assert.Equal($"{rootNamespace}.CalculatorClient", node.Presentation?.ClientTypeName);
+        Assert.Equal($"{rootNamespace}.ICalculatorClient", node.Presentation?.ContractTypeName);
+        Assert.Equal("Add", node.Presentation?.CalledMemberName);
+        Assert.Equal(ClientInvocationResultClaimKind.ResultAssigned, node.Presentation?.ResultClaimKind);
+        Assert.Equal(CertaintyLevel.Exact, node.Certainty);
+
+        var plan = DocumentationPlanner.Plan(graph);
+        var message = Assert.Single(plan.Diagram.Messages, item => item.Label == "Add");
+        var participant = Assert.Single(plan.Diagram.Participants, item => item.Label == "CalculatorClient");
+        Assert.Equal(participant.Key, message.Target);
+        var phrase = Assert.Single(plan.Wording.Phrases, item => item.Key == "client-operation-invocation");
+        Assert.DoesNotContain("HTTP", phrase.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("response", phrase.Text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Net9UnattributedContractClientCallSiteNeverAdmitsAnythingThroughTheRealProducer()
+    {
+        // Issue #41 R2: same-shaped real-compilable negative on the changed boundary. UnattributedClient
+        // derives the real 8.0.0.0 ClientBase<IUnattributedContract>, but IUnattributedContract carries
+        // no [ServiceContract] so TryGetAdmittedContract resolves nothing — no invocation, no boundary,
+        // no capability, and no ClientOperationInvocation scenario node or wording phrase.
+        const string ns = "ClassicWcfNet9V800";
+        var (programIndex, behavior, framework, profile) = await AnalyzeFullPipelineAsync(
+            "tests/fixtures/PassC/ClassicWcfNet9Compatibility/ClassicWcfNet9V800/ClassicWcfNet9V800.csproj", "net9.0");
+        var caller = FindMethod(programIndex, $"{ns}.UnattributedCaller", "Call");
+
+        Assert.DoesNotContain(
+            framework.Facts.OfType<ServiceClientInvocationFact>(),
+            fact => fact.CallerMethod == caller.Id);
+        Assert.DoesNotContain(
+            framework.Facts.OfType<ServiceClientBoundaryFact>(),
+            fact => fact.ClientType == $"{ns}.UnattributedClient");
+        Assert.DoesNotContain(
+            framework.Facts.OfType<ServiceOperationCapabilityFact>(),
+            fact => fact.ImplementationType == $"{ns}.UnattributedClient");
+
+        // Positive control is unperturbed: CalculatorCaller.CallAdd still admits exactly one invocation.
+        var positiveCaller = FindMethod(programIndex, $"{ns}.CalculatorCaller", "CallAdd");
+        Assert.Single(
+            framework.Facts.OfType<ServiceClientInvocationFact>(),
+            fact => fact.CallerMethod == positiveCaller.Id);
+
+        var entryFact = new HttpEntryPointFact
+        {
+            Id = new BehaviorFactId("behavior-fact:v1:test:net9-unattributed"),
+            Evidence = caller.Evidence,
+            Certainty = CertaintyLevel.Exact,
+            EntryPointId = new EntryPointId("entry-point:v1:test:net9-unattributed"),
+            RootMethod = caller.Id,
+            HttpMethod = HttpMethodKind.Get,
+            CanonicalRoute = "test/net9-unattributed",
+            OperationKey = "Test.Net9Unattributed",
+        };
+        var frameworkWithEntry = framework with { Facts = framework.Facts.Add(entryFact) };
+
+        var request = new ScenarioAnalysisRequest(
+            profile, programIndex, behavior, frameworkWithEntry,
+            new SemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], "semantic-test"),
+            new DependencyInjectionFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], "di-test"),
+            new StructuralResultFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], "structural-test"),
+            new NonGetSemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], [], [], [], [], "non-get-test"));
+
+        var graphSet = ScenarioGraphBuilder.Build(request);
+        var graph = Assert.Single(graphSet.Graphs, item => item.RootMethod == caller.Id);
+        Assert.DoesNotContain(graph.Nodes, item => item.Kind == ScenarioNodeKind.ClientOperationInvocation);
+
+        var plan = DocumentationPlanner.Plan(graph);
+        Assert.DoesNotContain(plan.Wording.Phrases, item => item.Key == "client-operation-invocation");
+    }
+
     private static void AssertClaim(
         ProgramIndexSnapshot programIndex,
         ServiceClientInvocationFact[] invocations,
@@ -347,13 +489,18 @@ public sealed class CoreWcfClientInvocationProjectionTests
         return programIndex.Methods.Single(method => method.ContainingType == containingType.Id && method.Name == methodName);
     }
 
-    private static async Task<(ProgramIndexSnapshot ProgramIndex, FrameworkAnalysisResult Framework)> AnalyzeFixtureAsync()
+    private static Task<(ProgramIndexSnapshot ProgramIndex, FrameworkAnalysisResult Framework)> AnalyzeFixtureAsync()
+        => AnalyzeFixtureAsync(FixtureRelativePath, "net10.0");
+
+    private static async Task<(ProgramIndexSnapshot ProgramIndex, FrameworkAnalysisResult Framework)> AnalyzeFixtureAsync(
+        string fixtureRelativePath,
+        string targetFramework)
     {
         var root = FindRepositoryRoot();
         var request = new CompilationAnalysisRequest(
             root,
-            Path.Combine(root, FixtureRelativePath.Replace('/', Path.DirectorySeparatorChar)),
-            CompilationProfile.Create(FixtureRelativePath, "Release", "net10.0"));
+            Path.Combine(root, fixtureRelativePath.Replace('/', Path.DirectorySeparatorChar)),
+            CompilationProfile.Create(fixtureRelativePath, "Release", targetFramework));
         var extraction = await new RoslynProfileAnalysisExtractor().ExtractAsync(request, CancellationToken.None);
         Assert.True(
             extraction.IsSuccess,
@@ -376,13 +523,18 @@ public sealed class CoreWcfClientInvocationProjectionTests
         return (extraction.Value.ProgramIndex, framework);
     }
 
-    private static async Task<(ProgramIndexSnapshot ProgramIndex, SeqDoc.Core.Behavior.BehaviorSnapshot Behavior, FrameworkAnalysisResult Framework, CompilationProfile Profile)> AnalyzeFullPipelineAsync()
+    private static Task<(ProgramIndexSnapshot ProgramIndex, SeqDoc.Core.Behavior.BehaviorSnapshot Behavior, FrameworkAnalysisResult Framework, CompilationProfile Profile)> AnalyzeFullPipelineAsync()
+        => AnalyzeFullPipelineAsync(FixtureRelativePath, "net10.0");
+
+    private static async Task<(ProgramIndexSnapshot ProgramIndex, SeqDoc.Core.Behavior.BehaviorSnapshot Behavior, FrameworkAnalysisResult Framework, CompilationProfile Profile)> AnalyzeFullPipelineAsync(
+        string fixtureRelativePath,
+        string targetFramework)
     {
         var root = FindRepositoryRoot();
         var request = new CompilationAnalysisRequest(
             root,
-            Path.Combine(root, FixtureRelativePath.Replace('/', Path.DirectorySeparatorChar)),
-            CompilationProfile.Create(FixtureRelativePath, "Release", "net10.0"));
+            Path.Combine(root, fixtureRelativePath.Replace('/', Path.DirectorySeparatorChar)),
+            CompilationProfile.Create(fixtureRelativePath, "Release", targetFramework));
         var extraction = await new RoslynProfileAnalysisExtractor().ExtractAsync(request, CancellationToken.None);
         Assert.True(
             extraction.IsSuccess,

@@ -22,6 +22,13 @@ internal static class CoreWcfTestIndexFactory
     public const string CoreWcfAssemblyVersion = "1.9.0.0";
     public const string SystemServiceModelAssembly = "System.ServiceModel.Primitives";
     public const string SystemServiceModelAssemblyVersion = "8.1.2.0";
+
+    // Issue #41: the two measured net9.0 classic-WCF compatibility tuples. Each pairs a
+    // System.ServiceModel.Primitives assembly version with the System.Runtime GeneratedCodeAttribute
+    // marker facade version emitted by the same net9.0 toolchain.
+    public const string SystemServiceModelAssemblyVersionNet9V800 = "8.0.0.0";
+    public const string SystemServiceModelAssemblyVersionNet9V810 = "8.1.0.0";
+    public const string GeneratedMarkerAssemblyVersionNet9 = "9.0.0.0";
     public const string CoreWcfServiceContractAttribute = "CoreWCF.ServiceContractAttribute";
     public const string CoreWcfOperationContractAttribute = "CoreWCF.OperationContractAttribute";
     public const string CoreWcfFaultContractAttribute = "CoreWCF.FaultContractAttribute";
@@ -191,10 +198,11 @@ internal static class CoreWcfTestIndexFactory
     public static FrameworkTypeShape EligibleImplementationTypeShape(
         bool isAbstract = false, bool isStatic = false, int genericArity = 0, bool isPublic = true,
         string metadataName = ImplementationMetadataName, bool clientBaseDerived = false,
-        string clientBaseContractMetadataName = ContractMetadataName)
+        string clientBaseContractMetadataName = ContractMetadataName,
+        string clientBaseAssemblyVersion = SystemServiceModelAssemblyVersion)
     {
         var objectBase = new FrameworkTypeIdentity("System.Private.CoreLib", "10.0.0.0", "System.Object");
-        var clientBaseIdentity = new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, ClientBaseMetadataName);
+        var clientBaseIdentity = new FrameworkTypeIdentity(SystemServiceModelAssembly, clientBaseAssemblyVersion, ClientBaseMetadataName);
         var clientBaseContract = new FrameworkTypeIdentity("CoreWcfServices", "1.0.0", clientBaseContractMetadataName);
         return new(
             Identity: new FrameworkTypeIdentity("CoreWcfServices", "1.0.0", metadataName),
@@ -212,32 +220,37 @@ internal static class CoreWcfTestIndexFactory
     /// <summary>Exact ServiceContract/OperationContract/FaultContract attribute identities for either admitted family.</summary>
     public static FrameworkAttributeApplicationIdentity ServiceContractAttribute(
         bool coreWcf = true,
-        ImmutableArray<EvidenceRef> evidence = default)
+        ImmutableArray<EvidenceRef> evidence = default,
+        string classicAssemblyVersion = SystemServiceModelAssemblyVersion)
         => coreWcf
             ? new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(CoreWcfAssembly, CoreWcfAssemblyVersion, CoreWcfServiceContractAttribute), [], evidence.IsDefault ? [SourceEvidence(CoreWcfServiceContractAttribute)] : evidence)
-            : new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, SystemServiceModelServiceContractAttribute), [], evidence.IsDefault ? [SourceEvidence(SystemServiceModelServiceContractAttribute)] : evidence);
+            : new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(SystemServiceModelAssembly, classicAssemblyVersion, SystemServiceModelServiceContractAttribute), [], evidence.IsDefault ? [SourceEvidence(SystemServiceModelServiceContractAttribute)] : evidence);
 
     public static FrameworkAttributeApplicationIdentity OperationContractAttribute(
         bool coreWcf = true,
-        ImmutableArray<EvidenceRef> evidence = default)
+        ImmutableArray<EvidenceRef> evidence = default,
+        string classicAssemblyVersion = SystemServiceModelAssemblyVersion)
         => coreWcf
             ? new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(CoreWcfAssembly, CoreWcfAssemblyVersion, CoreWcfOperationContractAttribute), [], evidence.IsDefault ? [SourceEvidence(CoreWcfOperationContractAttribute)] : evidence)
-            : new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, SystemServiceModelOperationContractAttribute), [], evidence.IsDefault ? [SourceEvidence(SystemServiceModelOperationContractAttribute)] : evidence);
+            : new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(SystemServiceModelAssembly, classicAssemblyVersion, SystemServiceModelOperationContractAttribute), [], evidence.IsDefault ? [SourceEvidence(SystemServiceModelOperationContractAttribute)] : evidence);
 
     public static FrameworkAttributeApplicationIdentity FaultContractAttribute(
         FrameworkTypeIdentity faultType,
         bool coreWcf = true,
-        ImmutableArray<EvidenceRef> evidence = default)
+        ImmutableArray<EvidenceRef> evidence = default,
+        string classicAssemblyVersion = SystemServiceModelAssemblyVersion)
         => coreWcf
             ? new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(CoreWcfAssembly, CoreWcfAssemblyVersion, CoreWcfFaultContractAttribute), [faultType], evidence.IsDefault ? [SourceEvidence(CoreWcfFaultContractAttribute)] : evidence)
-            : new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(SystemServiceModelAssembly, SystemServiceModelAssemblyVersion, SystemServiceModelFaultContractAttribute), [faultType], evidence.IsDefault ? [SourceEvidence(SystemServiceModelFaultContractAttribute)] : evidence);
+            : new FrameworkAttributeApplicationIdentity(new FrameworkTypeIdentity(SystemServiceModelAssembly, classicAssemblyVersion, SystemServiceModelFaultContractAttribute), [faultType], evidence.IsDefault ? [SourceEvidence(SystemServiceModelFaultContractAttribute)] : evidence);
 
     public static FrameworkAttributeApplicationIdentity ForeignAssemblyServiceContractAttribute()
         => new(new FrameworkTypeIdentity("Foreign.Assembly", "1.0.0.0", CoreWcfServiceContractAttribute), []);
 
-    public static FrameworkAttributeApplicationIdentity GeneratedCodeAttribute(ImmutableArray<EvidenceRef> evidence = default)
+    public static FrameworkAttributeApplicationIdentity GeneratedCodeAttribute(
+        ImmutableArray<EvidenceRef> evidence = default,
+        string markerAssemblyVersion = CoreLibAssemblyVersion)
         => new(
-            new FrameworkTypeIdentity(CoreLibAssembly, CoreLibAssemblyVersion, GeneratedCodeAttributeMetadataName),
+            new FrameworkTypeIdentity(CoreLibAssembly, markerAssemblyVersion, GeneratedCodeAttributeMetadataName),
             [],
             evidence.IsDefault ? [SourceEvidence(GeneratedCodeAttributeMetadataName)] : evidence);
 

@@ -595,6 +595,359 @@ public sealed class CoreWcfServiceModelTests
         Assert.NotEqual(addFact.OperationKey, subtractFact.OperationKey);
     }
 
+    // ---- Issue #41: measured net9.0 classic-WCF compatibility tuples, threaded atomically ----
+
+    [Theory]
+    [InlineData(CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800)]
+    [InlineData(CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V810)]
+    public async Task MeasuredNet9ClassicTupleAdmitsOneCapabilityFact(string serviceModelVersion)
+    {
+        var index = Index(
+            "Add",
+            typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false)],
+            methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false)]);
+        var context = new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index);
+        var shape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "Add",
+            members: [CoreWcfTestIndexFactory.InterfaceMember(
+                "Add",
+                typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false, classicAssemblyVersion: serviceModelVersion)],
+                methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false, classicAssemblyVersion: serviceModelVersion)])]);
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("Add", shape), context, CancellationToken.None);
+
+        Assert.True(result.Recognized);
+        var fact = Assert.Single(result.Facts.OfType<ServiceOperationCapabilityFact>());
+        Assert.Equal(CertaintyLevel.Exact, fact.Certainty);
+    }
+
+    [Fact]
+    public async Task ClassicServiceContractAndOperationContractOnDifferentSupportedTuplesNeverAdmit()
+    {
+        // Mixed-tuple: an 8.0.0.0 ServiceContract paired with an 8.1.0.0 OperationContract. The two
+        // attributes resolve to different atomic tuples, so the pair is never admitted (fails closed,
+        // no diagnostic) exactly like the existing mixed-family case.
+        var index = Index(
+            "Add",
+            typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false)],
+            methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false)]);
+        var context = new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index);
+        var shape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "Add",
+            members: [CoreWcfTestIndexFactory.InterfaceMember(
+                "Add",
+                typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false, classicAssemblyVersion: CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800)],
+                methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false, classicAssemblyVersion: CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V810)])]);
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("Add", shape), context, CancellationToken.None);
+
+        Assert.False(result.Recognized);
+        Assert.Empty(result.Facts);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public async Task UnsupportedSystemServiceModelVersionNeverAdmitsAndIsSilent()
+    {
+        var index = Index(
+            "Add",
+            typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false)],
+            methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false)]);
+        var context = new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index);
+        var shape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "Add",
+            members: [CoreWcfTestIndexFactory.InterfaceMember(
+                "Add",
+                typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false, classicAssemblyVersion: "8.2.0.0")],
+                methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false, classicAssemblyVersion: "8.2.0.0")])]);
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("Add", shape), context, CancellationToken.None);
+
+        Assert.False(result.Recognized);
+        Assert.Empty(result.Facts);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public async Task ClassicFaultContractOnADifferentTupleThanTheContractNeverAdmits()
+    {
+        // Frozen atomic contract: an 8.0.0.0 ServiceContract + 8.0.0.0 OperationContract member that
+        // also carries an 8.1.0.0 FaultContract (a different supported tuple) fails the member closed —
+        // no capability fact, no fault fact, no diagnostic.
+        var faultType = new FrameworkTypeIdentity("CoreWcfServices", "1.0.0", "CoreWcfServices.NegativeSquareRootFault");
+        const string v800 = CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800;
+        const string v810 = CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V810;
+        var index = Index(
+            "SquareRoot",
+            typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false)],
+            methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false)]);
+        var context = new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index);
+        var shape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "SquareRoot",
+            members: [CoreWcfTestIndexFactory.InterfaceMember(
+                "SquareRoot",
+                typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false, classicAssemblyVersion: v800)],
+                methodAttributes:
+                [
+                    CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false, classicAssemblyVersion: v800),
+                    CoreWcfTestIndexFactory.FaultContractAttribute(faultType, coreWcf: false, classicAssemblyVersion: v810),
+                ])]);
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("SquareRoot", shape), context, CancellationToken.None);
+
+        Assert.False(result.Recognized);
+        Assert.Empty(result.Facts);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public async Task ClassicFaultContractAtAnUnsupportedVersionNeverAdmits()
+    {
+        // A recognized System.ServiceModel.FaultContractAttribute at an unsupported assembly version
+        // (8.2.0.0) is still recognized, so it fails the member closed rather than being silently
+        // dropped.
+        var faultType = new FrameworkTypeIdentity("CoreWcfServices", "1.0.0", "CoreWcfServices.NegativeSquareRootFault");
+        const string v800 = CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800;
+        var index = Index(
+            "SquareRoot",
+            typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false)],
+            methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false)]);
+        var context = new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index);
+        var shape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "SquareRoot",
+            members: [CoreWcfTestIndexFactory.InterfaceMember(
+                "SquareRoot",
+                typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false, classicAssemblyVersion: v800)],
+                methodAttributes:
+                [
+                    CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false, classicAssemblyVersion: v800),
+                    CoreWcfTestIndexFactory.FaultContractAttribute(faultType, coreWcf: false, classicAssemblyVersion: "8.2.0.0"),
+                ])]);
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("SquareRoot", shape), context, CancellationToken.None);
+
+        Assert.False(result.Recognized);
+        Assert.Empty(result.Facts);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public async Task ClassicFaultContractOnTheSameTupleAsTheContractStillAdmitsCapabilityAndFault()
+    {
+        // Positive control for the R1 guard: ServiceContract + OperationContract + FaultContract all on
+        // the 8.0.0.0 net9 tuple admits capability and the fault fact exactly as before.
+        var faultType = new FrameworkTypeIdentity("CoreWcfServices", "1.0.0", "CoreWcfServices.NegativeSquareRootFault");
+        const string v800 = CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800;
+        var index = Index(
+            "SquareRoot",
+            typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false)],
+            methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false)]);
+        var context = new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index);
+        var shape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "SquareRoot",
+            members: [CoreWcfTestIndexFactory.InterfaceMember(
+                "SquareRoot",
+                typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false, classicAssemblyVersion: v800)],
+                methodAttributes:
+                [
+                    CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false, classicAssemblyVersion: v800),
+                    CoreWcfTestIndexFactory.FaultContractAttribute(faultType, coreWcf: false, classicAssemblyVersion: v800),
+                ])]);
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("SquareRoot", shape), context, CancellationToken.None);
+
+        Assert.True(result.Recognized);
+        Assert.Single(result.Facts.OfType<ServiceOperationCapabilityFact>());
+        var faultFact = Assert.Single(result.Facts.OfType<ServiceFaultContractFact>());
+        Assert.Equal("CoreWcfServices.NegativeSquareRootFault", faultFact.FaultType);
+    }
+
+    [Fact]
+    public async Task ForeignAssemblyWithClassicMetadataNameAtSupportedVersionNeverAdmits()
+    {
+        var index = Index(
+            "Add",
+            typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false)],
+            methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false)]);
+        var context = new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index);
+        var foreignContract = new FrameworkAttributeApplicationIdentity(
+            new FrameworkTypeIdentity("Foreign.Assembly", CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800, CoreWcfTestIndexFactory.SystemServiceModelServiceContractAttribute),
+            [], [CoreWcfTestIndexFactory.SourceEvidence("foreign-classic-contract")]);
+        var foreignOperation = new FrameworkAttributeApplicationIdentity(
+            new FrameworkTypeIdentity("Foreign.Assembly", CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800, CoreWcfTestIndexFactory.SystemServiceModelOperationContractAttribute),
+            [], [CoreWcfTestIndexFactory.SourceEvidence("foreign-classic-operation")]);
+        var shape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "Add",
+            members: [CoreWcfTestIndexFactory.InterfaceMember("Add", typeAttributes: [foreignContract], methodAttributes: [foreignOperation])]);
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("Add", shape), context, CancellationToken.None);
+
+        Assert.False(result.Recognized);
+        Assert.Empty(result.Facts);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public async Task Net9TupleGeneratedClientMarkerPromotesToGeneratedClientBoundary()
+    {
+        var result = await AnalyzeNet9ClientAsync(
+            CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800,
+            clientBaseAssemblyVersion: CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800,
+            markerAssemblyVersion: CoreWcfTestIndexFactory.GeneratedMarkerAssemblyVersionNet9);
+
+        Assert.True(result.Recognized);
+        var clientFact = Assert.Single(result.Facts.OfType<ServiceClientBoundaryFact>());
+        Assert.Equal(ServiceClientKind.GeneratedClient, clientFact.ClientKind);
+    }
+
+    [Fact]
+    public async Task CrossTupleGeneratedMarkerNeverPromotesToGeneratedClient()
+    {
+        // An 8.0.0.0 contract with a 10.0.0.0 (net10 tuple) marker: the marker belongs to a different
+        // atomic tuple, so it must not match. The boundary still admits, classified SourceClient.
+        var result = await AnalyzeNet9ClientAsync(
+            CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800,
+            clientBaseAssemblyVersion: CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800,
+            markerAssemblyVersion: CoreWcfTestIndexFactory.CoreLibAssemblyVersion);
+
+        Assert.True(result.Recognized);
+        var clientFact = Assert.Single(result.Facts.OfType<ServiceClientBoundaryFact>());
+        Assert.Equal(ServiceClientKind.SourceClient, clientFact.ClientKind);
+    }
+
+    [Fact]
+    public async Task ClientBaseOnADifferentTupleThanTheContractNeverEmitsABoundary()
+    {
+        // Contract attributes resolve to the 8.0.0.0 tuple but ClientBase<T> is the 8.1.2.0 identity:
+        // the ClientBase version is threaded through the same resolved tuple, so this fails closed.
+        var result = await AnalyzeNet9ClientAsync(
+            CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800,
+            clientBaseAssemblyVersion: CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersion,
+            markerAssemblyVersion: CoreWcfTestIndexFactory.GeneratedMarkerAssemblyVersionNet9);
+
+        Assert.False(result.Recognized);
+        Assert.Empty(result.Facts.OfType<ServiceClientBoundaryFact>());
+    }
+
+    [Fact]
+    public async Task Net9TupleClientBaseWhoseContractDoesNotResolveFailsClosedWithConservativeDiagnosticAndNoFacts()
+    {
+        // I41-F1: the coarse HasClientBase gate now accepts 8.0.0.0, so a type deriving
+        // System.ServiceModel.ClientBase<T> at that version whose contract interface carries no admitted
+        // [ServiceContract] enters the client branch of AnalyzeSymbol, finds clientMembers.Length == 0,
+        // and fails closed with the conservative EligibilityShapeUnavailable (SEQWCF001) diagnostic --
+        // the same conservative outcome the pre-existing 8.1.2.0 ClientBase shape already produced. No
+        // fact is fabricated.
+        const string v800 = CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800;
+        var unresolvableMember = CoreWcfTestIndexFactory.InterfaceMember(
+            "Add",
+            typeAttributes: ImmutableArray<FrameworkAttributeApplicationIdentity>.Empty,
+            methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false, classicAssemblyVersion: v800)]);
+        var index = Index(
+            "Add",
+            typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false)],
+            methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false)]);
+        var context = new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index);
+        var declaringType = CoreWcfTestIndexFactory.EligibleImplementationTypeShape(
+            metadataName: "CoreWcfServices.UnresolvableNet9Client",
+            clientBaseDerived: true,
+            clientBaseAssemblyVersion: v800);
+        var shape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "Add",
+            members: [unresolvableMember],
+            declaringType: declaringType);
+
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("Add", shape), context, CancellationToken.None);
+
+        Assert.False(result.Recognized);
+        Assert.Empty(result.Facts.OfType<ServiceClientBoundaryFact>());
+        Assert.Empty(result.Facts.OfType<ServiceClientInvocationFact>());
+        Assert.Empty(result.Facts);
+        var diagnostic = Assert.Single(result.Diagnostics);
+        Assert.Equal("SEQWCF001", diagnostic.Code);
+
+        // AnalyzeClientInvocation stays fully silent for the same shape: Unrecognized, no fact, no
+        // diagnostic (the invocation path never emits the eligibility diagnostic on this branch).
+        var invocationMethodShape = new FrameworkMethodShape(
+            CoreWcfTestIndexFactory.ImplementationMethodSymbol("Add"),
+            CoreWcfTestIndexFactory.ImplementationSymbol,
+            IsOrdinary: true,
+            IsPublic: true,
+            IsStatic: false,
+            IsAbstract: false,
+            GenericArity: 0,
+            DeclaringType: declaringType,
+            ImplementedInterfaceMembers: [unresolvableMember]);
+        var invocationShape = new FrameworkClientInvocationShapeDescriptor(
+            invocationMethodShape,
+            CoreWcfTestIndexFactory.ImplementationSymbol,
+            true,
+            ClientInvocationResultClaimKind.ResultAssigned,
+            false,
+            "sum",
+            "System.Double");
+        var invocationOperation = new OperationDescriptor(
+            new OperationId("operation:v1:client-invocation:add"),
+            new MethodId("method:v1:CoreWcfServices.Caller.Call"),
+            "Invocation",
+            null,
+            0,
+            0,
+            [CoreWcfTestIndexFactory.SourceEvidence("client-invocation")],
+            CertaintyLevel.Exact,
+            ClientInvocationShape: invocationShape);
+        var invocationResult = await new CoreWcfServiceModel().AnalyzeOperationAsync(
+            invocationOperation, context, CancellationToken.None);
+
+        Assert.False(invocationResult.Recognized);
+        Assert.Empty(invocationResult.Facts);
+        Assert.Empty(invocationResult.Diagnostics);
+    }
+
+    [Fact]
+    public async Task Net9TupleClientBoundaryNeverStrengthensADegradedTriggeringCertainty()
+    {
+        // I41-F2: a net9 (8.0.0.0, 9.0.0.0) generated client whose triggering symbol certainty is
+        // Conservative must carry that weaker certainty onto the ServiceClientBoundaryFact, never Exact.
+        var result = await AnalyzeNet9ClientAsync(
+            CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800,
+            clientBaseAssemblyVersion: CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800,
+            markerAssemblyVersion: CoreWcfTestIndexFactory.GeneratedMarkerAssemblyVersionNet9,
+            certainty: CertaintyLevel.Conservative);
+
+        Assert.True(result.Recognized);
+        var clientFact = Assert.Single(result.Facts.OfType<ServiceClientBoundaryFact>());
+        Assert.NotEqual(CertaintyLevel.Exact, clientFact.Certainty);
+        Assert.Equal(CertaintyLevel.Conservative, clientFact.Certainty);
+    }
+
+    private static async Task<ModelResult> AnalyzeNet9ClientAsync(
+        string serviceModelVersion,
+        string clientBaseAssemblyVersion,
+        string markerAssemblyVersion,
+        CertaintyLevel certainty = CertaintyLevel.Exact)
+    {
+        var index = Index(
+            "Add",
+            typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false)],
+            methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false)]);
+        var context = new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index);
+        var shape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "Add",
+            members: [CoreWcfTestIndexFactory.InterfaceMember(
+                "Add",
+                typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false, classicAssemblyVersion: serviceModelVersion)],
+                methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false, classicAssemblyVersion: serviceModelVersion)])],
+            declaringType: CoreWcfTestIndexFactory.EligibleImplementationTypeShape(
+                metadataName: "CoreWcfServices.GeneratedNet9Client",
+                clientBaseDerived: true,
+                clientBaseAssemblyVersion: clientBaseAssemblyVersion),
+            declaringTypeAttributes: [CoreWcfTestIndexFactory.GeneratedCodeAttribute(markerAssemblyVersion: markerAssemblyVersion)]);
+        return await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("Add", shape, certainty: certainty), context, CancellationToken.None);
+    }
+
     private static ProgramIndexSnapshot Index(
         string operationName,
         ImmutableArray<FrameworkAttributeApplicationIdentity> typeAttributes,
