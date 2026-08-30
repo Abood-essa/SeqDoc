@@ -58,3 +58,30 @@ public sealed class CalculatorCaller
 
     public double LastResult => _lastResult;
 }
+
+// Same-shaped real-compilable negative for issue #41 R2: a contract interface with NO [ServiceContract]
+// never resolves to an admitted tuple, so nothing on UnattributedClient may admit — no client boundary,
+// no client invocation, no capability, and no ClientOperationInvocation scenario node — even though the
+// ClientBase<TContract> base type is the real 8.0.0.0 identity (HasClientBase is true).
+public interface IUnattributedContract
+{
+    [System.ServiceModel.OperationContract(Action = "urn:IUnattributedContract/Describe", ReplyAction = "*")]
+    int Describe(int value);
+}
+
+public partial class UnattributedClient : System.ServiceModel.ClientBase<IUnattributedContract>, IUnattributedContract
+{
+    public UnattributedClient(Binding binding, EndpointAddress remoteAddress)
+        : base(binding, remoteAddress)
+    {
+    }
+
+    public int Describe(int value)
+        => Channel.Describe(value);
+}
+
+public sealed class UnattributedCaller
+{
+    public int Call(UnattributedClient client)
+        => client.Describe(7);
+}

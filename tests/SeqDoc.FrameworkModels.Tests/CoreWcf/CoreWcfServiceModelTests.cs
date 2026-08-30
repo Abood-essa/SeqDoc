@@ -669,6 +669,100 @@ public sealed class CoreWcfServiceModelTests
     }
 
     [Fact]
+    public async Task ClassicFaultContractOnADifferentTupleThanTheContractNeverAdmits()
+    {
+        // Frozen atomic contract: an 8.0.0.0 ServiceContract + 8.0.0.0 OperationContract member that
+        // also carries an 8.1.0.0 FaultContract (a different supported tuple) fails the member closed —
+        // no capability fact, no fault fact, no diagnostic.
+        var faultType = new FrameworkTypeIdentity("CoreWcfServices", "1.0.0", "CoreWcfServices.NegativeSquareRootFault");
+        const string v800 = CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800;
+        const string v810 = CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V810;
+        var index = Index(
+            "SquareRoot",
+            typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false)],
+            methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false)]);
+        var context = new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index);
+        var shape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "SquareRoot",
+            members: [CoreWcfTestIndexFactory.InterfaceMember(
+                "SquareRoot",
+                typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false, classicAssemblyVersion: v800)],
+                methodAttributes:
+                [
+                    CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false, classicAssemblyVersion: v800),
+                    CoreWcfTestIndexFactory.FaultContractAttribute(faultType, coreWcf: false, classicAssemblyVersion: v810),
+                ])]);
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("SquareRoot", shape), context, CancellationToken.None);
+
+        Assert.False(result.Recognized);
+        Assert.Empty(result.Facts);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public async Task ClassicFaultContractAtAnUnsupportedVersionNeverAdmits()
+    {
+        // A recognized System.ServiceModel.FaultContractAttribute at an unsupported assembly version
+        // (8.2.0.0) is still recognized, so it fails the member closed rather than being silently
+        // dropped.
+        var faultType = new FrameworkTypeIdentity("CoreWcfServices", "1.0.0", "CoreWcfServices.NegativeSquareRootFault");
+        const string v800 = CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800;
+        var index = Index(
+            "SquareRoot",
+            typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false)],
+            methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false)]);
+        var context = new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index);
+        var shape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "SquareRoot",
+            members: [CoreWcfTestIndexFactory.InterfaceMember(
+                "SquareRoot",
+                typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false, classicAssemblyVersion: v800)],
+                methodAttributes:
+                [
+                    CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false, classicAssemblyVersion: v800),
+                    CoreWcfTestIndexFactory.FaultContractAttribute(faultType, coreWcf: false, classicAssemblyVersion: "8.2.0.0"),
+                ])]);
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("SquareRoot", shape), context, CancellationToken.None);
+
+        Assert.False(result.Recognized);
+        Assert.Empty(result.Facts);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public async Task ClassicFaultContractOnTheSameTupleAsTheContractStillAdmitsCapabilityAndFault()
+    {
+        // Positive control for the R1 guard: ServiceContract + OperationContract + FaultContract all on
+        // the 8.0.0.0 net9 tuple admits capability and the fault fact exactly as before.
+        var faultType = new FrameworkTypeIdentity("CoreWcfServices", "1.0.0", "CoreWcfServices.NegativeSquareRootFault");
+        const string v800 = CoreWcfTestIndexFactory.SystemServiceModelAssemblyVersionNet9V800;
+        var index = Index(
+            "SquareRoot",
+            typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false)],
+            methodAttributes: [CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false)]);
+        var context = new FrameworkAnalysisContext(CoreWcfTestIndexFactory.Profile, index);
+        var shape = CoreWcfTestIndexFactory.EligibleMethodShape(
+            "SquareRoot",
+            members: [CoreWcfTestIndexFactory.InterfaceMember(
+                "SquareRoot",
+                typeAttributes: [CoreWcfTestIndexFactory.ServiceContractAttribute(coreWcf: false, classicAssemblyVersion: v800)],
+                methodAttributes:
+                [
+                    CoreWcfTestIndexFactory.OperationContractAttribute(coreWcf: false, classicAssemblyVersion: v800),
+                    CoreWcfTestIndexFactory.FaultContractAttribute(faultType, coreWcf: false, classicAssemblyVersion: v800),
+                ])]);
+        var result = await new CoreWcfServiceModel().AnalyzeSymbolAsync(
+            CoreWcfTestIndexFactory.MethodSymbolDescriptor("SquareRoot", shape), context, CancellationToken.None);
+
+        Assert.True(result.Recognized);
+        Assert.Single(result.Facts.OfType<ServiceOperationCapabilityFact>());
+        var faultFact = Assert.Single(result.Facts.OfType<ServiceFaultContractFact>());
+        Assert.Equal("CoreWcfServices.NegativeSquareRootFault", faultFact.FaultType);
+    }
+
+    [Fact]
     public async Task ForeignAssemblyWithClassicMetadataNameAtSupportedVersionNeverAdmits()
     {
         var index = Index(

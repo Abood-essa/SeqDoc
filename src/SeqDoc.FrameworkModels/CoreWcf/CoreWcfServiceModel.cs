@@ -20,7 +20,12 @@ namespace SeqDoc.FrameworkModels.CoreWcf;
 /// <c>CoreWCF.ServiceContractAttribute</c>/<c>CoreWCF.OperationContractAttribute</c>/<c>CoreWCF.FaultContractAttribute</c>
 /// (assembly <c>CoreWCF.Primitives</c> 1.9.0.0) and classic WCF's
 /// <c>System.ServiceModel.ServiceContractAttribute</c>/<c>System.ServiceModel.OperationContractAttribute</c>/<c>System.ServiceModel.FaultContractAttribute</c>
-/// (assembly <c>System.ServiceModel.Primitives</c> 8.1.2.0) are both admitted, matched by exact original
+/// are both admitted. Classic WCF is admitted through the atomic compatibility table, which pairs each
+/// supported <c>System.ServiceModel.Primitives</c> assembly version — <c>8.0.0.0</c>, <c>8.1.0.0</c>,
+/// and <c>8.1.2.0</c> — with its exact <c>System.Runtime</c> generated-marker facade version
+/// (<c>9.0.0.0</c>, <c>9.0.0.0</c>, and <c>10.0.0.0</c> respectively); every ServiceContract,
+/// OperationContract, FaultContract, and <c>ClientBase</c> identity on one member must resolve to the
+/// same tuple. Both families are matched by exact original
 /// attribute-class identity (never a display-name string) via
 /// <see cref="FrameworkInterfaceMemberIdentity.InterfaceTypeAttributes"/>/<c>InterfaceMethodAttributes</c>;
 /// a ServiceContract/OperationContract/FaultContract pair is admitted only when every attribute in the
@@ -583,8 +588,44 @@ public sealed class CoreWcfServiceModel : IFrameworkBehaviorModel
             return null;
         }
 
-        return contract.First();
+        var admitted = contract.First();
+
+        // Frozen atomic contract: every present ServiceContract, OperationContract, and FaultContract on
+        // the member must agree with one resolved tuple/family. ResolveContracts only returns *matched*
+        // tuples, so a recognized-but-unsupported-version FaultContract would otherwise be invisible
+        // here and silently dropped downstream. Inspect the member's method attributes for any
+        // recognized WCF FaultContract attribute (correct metadata name in the family-appropriate WCF
+        // assembly, at any version) and require it to match the resolved contract exactly; a mismatched
+        // family, tuple, or unsupported version fails the member closed.
+        if (!member.InterfaceMethodAttributes.IsDefault)
+        {
+            foreach (var attribute in member.InterfaceMethodAttributes)
+            {
+                if (IsRecognizedWcfFaultContractAttribute(attribute.AttributeType)
+                    && !MatchesAdmittedFaultContract(attribute.AttributeType, admitted))
+                {
+                    return null;
+                }
+            }
+        }
+
+        return admitted;
     }
+
+    /// <summary>
+    /// True when <paramref name="attributeType"/> is a WCF FaultContract attribute by exact metadata
+    /// name in the family-appropriate WCF assembly simple name, at <em>any</em> assembly version:
+    /// metadata name <c>System.ServiceModel.FaultContractAttribute</c> in
+    /// <c>System.ServiceModel.Primitives</c>, or <c>CoreWCF.FaultContractAttribute</c> in
+    /// <c>CoreWCF.Primitives</c>. Version-agnostic on purpose so a recognized-but-unsupported-version
+    /// fault can still fail a member closed; the exact-version decision stays with
+    /// <see cref="MatchesAdmittedFaultContract"/>.
+    /// </summary>
+    private static bool IsRecognizedWcfFaultContractAttribute(FrameworkTypeIdentity attributeType)
+        => (attributeType.AssemblyIdentity == Identity.SystemServiceModelAssembly
+                && attributeType.MetadataName == Identity.SystemServiceModelFaultContractAttribute)
+            || (attributeType.AssemblyIdentity == Identity.CoreWcfAssembly
+                && attributeType.MetadataName == Identity.CoreWcfFaultContractAttribute);
 
     private static HashSet<AdmittedContract> ResolveContracts(
         ImmutableArray<FrameworkAttributeApplicationIdentity> attributes,

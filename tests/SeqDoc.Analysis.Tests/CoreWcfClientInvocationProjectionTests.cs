@@ -412,6 +412,62 @@ public sealed class CoreWcfClientInvocationProjectionTests
         Assert.DoesNotContain("response", phrase.Text, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task Net9UnattributedContractClientCallSiteNeverAdmitsAnythingThroughTheRealProducer()
+    {
+        // Issue #41 R2: same-shaped real-compilable negative on the changed boundary. UnattributedClient
+        // derives the real 8.0.0.0 ClientBase<IUnattributedContract>, but IUnattributedContract carries
+        // no [ServiceContract] so TryGetAdmittedContract resolves nothing — no invocation, no boundary,
+        // no capability, and no ClientOperationInvocation scenario node or wording phrase.
+        const string ns = "ClassicWcfNet9V800";
+        var (programIndex, behavior, framework, profile) = await AnalyzeFullPipelineAsync(
+            "tests/fixtures/PassC/ClassicWcfNet9Compatibility/ClassicWcfNet9V800/ClassicWcfNet9V800.csproj", "net9.0");
+        var caller = FindMethod(programIndex, $"{ns}.UnattributedCaller", "Call");
+
+        Assert.DoesNotContain(
+            framework.Facts.OfType<ServiceClientInvocationFact>(),
+            fact => fact.CallerMethod == caller.Id);
+        Assert.DoesNotContain(
+            framework.Facts.OfType<ServiceClientBoundaryFact>(),
+            fact => fact.ClientType == $"{ns}.UnattributedClient");
+        Assert.DoesNotContain(
+            framework.Facts.OfType<ServiceOperationCapabilityFact>(),
+            fact => fact.ImplementationType == $"{ns}.UnattributedClient");
+
+        // Positive control is unperturbed: CalculatorCaller.CallAdd still admits exactly one invocation.
+        var positiveCaller = FindMethod(programIndex, $"{ns}.CalculatorCaller", "CallAdd");
+        Assert.Single(
+            framework.Facts.OfType<ServiceClientInvocationFact>(),
+            fact => fact.CallerMethod == positiveCaller.Id);
+
+        var entryFact = new HttpEntryPointFact
+        {
+            Id = new BehaviorFactId("behavior-fact:v1:test:net9-unattributed"),
+            Evidence = caller.Evidence,
+            Certainty = CertaintyLevel.Exact,
+            EntryPointId = new EntryPointId("entry-point:v1:test:net9-unattributed"),
+            RootMethod = caller.Id,
+            HttpMethod = HttpMethodKind.Get,
+            CanonicalRoute = "test/net9-unattributed",
+            OperationKey = "Test.Net9Unattributed",
+        };
+        var frameworkWithEntry = framework with { Facts = framework.Facts.Add(entryFact) };
+
+        var request = new ScenarioAnalysisRequest(
+            profile, programIndex, behavior, frameworkWithEntry,
+            new SemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], "semantic-test"),
+            new DependencyInjectionFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], "di-test"),
+            new StructuralResultFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], "structural-test"),
+            new NonGetSemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], [], [], [], [], "non-get-test"));
+
+        var graphSet = ScenarioGraphBuilder.Build(request);
+        var graph = Assert.Single(graphSet.Graphs, item => item.RootMethod == caller.Id);
+        Assert.DoesNotContain(graph.Nodes, item => item.Kind == ScenarioNodeKind.ClientOperationInvocation);
+
+        var plan = DocumentationPlanner.Plan(graph);
+        Assert.DoesNotContain(plan.Wording.Phrases, item => item.Key == "client-operation-invocation");
+    }
+
     private static void AssertClaim(
         ProgramIndexSnapshot programIndex,
         ServiceClientInvocationFact[] invocations,
