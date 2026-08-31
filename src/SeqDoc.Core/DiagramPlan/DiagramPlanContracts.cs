@@ -332,11 +332,11 @@ public sealed record DiagramAltArm
 /// the kind (<see cref="DiagramFragmentKind"/>) only from Scenario Graph topology: both-material
 /// decisions become <see cref="DiagramFragmentKind.Alt"/>, one-sided material decisions become
 /// <see cref="DiagramFragmentKind.Opt"/>, and a terminating arm becomes a
-/// <see cref="DiagramFragmentKind.Break"/>. A <see cref="DiagramFragmentKind.Loop"/> is admitted
-/// only from an already exact preplanned plan; the planner never infers loops from raw
-/// <c>LoopNode</c> facts. The key is a stable semantic key (decision condition), never a label or
-/// traversal order, and every fragment carries non-empty evidence and explicit certainty that never
-/// exceeds its strongest evidence.
+/// <see cref="DiagramFragmentKind.Break"/>. A <see cref="DiagramFragmentKind.Loop"/> owns direct
+/// message references and nested <see cref="DiagramFragmentKind.Loop"/> fragments only; it owns no
+/// arms or other nested fragment kinds. The key is a stable semantic key (decision condition), never
+/// a label or traversal order, and every fragment carries non-empty evidence and explicit certainty
+/// that never exceeds its strongest evidence.
 /// </summary>
 public sealed record DiagramFragment
 {
@@ -427,8 +427,9 @@ public sealed record DiagramFragment
     /// Closed per-kind fragment shapes (F2/F4). Alt owns at least two explicit arms with exactly one
     /// leading non-else arm followed by explicit else arms, and no direct message refs or nested
     /// fragments. Opt never materializes arms and requires at least one message ref or nested
-    /// fragment. Break is an empty marker. Loop admits only message refs, never arms or nested
-    /// fragments. Populated fields a kind does not admit are rejected instead of silently ignored.
+    /// fragment. Break is an empty marker. Loop owns direct message refs and nested Loop fragments,
+    /// but no arms or other nested fragment kinds, and requires at least one such content item.
+    /// Populated fields a kind does not admit are rejected instead of silently ignored.
     /// </summary>
     private static void ValidateFragmentShape(
         DiagramFragmentKind kind,
@@ -494,10 +495,12 @@ public sealed record DiagramFragment
 
                 break;
             case DiagramFragmentKind.Loop:
-                if (!arms.IsDefaultOrEmpty || !fragments.IsDefaultOrEmpty)
+                if (!arms.IsDefaultOrEmpty
+                    || fragments.Any(fragment => fragment.Kind != DiagramFragmentKind.Loop)
+                    || (messageRefs.IsDefaultOrEmpty && fragments.IsDefaultOrEmpty))
                 {
                     throw new ArgumentException(
-                        "A Loop fragment admits only message refs, never arms or nested fragments.",
+                        "A Loop fragment requires message refs or nested Loop fragments, never arms or other nested fragments.",
                         nameof(kind));
                 }
 

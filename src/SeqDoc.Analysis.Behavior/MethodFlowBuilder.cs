@@ -24,6 +24,9 @@ public static class MethodFlowBuilder
         var operationsById = body.Operations.ToDictionary(operation => operation.Id);
         var blocksByOrdinal = body.Blocks.ToDictionary(block => block.Ordinal);
         var exitBlock = body.Blocks.FirstOrDefault(block => block.Terminal == ExtractedBlockTerminalKind.Exit);
+        var preserveWorkerTerminalBlocks = HasSemaphoreCandidate(body)
+            || HasCancellationCandidate(body)
+            || HasNaturalLoopCatchShape(body);
 
         var entryId = StableIdentity.CreateFlowNodeId(new FlowNodeIdentityDescriptor(
             body.Method, "Entry", 0, 0, "entry"));
@@ -59,7 +62,8 @@ public static class MethodFlowBuilder
                     continue;
                 }
 
-                var node = CreateOperationNode(body.Method, operation, block.Ordinal, operationsById);
+                var node = CreateOperationNode(body.Method, operation, block.Ordinal, operationsById,
+                    preserveWorkerTerminalBlocks);
                 nodes.Add(node);
                 firstNodeId ??= node.Id;
                 if (lastNodeId is { } previous)
@@ -89,7 +93,7 @@ public static class MethodFlowBuilder
                 lastNodeId = decisionId;
             }
 
-            var terminalNode = CreateTerminalNode(body.Method, block, operationsById);
+            var terminalNode = CreateTerminalNode(body.Method, block, operationsById, preserveWorkerTerminalBlocks);
             if (terminalNode is not null)
             {
                 nodes.Add(terminalNode);
@@ -131,7 +135,8 @@ public static class MethodFlowBuilder
         var regions = ImmutableArray.CreateBuilder<FlowRegion>();
         foreach (var region in body.Regions.OrderBy(region => region.Ordinal))
         {
-            AddFlowRegion(body, region, blocksByOrdinal, blockHeads, blockTails, regions);
+            AddFlowRegion(body, region, blocksByOrdinal, blockHeads, blockTails, regions,
+                HasSemaphoreCandidate(body) || HasCancellationCandidate(body) || HasNaturalLoopCatchShape(body));
         }
 
         var loopRegions = DetectLoops(
@@ -154,7 +159,10 @@ public static class MethodFlowBuilder
                 -1));
         }
 
-        var outcomes = ReconcileTerminals(body, blocksByOrdinal, blockTails, exitId, edges, regions, diagnostics);
+        var catchContinuations = BuildCatchContinuations(body, nodes, diagnostics);
+        var outcomes = ReconcileTerminals(body, blocksByOrdinal, blockTails, exitId, edges, regions, diagnostics,
+            !catchContinuations.IsDefaultOrEmpty);
+        var ordinaryBranches = HasSemaphoreCandidate(body) ? body.OrdinaryBranches : default;
 
         var preliminary = new MethodFlowSnapshot(
             body.Method,
@@ -167,7 +175,9 @@ public static class MethodFlowBuilder
             [],
             null,
             diagnostics.ToImmutable(),
-            string.Empty);
+            string.Empty,
+            catchContinuations.IsDefaultOrEmpty ? default : catchContinuations,
+            ordinaryBranches);
         var (graph, dependences, summary) = LocalFlowAnalyzer.Analyze(body, preliminary);
         var snapshot = preliminary with
         {
@@ -180,7 +190,87 @@ public static class MethodFlowBuilder
             snapshot.Diagnostics);
     }
 
-    private static FlowNode CreateOperationNode(MethodId method, ExtractedOperation operation, int blockOrdinal, Dictionary<OperationId, ExtractedOperation> operationsById)
+    private static bool HasSemaphoreCandidate(ExtractedMethodBody body)
+        => body.Operations.Any(operation => operation.Invocation is { TargetIdentity: { } identity }
+            && identity.AssemblyIdentity == "System.Threading"
+            && identity.AssemblyVersion == "10.0.0.0"
+            && identity.ContainingMetadataType == "System.Threading.SemaphoreSlim"
+            && identity.GenericArity == 0
+            && identity.MethodMetadataName is "WaitAsync" or "Release"
+             && operation.Invocation.IsPlatformTarget
+             && operation.Invocation.TargetAssemblyFullIdentity == "System.Threading, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+             && operation.Invocation.ReceiverOriginalTypeIdentity == new FrameworkTypeIdentity("System.Threading", "10.0.0.0", "System.Threading.SemaphoreSlim")
+             && operation.Invocation.ReceiverOriginalTypeFullAssemblyIdentity == "System.Threading, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a");
+
+    private static bool HasNaturalLoopCatchShape(ExtractedMethodBody body)
+        => !body.OrdinaryBranches.IsDefaultOrEmpty && body.OrdinaryBranches.Any(branch =>
+            branch.DestinationBlockOrdinal >= 0
+            && branch.LeavingRegions.Any(regionId => body.Regions.Any(region =>
+                region.Id == regionId && region.Kind == ExtractedRegionKind.Catch)));
+
+    private static bool HasCancellationCandidate(ExtractedMethodBody body)
+        => body.Operations.Any(operation => operation.Invocation is { TargetIdentity: { } identity }
+            && identity.AssemblyIdentity == "System.Runtime"
+            && identity.AssemblyVersion == "10.0.0.0"
+            && identity.ContainingMetadataType == "System.Threading.CancellationToken"
+            && identity.GenericArity == 0
+            && identity.MethodMetadataName == "ThrowIfCancellationRequested"
+            && identity.Parameters.IsEmpty
+            && identity.ReturnType == "System.Void"
+             && operation.Invocation.IsPlatformTarget
+             && operation.Invocation.TargetAssemblyFullIdentity == "System.Runtime, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+             && operation.Invocation.ReceiverOriginalTypeIdentity == new FrameworkTypeIdentity("System.Runtime", "10.0.0.0", "System.Threading.CancellationToken")
+             && operation.Invocation.ReceiverOriginalTypeFullAssemblyIdentity == "System.Runtime, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+             && operation.Invocation.ReceiverParameterOrdinal is not null
+             && operation.Invocation.ReceiverIdentity == $"{body.Method.Value}:parameter:{operation.Invocation.ReceiverParameterOrdinal.Value}");
+
+    private static ImmutableArray<CatchContinuation> BuildCatchContinuations(
+        ExtractedMethodBody body, ImmutableArray<FlowNode>.Builder flowNodes,
+        ImmutableArray<AnalysisDiagnostic>.Builder diagnostics)
+    {
+        var result = new List<CatchContinuation>();
+        var ordinaryBranches = body.OrdinaryBranches.IsDefault ? [] : body.OrdinaryBranches;
+        foreach (var branch in ordinaryBranches.Where(item => item.DestinationBlockOrdinal >= 0))
+        {
+            var catches = branch.LeavingRegions.Select(id => body.Regions.FirstOrDefault(region => region.Id == id))
+                .Where(region => region?.Kind == ExtractedRegionKind.Catch).Cast<ExtractedExceptionRegion>().ToArray();
+            var loops = flowNodes.OfType<LoopNode>()
+                .Where(loop => loop.HeaderBlockOrdinal == branch.DestinationBlockOrdinal).ToArray();
+            if (catches.Length == 0 || loops.Length == 0) { continue; }
+            if (catches.Length != 1 || loops.Length != 1)
+            {
+                diagnostics.Add(CreateDiagnostic("BD2020", "A catch continuation mapping is ambiguous and was withheld.", body.Method.Value, branch.SourceBlockOrdinal));
+                continue;
+            }
+            var loopMembers = loops[0].BodyBlockOrdinals.Append(loops[0].HeaderBlockOrdinal).ToHashSet();
+            var candidates = catches
+                .SelectMany(catchRegion => body.Regions
+                    .Where(region => region.Kind == ExtractedRegionKind.Try && region.Parent == catchRegion.Parent
+                        && Enumerable.Range(region.StartBlockOrdinal, region.EndBlockOrdinal - region.StartBlockOrdinal + 1)
+                            .All(loopMembers.Contains))
+                    .Select(tryRegion => (Catch: catchRegion, Try: tryRegion, Loop: loops[0])))
+                .ToArray();
+            if (candidates.Length == 1)
+            {
+                var candidate = candidates[0];
+                var evidence = branch.Evidence.Concat(candidate.Catch.Evidence).Concat(candidate.Try.Evidence).Concat(candidate.Loop.Evidence)
+                    .DistinctBy(item => item.Id).OrderBy(item => item.Id.Value, StringComparer.Ordinal).ToImmutableArray();
+                result.Add(new CatchContinuation(candidate.Catch.Id, candidate.Try.Id, candidate.Loop.Region,
+                    branch.SourceBlockOrdinal, branch.DestinationBlockOrdinal, evidence,
+                    new[] { branch.Certainty, candidate.Catch.Certainty, candidate.Try.Certainty, candidate.Loop.Certainty }.Max()));
+            }
+            else if (candidates.Length > 1)
+            {
+                diagnostics.Add(CreateDiagnostic("BD2020", "A catch continuation mapping is ambiguous and was withheld.", body.Method.Value, branch.SourceBlockOrdinal));
+            }
+        }
+        return result.Count == 0
+            ? default
+            : result.OrderBy(item => item.LoopRegion.Value, StringComparer.Ordinal)
+                .ThenBy(item => item.SourceBlockOrdinal).ToImmutableArray();
+    }
+
+    private static FlowNode CreateOperationNode(MethodId method, ExtractedOperation operation, int blockOrdinal, Dictionary<OperationId, ExtractedOperation> operationsById, bool preserveWorkerTerminalBlocks)
     {
         var id = StableIdentity.CreateFlowNodeId(new FlowNodeIdentityDescriptor(
             method,
@@ -211,7 +301,13 @@ public static class MethodFlowBuilder
                    operation.EvaluationOrdinal,
                    operation.Invocation?.TargetAssemblyName,
                    operation.Invocation?.IsPlatformTarget ?? false,
-                   ConstantArguments: ProjectConstantArguments(operation, operationsById)),
+                    ConstantArguments: ProjectConstantArguments(operation, operationsById),
+                    TargetIdentity: operation.Invocation?.TargetIdentity,
+                    ReceiverParameterOrdinal: operation.Invocation?.ReceiverParameterOrdinal,
+                    ReceiverIdentity: operation.Invocation?.ReceiverIdentity,
+                     TargetAssemblyFullIdentity: operation.Invocation?.TargetAssemblyFullIdentity,
+                     ReceiverOriginalTypeIdentity: operation.Invocation?.ReceiverOriginalTypeIdentity,
+                     ReceiverOriginalTypeFullAssemblyIdentity: operation.Invocation?.ReceiverOriginalTypeFullAssemblyIdentity),
             ExtractedOperationKind.ObjectCreation => new InvocationFlowNode(
                 id,
                 method,
@@ -236,7 +332,10 @@ public static class MethodFlowBuilder
                 method,
                 operation.Return?.Value,
                 operation.Evidence,
-                operation.Certainty),
+                operation.Certainty)
+            {
+                BlockOrdinal = preserveWorkerTerminalBlocks ? blockOrdinal : null,
+            },
             ExtractedOperationKind.Throw => new ThrowFlowNode(
                 id,
                 method,
@@ -350,7 +449,8 @@ public static class MethodFlowBuilder
     private static FlowNode? CreateTerminalNode(
         MethodId method,
         ExtractedBasicBlock block,
-        Dictionary<OperationId, ExtractedOperation> operationsById)
+        Dictionary<OperationId, ExtractedOperation> operationsById,
+        bool preserveWorkerTerminalBlocks)
     {
         return block.Terminal switch
         {
@@ -360,7 +460,10 @@ public static class MethodFlowBuilder
                 method,
                 FindTerminalValue(block, operationsById),
                 block.Evidence,
-                CertaintyLevel.Exact),
+                CertaintyLevel.Exact)
+            {
+                BlockOrdinal = preserveWorkerTerminalBlocks ? block.Ordinal : null,
+            },
             ExtractedBlockTerminalKind.Throw => new ThrowFlowNode(
                 StableIdentity.CreateFlowNodeId(new FlowNodeIdentityDescriptor(
                     method, "Throw", block.Ordinal, 0, "terminal")),
@@ -515,9 +618,10 @@ public static class MethodFlowBuilder
         Dictionary<int, ExtractedBasicBlock> blocksByOrdinal,
         Dictionary<int, FlowNodeId> blockHeads,
         Dictionary<int, FlowNodeId> blockTails,
-        ImmutableArray<FlowRegion>.Builder regions)
+        ImmutableArray<FlowRegion>.Builder regions,
+        bool preserveWorkerMetadata)
     {
-        var kind = ToFlowRegionKind(region.Kind);
+        var kind = ToFlowRegionKind(region.Kind, preserveWorkerMetadata);
         if (kind == FlowRegionKind.Unknown)
         {
             return;
@@ -551,16 +655,22 @@ public static class MethodFlowBuilder
             regionNodes.OrderBy(id => id.Value, StringComparer.Ordinal).ToImmutableArray(),
             region.ExceptionType,
             region.Evidence,
-            region.Certainty));
+            region.Certainty)
+        {
+            StartBlockOrdinal = preserveWorkerMetadata ? region.StartBlockOrdinal : null,
+            EndBlockOrdinal = preserveWorkerMetadata ? region.EndBlockOrdinal : null,
+        });
     }
 
-    private static FlowRegionKind ToFlowRegionKind(ExtractedRegionKind kind) => kind switch
+    private static FlowRegionKind ToFlowRegionKind(ExtractedRegionKind kind, bool preserveWorkerMetadata) => kind switch
     {
         ExtractedRegionKind.Root => FlowRegionKind.Root,
         ExtractedRegionKind.Try => FlowRegionKind.Try,
         ExtractedRegionKind.Catch => FlowRegionKind.Catch,
         ExtractedRegionKind.Filter => FlowRegionKind.Filter,
         ExtractedRegionKind.Finally => FlowRegionKind.Finally,
+        ExtractedRegionKind.TryAndFinally when preserveWorkerMetadata => FlowRegionKind.TryAndFinally,
+        ExtractedRegionKind.TryAndCatch when preserveWorkerMetadata => FlowRegionKind.TryAndCatch,
         _ => FlowRegionKind.Unknown,
     };
 
@@ -681,7 +791,15 @@ public static class MethodFlowBuilder
                     bodyNodes,
                     null,
                     loop.Evidence,
-                    loop.Certainty));
+                    loop.Certainty)
+            {
+                StartBlockOrdinal = HasSemaphoreCandidate(body) || HasCancellationCandidate(body) || HasNaturalLoopCatchShape(body)
+                    ? loop.HeaderBlockOrdinal
+                    : null,
+                EndBlockOrdinal = HasSemaphoreCandidate(body) || HasCancellationCandidate(body) || HasNaturalLoopCatchShape(body)
+                    ? loop.BodyBlockOrdinals.Concat(loop.ExitBlockOrdinals).DefaultIfEmpty(loop.HeaderBlockOrdinal).Max()
+                    : null,
+            });
             loopOrdinal++;
         }
 
@@ -962,10 +1080,14 @@ public static class MethodFlowBuilder
         FlowNodeId exitId,
         ImmutableArray<FlowEdge>.Builder edges,
         ImmutableArray<FlowRegion>.Builder regions,
-        ImmutableArray<AnalysisDiagnostic>.Builder diagnostics)
+        ImmutableArray<AnalysisDiagnostic>.Builder diagnostics,
+        bool hasCatchContinuation)
     {
         var outcomes = ImmutableArray.CreateBuilder<FlowOutcome>();
         var normalExitReachable = false;
+        var preserveTerminalAnchors = hasCatchContinuation
+            || HasSemaphoreCandidate(body)
+            || HasCancellationCandidate(body);
         foreach (var block in body.Blocks.OrderBy(block => block.Ordinal))
         {
             if (block.Terminal == ExtractedBlockTerminalKind.Exit)
@@ -981,7 +1103,8 @@ public static class MethodFlowBuilder
                         block.Ordinal,
                         block.BranchCondition,
                         block.Evidence,
-                        CertaintyLevel.Exact));
+                        CertaintyLevel.Exact,
+                        null));
                     break;
                 case ExtractedBlockTerminalKind.Throw:
                     if (!block.EscapingThrow)
@@ -994,7 +1117,8 @@ public static class MethodFlowBuilder
                         block.Ordinal,
                         block.BranchCondition,
                         block.Evidence,
-                        CertaintyLevel.Exact));
+                        CertaintyLevel.Exact,
+                        preserveTerminalAnchors ? blockTails.GetValueOrDefault(block.Ordinal) : null));
                     break;
                 case ExtractedBlockTerminalKind.Rethrow:
                     if (!block.EscapingThrow)
@@ -1007,7 +1131,8 @@ public static class MethodFlowBuilder
                         block.Ordinal,
                         block.BranchCondition,
                         block.Evidence,
-                        CertaintyLevel.Exact));
+                        CertaintyLevel.Exact,
+                        preserveTerminalAnchors ? blockTails.GetValueOrDefault(block.Ordinal) : null));
                     break;
                 case ExtractedBlockTerminalKind.Unknown:
                     outcomes.Add(new FlowOutcome(
@@ -1015,7 +1140,8 @@ public static class MethodFlowBuilder
                         block.Ordinal,
                         block.BranchCondition,
                         block.Evidence,
-                        CertaintyLevel.Unknown));
+                        CertaintyLevel.Unknown,
+                        preserveTerminalAnchors ? blockTails.GetValueOrDefault(block.Ordinal) : null));
                     break;
             }
 

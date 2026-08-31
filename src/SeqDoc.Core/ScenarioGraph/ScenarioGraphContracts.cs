@@ -70,6 +70,92 @@ public enum ScenarioActionKind
     ServiceOperation,
 }
 
+public enum HostedWorkerControlKind
+{
+    AwaitedRepeatingLoop, EnumerationLoop, CatchLoopContinuation,
+    CancellationCheck, SemaphoreBoundary, TerminalOutcome,
+    ReturnBoundary, ThrowBoundary,
+}
+
+public enum ScenarioFlowContainerKind
+{
+    NaturalLoop, CatchRegion, FilterRegion, FinallyRegion,
+    TryAndCatchRegion, TryAndFinallyRegion, TryRegion,
+}
+
+public sealed record ScenarioFlowContainer
+{
+    public ScenarioFlowContainer(FlowRegionId region, MethodId method, ScenarioFlowContainerKind kind,
+        FlowNodeId? header, FlowRegionId? parent, ImmutableArray<EvidenceRef> evidence, CertaintyLevel certainty)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(region.Value, nameof(region));
+        ArgumentException.ThrowIfNullOrWhiteSpace(method.Value, nameof(method));
+        if (!Enum.IsDefined(kind) || kind == ScenarioFlowContainerKind.NaturalLoop && header is null)
+        {
+            throw new ArgumentException("Invalid flow container kind or header.", nameof(kind));
+        }
+        Evidence = ScenarioFlowContractValidation.NormalizeEvidence(evidence, nameof(evidence));
+        if (certainty == CertaintyLevel.Unknown || certainty < Evidence.Max(item => item.Certainty))
+        {
+            throw new ArgumentException("Invalid flow container certainty.", nameof(certainty));
+        }
+        Region = region; Method = method; Kind = kind; Header = header; Parent = parent; Certainty = certainty;
+    }
+    public FlowRegionId Region { get; init; }
+    public MethodId Method { get; init; }
+    public ScenarioFlowContainerKind Kind { get; init; }
+    public FlowNodeId? Header { get; init; }
+    public FlowRegionId? Parent { get; init; }
+    public ImmutableArray<EvidenceRef> Evidence { get; init; }
+    public CertaintyLevel Certainty { get; init; }
+}
+
+public sealed record ScenarioFlowPlacement
+{
+    public ScenarioFlowPlacement(ScenarioNodeId scenarioNode, MethodId method, FlowNodeId? anchor,
+        ImmutableArray<FlowRegionId> containers, ImmutableArray<ScenarioArmId> guardArms,
+        ImmutableArray<EvidenceRef> evidence, CertaintyLevel certainty)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scenarioNode.Value, nameof(scenarioNode));
+        ArgumentException.ThrowIfNullOrWhiteSpace(method.Value, nameof(method));
+        containers = containers.IsDefault ? [] : containers;
+        guardArms = guardArms.IsDefault ? [] : guardArms;
+        if (containers.Any(item => string.IsNullOrWhiteSpace(item.Value)) || containers.Length != containers.Distinct().Count())
+        {
+            throw new ArgumentException("Invalid placement containers.", nameof(containers));
+        }
+        if (guardArms.Any(item => string.IsNullOrWhiteSpace(item.Value)) || guardArms.Length != guardArms.Distinct().Count())
+        {
+            throw new ArgumentException("Invalid placement guard arms.", nameof(guardArms));
+        }
+        Evidence = ScenarioFlowContractValidation.NormalizeEvidence(evidence, nameof(evidence));
+        if (certainty == CertaintyLevel.Unknown || certainty < Evidence.Max(item => item.Certainty))
+        {
+            throw new ArgumentException("Invalid placement certainty.", nameof(certainty));
+        }
+        ScenarioNode = scenarioNode; Method = method; Anchor = anchor; Containers = containers; GuardArms = guardArms.OrderBy(item => item.Value, StringComparer.Ordinal).ToImmutableArray(); Certainty = certainty;
+    }
+    public ScenarioNodeId ScenarioNode { get; init; }
+    public MethodId Method { get; init; }
+    public FlowNodeId? Anchor { get; init; }
+    public ImmutableArray<FlowRegionId> Containers { get; init; }
+    public ImmutableArray<ScenarioArmId> GuardArms { get; init; }
+    public ImmutableArray<EvidenceRef> Evidence { get; init; }
+    public CertaintyLevel Certainty { get; init; }
+}
+
+internal static class ScenarioFlowContractValidation
+{
+    public static ImmutableArray<EvidenceRef> NormalizeEvidence(ImmutableArray<EvidenceRef> evidence, string name)
+    {
+        if (evidence.IsDefaultOrEmpty)
+        {
+            throw new ArgumentException("Evidence is required.", name);
+        }
+        return evidence.DistinctBy(item => item.Id).OrderBy(item => item.Id.Value, StringComparer.Ordinal).ToImmutableArray();
+    }
+}
+
 /// <summary>Typed discriminator for the source of a scenario root.</summary>
 public enum ScenarioRootKind
 {
@@ -205,6 +291,10 @@ public sealed record ScenarioNodePresentation(
     HostedWorkerLifecycleStep? HostedWorkerLifecycleStep = null,
     string? HostedWorkerCancellationParameterName = null,
     bool HostedWorkerSchedulerRegistration = false,
+    HostedWorkerControlKind? HostedWorkerControlKind = null,
+    FlowRegionId? HostedWorkerFlowRegion = null,
+    FlowNodeId? HostedWorkerHeader = null,
+    int? HostedWorkerBlockOrdinal = null,
     string? ClientTypeName = null,
     ServiceClientKind? ClientKind = null,
     ClientInvocationResultClaimKind? ResultClaimKind = null,
@@ -807,14 +897,44 @@ public sealed record ScenarioServiceComposition
 /// controlled node identity, and terminals in the same semantic arm order. Diagram Plan may reorder
 /// terminal arms for display without changing these semantic identities.
 /// </summary>
-public sealed record ScenarioTopology(
-    ImmutableArray<ScenarioDecision> Decisions,
-    ImmutableArray<ScenarioArm> Arms,
-    ImmutableArray<ScenarioMembership> Memberships,
-    ImmutableArray<ScenarioArmTerminal> Terminals)
+public sealed record ScenarioTopology
 {
+    public ScenarioTopology(
+        ImmutableArray<ScenarioDecision> decisions,
+        ImmutableArray<ScenarioArm> arms,
+        ImmutableArray<ScenarioMembership> memberships,
+        ImmutableArray<ScenarioArmTerminal> terminals,
+        ImmutableArray<ScenarioFlowContainer> flowContainers = default,
+        ImmutableArray<ScenarioFlowPlacement> flowPlacements = default)
+    {
+        Decisions = decisions.IsDefault ? [] : decisions;
+        Arms = arms.IsDefault ? [] : arms;
+        Memberships = memberships.IsDefault ? [] : memberships;
+        Terminals = terminals.IsDefault ? [] : terminals;
+        FlowContainers = flowContainers.IsDefault ? [] : flowContainers;
+        FlowPlacements = flowPlacements.IsDefault ? [] : flowPlacements;
+    }
+    public ImmutableArray<ScenarioDecision> Decisions { get; init; }
+    public ImmutableArray<ScenarioArm> Arms { get; init; }
+    public ImmutableArray<ScenarioMembership> Memberships { get; init; }
+    public ImmutableArray<ScenarioArmTerminal> Terminals { get; init; }
+    public ImmutableArray<ScenarioFlowContainer> FlowContainers { get; init; }
+    public ImmutableArray<ScenarioFlowPlacement> FlowPlacements { get; init; }
+
+    public void Deconstruct(out ImmutableArray<ScenarioDecision> decisions,
+        out ImmutableArray<ScenarioArm> arms, out ImmutableArray<ScenarioMembership> memberships,
+        out ImmutableArray<ScenarioArmTerminal> terminals,
+        out ImmutableArray<ScenarioFlowContainer> flowContainers,
+        out ImmutableArray<ScenarioFlowPlacement> flowPlacements)
+        => (decisions, arms, memberships, terminals, flowContainers, flowPlacements) =
+            (Decisions, Arms, Memberships, Terminals, FlowContainers, FlowPlacements);
+
+    public void Deconstruct(out ImmutableArray<ScenarioDecision> decisions,
+        out ImmutableArray<ScenarioArm> arms, out ImmutableArray<ScenarioMembership> memberships,
+        out ImmutableArray<ScenarioArmTerminal> terminals)
+        => (decisions, arms, memberships, terminals) = (Decisions, Arms, Memberships, Terminals);
     /// <summary>The canonical empty topology used by source-compatible legacy construction.</summary>
-    public static ScenarioTopology Empty { get; } = new([], [], [], []);
+    public static ScenarioTopology Empty { get; } = new([], [], [], [], [], []);
 }
 
 public sealed record ScenarioHandlerParameter(string Name, string TypeName, HttpBindingKind BindingKind,

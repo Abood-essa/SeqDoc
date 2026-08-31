@@ -747,6 +747,28 @@ public sealed class FragmentPlannerTests
     }
 
     [Fact]
+    public void LoopMayOwnDirectMessageAndNestedLoopWithEvidence()
+    {
+        var evidence = ScenarioGraphTestFactory.SourceEvidence("nested-loop");
+        var inner = new DiagramFragment(
+            new DiagramPlanElementId("diagram-element:v1:fragment:loop:inner"),
+            "loop:inner", "each inner iteration", DiagramFragmentKind.Loop, default,
+            [new DiagramPlanElementId("diagram-element:v1:message:inner")], default, [evidence],
+            CertaintyLevel.Exact);
+        var outer = new DiagramFragment(
+            new DiagramPlanElementId("diagram-element:v1:fragment:loop:outer"),
+            "loop:outer", "each outer iteration", DiagramFragmentKind.Loop, default,
+            [new DiagramPlanElementId("diagram-element:v1:message:outer")], [inner], [evidence],
+            CertaintyLevel.Exact);
+
+        Assert.Empty(outer.Arms);
+        Assert.Equal(CertaintyLevel.Exact, outer.Certainty);
+        Assert.Same(evidence, Assert.Single(outer.Evidence));
+        Assert.Equal(DiagramFragmentKind.Loop, Assert.Single(outer.Fragments).Kind);
+        Assert.Equal("diagram-element:v1:message:outer", Assert.Single(outer.MessageRefs).Value);
+    }
+
+    [Fact]
     public void MixedCertaintyTopologyCombinesAllSupportingEvidenceAndDegradesToWeakest()
     {
         // F5: fragment, arm, and Break evidence combines every supporting fact (decision, arm,

@@ -1,7 +1,9 @@
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 using SeqDoc.Core.Diagnostics;
 using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Identity;
+using SeqDoc.Core.Frameworks;
 
 namespace SeqDoc.Core.Behavior;
 
@@ -154,7 +156,13 @@ public sealed record ExtractedInvocationPayload
         bool IsLoadedProjectTarget = false,
         string? TargetAssemblyName = null,
         bool IsPlatformTarget = false,
-        ImmutableArray<ExtractedInvocationArgument> ArgumentMappings = default)
+         ImmutableArray<ExtractedInvocationArgument> ArgumentMappings = default,
+         FrameworkMethodIdentity? TargetIdentity = null,
+         int? ReceiverParameterOrdinal = null,
+         string? ReceiverIdentity = null,
+         string? TargetAssemblyFullIdentity = null,
+         FrameworkTypeIdentity? ReceiverOriginalTypeIdentity = null,
+         string? ReceiverOriginalTypeFullAssemblyIdentity = null)
     {
         var hasTypedPresentation = TargetContainingTypeName is not null
             || TargetMethodName is not null
@@ -192,6 +200,12 @@ public sealed record ExtractedInvocationPayload
         this.TargetAssemblyName = TargetAssemblyName;
         this.IsPlatformTarget = IsPlatformTarget;
         this.ArgumentMappings = ArgumentMappings.IsDefault ? [] : ArgumentMappings;
+        this.TargetIdentity = TargetIdentity;
+        this.ReceiverParameterOrdinal = ReceiverParameterOrdinal;
+        this.ReceiverIdentity = ReceiverIdentity;
+        this.TargetAssemblyFullIdentity = TargetAssemblyFullIdentity;
+        this.ReceiverOriginalTypeIdentity = ReceiverOriginalTypeIdentity;
+        this.ReceiverOriginalTypeFullAssemblyIdentity = ReceiverOriginalTypeFullAssemblyIdentity;
     }
 
     public MethodId? Target { get; init; }
@@ -208,6 +222,18 @@ public sealed record ExtractedInvocationPayload
     public string? TargetAssemblyName { get; init; }
     public bool IsPlatformTarget { get; init; }
     public ImmutableArray<ExtractedInvocationArgument> ArgumentMappings { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FrameworkMethodIdentity? TargetIdentity { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ReceiverParameterOrdinal { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ReceiverIdentity { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TargetAssemblyFullIdentity { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FrameworkTypeIdentity? ReceiverOriginalTypeIdentity { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ReceiverOriginalTypeFullAssemblyIdentity { get; init; }
 }
 
 /// <summary>Preserves the compiler's parameter mapping for one invocation argument.</summary>
