@@ -25,7 +25,18 @@ internal static class EdmxMetadataFactCollector
             ["TargetFramework"] = profile.TargetFramework,
         };
         using var collection = new ProjectCollection(globals);
-        var evaluated = new Microsoft.Build.Evaluation.Project(project.Project.FilePath, globals, null, collection);
+        Microsoft.Build.Evaluation.Project evaluated;
+        try
+        {
+            evaluated = new Microsoft.Build.Evaluation.Project(project.Project.FilePath, globals, null, collection);
+        }
+        catch (Microsoft.Build.Exceptions.InvalidProjectFileException)
+        {
+            // An imported project may be unavailable when a source tree is physically relocated.
+            // Evaluation is supplementary metadata evidence; withhold it rather than failing the
+            // compiler extraction. Cancellation is intentionally not caught here.
+            return;
+        }
         var items = evaluated.Items
             .Where(item => item.ItemType is "EmbeddedResource" or "EntityDeploy")
             .Where(item => item.EvaluatedInclude.EndsWith(".edmx", StringComparison.OrdinalIgnoreCase))

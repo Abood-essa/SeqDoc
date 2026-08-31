@@ -13,6 +13,7 @@ namespace SeqDoc.Analysis.Tests;
 public sealed class EntityFramework6ProjectionTests
 {
     private const string Fixture = "tests/fixtures/PassC/EntityFramework6Edmx/EntityFramework6Edmx.csproj";
+    private const string Entity = "InitialRedTest.Record";
     private static readonly string[] ExpectedMutationKinds = ["Add", "SaveChanges"];
 
     [Fact]
@@ -30,6 +31,12 @@ public sealed class EntityFramework6ProjectionTests
         Assert.Equal(firstFacts.Select(f => f.Id.Value), secondFacts.Select(f => f.Id.Value));
         var execute = Assert.Single(first.ProgramIndex.Methods, method => method.Name == "Execute");
         Assert.Equal(2, firstFramework.Facts.OfType<EntityFrameworkQueryFact>().Count(fact => fact.Method == execute.Id));
+        var add = Assert.Single(first.Operations, operation => operation.Method == execute.Id && operation.TargetIdentity?.MethodMetadataName == "Add");
+        Assert.Equal("EntityFramework", add.TargetIdentity!.AssemblyIdentity);
+        Assert.Equal("System.Data.Entity.DbSet`1", add.TargetIdentity.ContainingMetadataType);
+        Assert.Equal("b77a5c561934e089", add.TargetIdentity.AssemblyPublicKeyToken);
+        Assert.Equal([Entity], add.TargetIdentity.Parameters.Select(parameter => parameter.FullyQualifiedType));
+        Assert.Equal(Entity, add.TargetIdentity.ReturnType);
         var reassigned = Assert.Single(first.ProgramIndex.Methods, method => method.Name == "ReassignedTransactions");
         Assert.DoesNotContain(firstFramework.Facts.OfType<EntityFrameworkQueryFact>(), fact => fact.Method == reassigned.Id);
         var metadata = Assert.Single(firstFacts.OfType<EntityFrameworkEdmxMetadataFact>());

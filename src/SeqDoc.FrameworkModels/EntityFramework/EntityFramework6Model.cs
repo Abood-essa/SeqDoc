@@ -74,7 +74,7 @@ public sealed class EntityFramework6Model : IFrameworkBehaviorModel
         {
             return ValueTask.FromResult(ModelResult.Unrecognized);
         }
-        if (chain is not null && target.ContainingMetadataType == DbSet && target.MethodMetadataName == "Add" && target.GenericArity == 0 && target.Parameters.Length == 1 && target.Parameters[0].RefKind == ParameterRefKind.None && target.Parameters[0].FullyQualifiedType == chain.EntityType)
+        if (chain is not null && target.ContainingMetadataType == DbSet && target.MethodMetadataName == "Add" && target.GenericArity == 0 && target.Parameters.Length == 1 && target.Parameters[0].RefKind == ParameterRefKind.None && target.Parameters[0].FullyQualifiedType == chain.EntityType && target.ReturnType == chain.EntityType)
         {
             return ValueTask.FromResult(new ModelResult(true, [Mutation(context.Profile.Id, operation, EntityFrameworkMutationKind.Add, chain.ContainingType, chain.EntityType)]));
         }

@@ -20,7 +20,9 @@ internal static class RoslynEntityFramework6FactCollector
         var localSymbol = FindLocalSymbol(receiver, models);
         var property = FindDbSetProperty(receiver) ?? FindDbSetProperty(call);
         var sourceProperty = property is null ? FindSourceDbSetProperty(call, models) : null;
-        if (sourceProperty is not null && IsDerivedContext(receiver?.Type))
+        if (sourceProperty is not null
+            && IsExactEf6DbSet(receiver?.Type, out _)
+            && call.TargetMethod.OriginalDefinition.MetadataName == "Add")
         {
             var enriched = descriptor with
             {
@@ -223,7 +225,7 @@ internal static class RoslynEntityFramework6FactCollector
             && type.TypeArguments.Length == 1
             && SymbolEqualityComparer.Default.Equals(type.TypeArguments[0], argument);
 
-    private static bool IsExactEf6DbSet(ITypeSymbol type, out string entity)
+    private static bool IsExactEf6DbSet(ITypeSymbol? type, out string entity)
     {
         entity = string.Empty;
         if (type is not INamedTypeSymbol set || set.TypeArguments.Length != 1
@@ -422,7 +424,8 @@ internal static class RoslynEntityFramework6FactCollector
                 && RoslynProgramIndexExtractor.GetMetadataName(set.OriginalDefinition) == DbSet
                 && set.OriginalDefinition.ContainingAssembly?.Identity.Name == "EntityFramework"
                 && HasToken(set.OriginalDefinition.ContainingAssembly, "b77a5c561934e089")
-                && set.OriginalDefinition.ContainingAssembly.Identity.Version?.ToString() == "6.0.0.0")
+                && set.OriginalDefinition.ContainingAssembly.Identity.Version?.ToString() == "6.0.0.0"
+                && IsDerivedContext(property.ContainingType))
             {
                 return (
                     set.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),

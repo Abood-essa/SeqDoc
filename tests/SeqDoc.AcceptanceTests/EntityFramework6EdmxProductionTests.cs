@@ -5,6 +5,7 @@ using SeqDoc.Analysis.Scenarios;
 using SeqDoc.Application.Analysis;
 using SeqDoc.Application.Documentation;
 using SeqDoc.Core.Frameworks;
+using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Identity;
 using SeqDoc.Core.ScenarioGraph;
 using SeqDoc.FrameworkModels;
@@ -66,7 +67,26 @@ public sealed class EntityFramework6EdmxProductionTests
         string markdown = MarkdownRenderer.RenderDocument(plan.Wording, plan.Diagram);
         string mermaid = MermaidRenderer.Render(plan.Diagram);
 
-        Assert.Equal(3, framework.Facts.OfType<EntityFrameworkQueryFact>().Count());
+        var methodNames = extraction.Value.ProgramIndex.Methods
+            .ToDictionary(method => method.Id, method => method.Name);
+        var queryFacts = framework.Facts.OfType<EntityFrameworkQueryFact>().ToArray();
+        Assert.Equal(4, queryFacts.Length);
+        Assert.All(queryFacts, fact =>
+        {
+            Assert.NotEmpty(fact.Chain);
+            Assert.NotEmpty(fact.Evidence);
+            Assert.Equal(CertaintyLevel.Exact, fact.Certainty);
+        });
+        Assert.Collection(
+            queryFacts.Where(fact => methodNames[fact.Method] == "Execute"),
+            first => Assert.Equal([EntityFrameworkQueryOperatorKind.FirstOrDefault], first.Chain.Select(item => item.OperatorKind)),
+            count => Assert.Equal([EntityFrameworkQueryOperatorKind.Count], count.Chain.Select(item => item.OperatorKind)));
+        Assert.Equal(
+            [EntityFrameworkQueryOperatorKind.Where, EntityFrameworkQueryOperatorKind.Count],
+            Assert.Single(queryFacts, fact => methodNames[fact.Method] == "LocalWhereCount").Chain.Select(item => item.OperatorKind));
+        Assert.Equal(
+            [EntityFrameworkQueryOperatorKind.Where, EntityFrameworkQueryOperatorKind.Where, EntityFrameworkQueryOperatorKind.Count],
+            Assert.Single(queryFacts, fact => methodNames[fact.Method] == "MultipleWhereCount").Chain.Select(item => item.OperatorKind));
         Assert.Contains(framework.Facts.OfType<EntityFrameworkMutationFact>(), fact =>
             fact.MutationKind == EntityFrameworkMutationKind.Add && fact.DbContextType == "InitialRedTest.RecordsContext");
         Assert.DoesNotContain(framework.Facts.OfType<EntityFrameworkQueryFact>(), fact =>

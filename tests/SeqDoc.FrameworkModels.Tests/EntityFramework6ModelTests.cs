@@ -92,6 +92,19 @@ public sealed class EntityFramework6ModelTests
     }
 
     [Fact]
+    public async Task Ef6AddWithWrongReturnIdentityFailsClosed()
+    {
+        var valid = Mutation("Add");
+        var result = await new EntityFramework6Model().AnalyzeOperationAsync(valid with
+        {
+            TargetIdentity = valid.TargetIdentity! with { ReturnType = "System.Data.Entity.DbSet<InitialRedTest.Record>" },
+        }, ContextFor(), CancellationToken.None);
+
+        Assert.False(result.Recognized);
+        Assert.Empty(result.Facts);
+    }
+
+    [Fact]
     public async Task WrongAssemblyAndSignatureFailClosedEvenWhenNamesMatch()
     {
         var operation = Query("FirstOrDefault") with
