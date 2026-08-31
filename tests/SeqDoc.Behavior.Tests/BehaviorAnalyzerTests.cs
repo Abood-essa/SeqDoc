@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using SeqDoc.Analysis.Behavior;
 using SeqDoc.Application.Analysis;
 using SeqDoc.Core.Behavior;
+using SeqDoc.Core.Diagnostics;
 using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Identity;
 using SeqDoc.Core.ProgramIndex;
@@ -237,6 +238,68 @@ public sealed class BehaviorAnalyzerTests
     }
 
     [Fact]
+    public async Task AnalyzeAsyncAllowsOnlyTheRatifiedWithholdDiagnostics()
+    {
+        string[] allowedCodes = ["BD2001", "BD2002", "BD2003", "BD2010", "BD2011", "BD3001"];
+        var diagnostics = allowedCodes.Select(CreateDiagnostic).ToImmutableArray();
+        var input = new ExtractedBehaviorInput(
+            Profile, "index-fingerprint", [], new ExtractedTypeHierarchy([], true), [], [], [], diagnostics, string.Empty);
+
+        var result = await new BehaviorAnalyzer().AnalyzeAsync(
+            new BehaviorAnalysisRequest(CreateEmptyIndex(), input), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(allowedCodes, result.Value!.Diagnostics.Select(diagnostic => diagnostic.Code));
+        Assert.Equal(diagnostics.Select(diagnostic => diagnostic.Id), result.Value.Diagnostics.Select(diagnostic => diagnostic.Id));
+        Assert.Equal(diagnostics.Select(diagnostic => diagnostic.Certainty), result.Value.Diagnostics.Select(diagnostic => diagnostic.Certainty));
+        Assert.Equal(diagnostics.SelectMany(diagnostic => diagnostic.Evidence), result.Value.Diagnostics.SelectMany(diagnostic => diagnostic.Evidence));
+    }
+
+    [Fact]
+    public async Task AnalyzeAsyncTreatsUnknownFutureBehaviorDiagnosticsAsBlocking()
+    {
+        var diagnostic = CreateDiagnostic("BD9999");
+        var input = new ExtractedBehaviorInput(
+            Profile, "index-fingerprint", [], new ExtractedTypeHierarchy([], true), [], [], [], [diagnostic], string.Empty);
+
+        var result = await new BehaviorAnalyzer().AnalyzeAsync(
+            new BehaviorAnalysisRequest(CreateEmptyIndex(), input), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ApplicationOutcome.AnalysisFailure, result.Outcome);
+        Assert.Null(result.Value);
+        var retained = Assert.Single(result.Diagnostics);
+        Assert.Equal(diagnostic.Id, retained.Id);
+        Assert.Equal(diagnostic.Code, retained.Code);
+        Assert.Equal(diagnostic.Certainty, retained.Certainty);
+    }
+
+    [Fact]
+    public async Task AnalyzeAsyncDiagnosticInputOrderDoesNotChangeFingerprintOrLoseDiagnostics()
+    {
+        var tiedId = new DiagnosticId("diagnostic:v1:tied");
+        var earlier = CreateDiagnostic(tiedId, "BD2001", "A", "detail-a");
+        var later = CreateDiagnostic(tiedId, "BD3001", "B", "different detail");
+        var diagnostics = ImmutableArray.Create(later, earlier);
+        var reversed = diagnostics.Reverse().ToImmutableArray();
+
+        var first = await AnalyzeWithDiagnostics(diagnostics);
+        var second = await AnalyzeWithDiagnostics(reversed);
+
+        Assert.True(first.IsSuccess);
+        Assert.True(second.IsSuccess);
+        Assert.Equal(first.Value!.BehaviorFingerprint, second.Value!.BehaviorFingerprint);
+        Assert.Equal("A", first.Value.Diagnostics[0].Summary);
+        Assert.Equal("B", first.Value.Diagnostics[1].Summary);
+        Assert.Equal("detail-a", first.Value.Diagnostics[0].InternalDetail);
+        Assert.Equal("different detail", first.Value.Diagnostics[1].InternalDetail);
+        Assert.Equal(first.Value.Diagnostics.Select(diagnostic => diagnostic.Id), second.Value.Diagnostics.Select(diagnostic => diagnostic.Id));
+        Assert.Equal(first.Value.Diagnostics.Select(diagnostic => diagnostic.Code), second.Value.Diagnostics.Select(diagnostic => diagnostic.Code));
+        Assert.Equal(first.Value.Diagnostics.Select(diagnostic => diagnostic.Summary), second.Value.Diagnostics.Select(diagnostic => diagnostic.Summary));
+        Assert.Equal(first.Value.Diagnostics.Select(diagnostic => diagnostic.InternalDetail), second.Value.Diagnostics.Select(diagnostic => diagnostic.InternalDetail));
+    }
+
+    [Fact]
     public async Task AnalyzeAsyncFailsOnMalformedExtraction()
     {
         var malformedBlock = new ExtractedBasicBlock(
@@ -290,6 +353,264 @@ public sealed class BehaviorAnalyzerTests
         Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "BD1009");
     }
 
+    [Fact]
+    public async Task AnalyzeAsyncCompletesWhenFlowBuildingWithholdsANaturalLoop()
+    {
+        // BD2011 is a withhold-class code: MethodFlowBuilder skips the one malformed natural loop
+        // with `continue`, the method flow is still produced and fingerprinted. It must not escalate
+        // to a whole-profile AnalysisFailure.
+        var withheldLoop = new ExtractedNaturalLoop(
+            new OperationId("behavior-operation:v1:condition"),
+            ExtractedLoopKind.WhileLoop,
+            HeaderBlockOrdinal: 1,
+            LatchBlockOrdinals: [],
+            BodyBlockOrdinals: ImmutableArray.Create(2),
+            ExitBlockOrdinals: ImmutableArray.Create(3),
+            BackEdges: [],
+            Evidence: [],
+            Certainty: CertaintyLevel.Exact);
+        var body = CreateBranchingBody() with { NaturalLoops = ImmutableArray.Create(withheldLoop) };
+        var input = new ExtractedBehaviorInput(
+            Profile,
+            "index-fingerprint",
+            ImmutableArray.Create(body),
+            new ExtractedTypeHierarchy([], true),
+            [],
+            [],
+            [],
+            [],
+            string.Empty);
+        var request = new BehaviorAnalysisRequest(CreateEmptyIndex(), input);
+
+        var analyzer = new BehaviorAnalyzer();
+        var first = await analyzer.AnalyzeAsync(request, CancellationToken.None);
+        var second = await analyzer.AnalyzeAsync(request, CancellationToken.None);
+
+        Assert.True(first.IsSuccess);
+        Assert.NotNull(first.Value);
+        Assert.Contains(first.Value!.Diagnostics, diagnostic => diagnostic.Code == "BD2011");
+        Assert.Single(first.Value.MethodFlows);
+        Assert.Equal(64, first.Value.BehaviorFingerprint.Length);
+        Assert.Equal(first.Value.BehaviorFingerprint, second.Value!.BehaviorFingerprint);
+    }
+
+    [Fact]
+    public async Task AnalyzeAsyncFailsOnBd1xxxExtractionInvariantAtExtractionCallSite()
+    {
+        // BD1009 (extraction-structural invariant) must still block - guards gate 4 / previous-valid-state.
+        var input = new ExtractedBehaviorInput(
+            Profile,
+            "index-fingerprint",
+            ImmutableArray.Create(new ExtractedMethodBody(
+                new MethodId("method:v1:bad-successor"),
+                "body-fingerprint",
+                [],
+                [],
+                [],
+                ImmutableArray.Create(new ExtractedBasicBlock(
+                    0,
+                    [],
+                    null,
+                    99,
+                    [],
+                    [],
+                    ExtractedBlockTerminalKind.None,
+                    false,
+                    [],
+                    [],
+                    [],
+                    CertaintyLevel.Exact)),
+                ImmutableArray.Create(new ExtractedExceptionRegion(
+                    new FlowRegionId("flow-region:v1:root"),
+                    ExtractedRegionKind.Root,
+                    null,
+                    0,
+                    0,
+                    0,
+                    null,
+                    [],
+                    CertaintyLevel.Exact)),
+                [])),
+            new ExtractedTypeHierarchy([], true),
+            [],
+            [],
+            [],
+            [],
+            string.Empty);
+        var request = new BehaviorAnalysisRequest(CreateEmptyIndex(), input);
+
+        var result = await new BehaviorAnalyzer().AnalyzeAsync(request, CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ApplicationOutcome.AnalysisFailure, result.Outcome);
+        Assert.Null(result.Value);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "BD1009");
+    }
+
+    [Fact]
+    public async Task AnalyzeAsyncFailsWhenFlowBuildingReportsNoExitBlock()
+    {
+        // BD2004 ("method flow has no exit block") is deliberately kept blocking: terminal
+        // reconciliation has no exit node to resolve against, so the flow is not safe to consume.
+        var operationId = new OperationId("behavior-operation:v1:literal");
+        var methodId = new MethodId("method:v1:no-exit");
+        var body = new ExtractedMethodBody(
+            methodId,
+            "body-fingerprint",
+            [],
+            [],
+            ImmutableArray.Create(new ExtractedOperation(
+                operationId,
+                methodId,
+                ExtractedOperationKind.Literal,
+                null,
+                [],
+                0,
+                "System.Int32",
+                "1",
+                false,
+                true,
+                [],
+                [],
+                [],
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                [],
+                CertaintyLevel.Exact)),
+            ImmutableArray.Create(
+                new ExtractedBasicBlock(
+                    0,
+                    ImmutableArray.Create(operationId),
+                    null,
+                    1,
+                    [],
+                    [],
+                    ExtractedBlockTerminalKind.None,
+                    false,
+                    [],
+                    [],
+                    [],
+                    CertaintyLevel.Exact),
+                new ExtractedBasicBlock(
+                    1,
+                    [],
+                    null,
+                    null,
+                    [],
+                    [0],
+                    ExtractedBlockTerminalKind.Return,
+                    false,
+                    [],
+                    [],
+                    [],
+                    CertaintyLevel.Exact)),
+            ImmutableArray.Create(new ExtractedExceptionRegion(
+                new FlowRegionId("flow-region:v1:root"),
+                ExtractedRegionKind.Root,
+                null,
+                0,
+                0,
+                1,
+                null,
+                [],
+                CertaintyLevel.Exact)),
+            []);
+        var input = new ExtractedBehaviorInput(
+            Profile,
+            "index-fingerprint",
+            ImmutableArray.Create(body),
+            new ExtractedTypeHierarchy([], true),
+            [],
+            [],
+            [],
+            [],
+            string.Empty);
+        var request = new BehaviorAnalysisRequest(CreateEmptyIndex(), input);
+
+        var result = await new BehaviorAnalyzer().AnalyzeAsync(request, CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ApplicationOutcome.AnalysisFailure, result.Outcome);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "BD2004");
+    }
+
+    [Fact]
+    public async Task AnalyzeAsyncWithheldNaturalLoopDoesNotFlattenGuardStructure()
+    {
+        // Gate 3 (monotonic claims): withholding one malformed natural loop must degrade locally, not
+        // linearise the method. The guarded branch that the loop body sat under must survive in the flow.
+        var withheldLoop = new ExtractedNaturalLoop(
+            new OperationId("behavior-operation:v1:condition"),
+            ExtractedLoopKind.WhileLoop,
+            HeaderBlockOrdinal: 1,
+            LatchBlockOrdinals: [],
+            BodyBlockOrdinals: ImmutableArray.Create(2),
+            ExitBlockOrdinals: ImmutableArray.Create(3),
+            BackEdges: [],
+            Evidence: [],
+            Certainty: CertaintyLevel.Exact);
+        var body = CreateBranchingBody() with { NaturalLoops = ImmutableArray.Create(withheldLoop) };
+        var input = new ExtractedBehaviorInput(
+            Profile,
+            "index-fingerprint",
+            ImmutableArray.Create(body),
+            new ExtractedTypeHierarchy([], true),
+            [],
+            [],
+            [],
+            [],
+            string.Empty);
+        var request = new BehaviorAnalysisRequest(CreateEmptyIndex(), input);
+
+        var result = await new BehaviorAnalyzer().AnalyzeAsync(request, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Contains(result.Value!.Diagnostics, diagnostic => diagnostic.Code == "BD2011");
+        var flow = result.Value.MethodFlows[0];
+        Assert.Contains(flow.Nodes, node => node.Kind == FlowNodeKind.Decision);
+        Assert.Contains(flow.Edges, edge => edge.Kind == FlowEdgeKind.True);
+        Assert.Contains(flow.Edges, edge => edge.Kind == FlowEdgeKind.False);
+        Assert.DoesNotContain(flow.Regions, region => region.Kind == FlowRegionKind.NaturalLoop);
+        Assert.DoesNotContain(flow.Edges, edge => edge.Kind == FlowEdgeKind.LoopBack);
+    }
+
+    [Fact]
+    public async Task AnalyzeAsyncFailsWhenLoopAnchorCollectionIsInvalid()
+    {
+        // BD2012 ("the compiler loop-anchor collection is invalid") is kept blocking: an anchor with
+        // empty evidence signals corrupt upstream extraction, not a single recoverable local withhold.
+        var invalidAnchor = new ExtractedLoopAnchor(
+            new OperationId("behavior-operation:v1:condition"),
+            ExtractedLoopKind.WhileLoop,
+            Evidence: [],
+            Certainty: CertaintyLevel.Exact);
+        var body = CreateBranchingBody() with { LoopAnchors = ImmutableArray.Create(invalidAnchor) };
+        var input = new ExtractedBehaviorInput(
+            Profile,
+            "index-fingerprint",
+            ImmutableArray.Create(body),
+            new ExtractedTypeHierarchy([], true),
+            [],
+            [],
+            [],
+            [],
+            string.Empty);
+        var request = new BehaviorAnalysisRequest(CreateEmptyIndex(), input);
+
+        var result = await new BehaviorAnalyzer().AnalyzeAsync(request, CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ApplicationOutcome.AnalysisFailure, result.Outcome);
+        Assert.Null(result.Value);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "BD2012");
+    }
+
     private static ProgramIndexSnapshot CreateEmptyIndex() =>
         new(
             1,
@@ -308,4 +629,31 @@ public sealed class BehaviorAnalyzerTests
             [],
             "manifest",
             "index-fingerprint");
+
+    private static AnalysisDiagnostic CreateDiagnostic(string code) =>
+        CreateDiagnostic(new DiagnosticId($"diagnostic:v1:{code}"), code, $"Test diagnostic {code}.", null);
+
+    private static AnalysisDiagnostic CreateDiagnostic(
+        DiagnosticId id, string code, string summary, string? internalDetail) =>
+        new(
+            id,
+            code,
+            DiagnosticSeverity.Warning,
+            AnalysisStage.FrameworkModel,
+            summary,
+            new DiagnosticLocation("test"),
+            "test cause",
+            "test impact",
+            "test action",
+            CertaintyLevel.Exact,
+            internalDetail: internalDetail);
+
+    private static Task<ApplicationResult<BehaviorSnapshot>> AnalyzeWithDiagnostics(
+        ImmutableArray<AnalysisDiagnostic> diagnostics)
+    {
+        var input = new ExtractedBehaviorInput(
+            Profile, "index-fingerprint", [], new ExtractedTypeHierarchy([], true), [], [], [], diagnostics, string.Empty);
+        return new BehaviorAnalyzer().AnalyzeAsync(
+            new BehaviorAnalysisRequest(CreateEmptyIndex(), input), CancellationToken.None);
+    }
 }

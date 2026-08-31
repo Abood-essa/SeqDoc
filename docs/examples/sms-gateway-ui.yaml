@@ -1,0 +1,9 @@
+schemaVersion: 1
+
+selection:
+  roots:
+    # SMS Gateway UI Web MVC controller actions that reach outbound WCF service clients.
+    - method:v1:f31d22727b1a68ecc33c5a333879256daf6160bd2f8b0c2a60f15720255e498a
+    - method:v1:8f83d46de0bf42475c8b369d6063847083159903ff1beff88c8c0714c952cc4b
+    - method:v1:23d6234b2d004e68b7b4d660872e833a759f675968b534db5b83ff5c8ac30f75
+    - method:v1:00fcb5df3147a73487f6545ced0a2332d45632e7522274729c794091de7f4323
