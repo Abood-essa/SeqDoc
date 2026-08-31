@@ -352,7 +352,21 @@ public static class ScenarioGraphBuilder
                     directCallExpansion: new ScenarioDirectCallExpansion([], false, [diagnostic]));
             }
 
-            var directExpansion = AddConfiguredDirectCalls(request, entryPoint, profileId, actionNode, nodes, edges, diagnostics);
+            // Mirror the HTTP controller-action (SC001) path: operations independently proven as a
+            // service-client invocation whose caller is this configured root are presented by
+            // AddServiceClientInvocations with protocol-neutral wording, so they are excluded from
+            // the depth-1 generic MethodCall nodes AddConfiguredDirectCalls builds to avoid emitting
+            // two nodes for one call site. Root-local only (CallerMethod == RootMethod), identical to
+            // the HTTP path; a client call inside a callee stays a generic MethodCall.
+            var configuredClientInvocationOperations = FrameworkFactsBound(request)
+                ? request.FrameworkFacts.Facts.OfType<ServiceClientInvocationFact>()
+                    .Where(fact => fact.CallerMethod == entryPoint.RootMethod)
+                    .Select(fact => fact.InvocationOperation)
+                    .ToHashSet()
+                : new HashSet<OperationId>();
+            var directExpansion = AddConfiguredDirectCalls(request, entryPoint, profileId, actionNode, nodes, edges, diagnostics,
+                configuredClientInvocationOperations);
+            AddServiceClientInvocations(request, entryPoint, profileId, actionNode, nodes, edges, diagnostics);
 
             JoinEntityQueries(request, profileId, entryPointId, entryPoint.RootMethod, actionNode, nodes, edges, diagnostics);
             JoinStateAssignments(request, profileId, entryPointId, entryPoint.RootMethod, actionNode, nodes, edges);
@@ -895,7 +909,8 @@ public static class ScenarioGraphBuilder
         ScenarioNode actionNode,
         List<ScenarioNode> nodes,
         List<ScenarioEdge> edges,
-        List<ScenarioGraphDiagnostic> diagnostics)
+        List<ScenarioGraphDiagnostic> diagnostics,
+        HashSet<OperationId>? excludedOperations = null)
     {
         var steps = new List<ScenarioDirectCallExpansionStep>();
         var path = new HashSet<MethodId>();
@@ -938,6 +953,14 @@ public static class ScenarioGraphBuilder
         path.Add(entryPoint.RootMethod);
         foreach (var root in rootCalls.Reverse())
         {
+            // Operations independently admitted as a service-client invocation are presented by
+            // AddServiceClientInvocations with protocol-neutral wording instead of as a generic
+            // MethodCall node, so the depth-1 push is skipped to avoid two nodes for one call site.
+            // Only depth-1 root calls are excluded; deeper calls are unaffected.
+            if (excludedOperations is not null && excludedOperations.Contains(root.Invocation.Operation))
+            {
+                continue;
+            }
             work.Push((entryPoint.RootMethod, root, 1, null, false, default));
         }
 
@@ -3832,6 +3855,7 @@ public static class ScenarioGraphBuilder
     /// </summary>
     private static bool IsMaterialTopologyNode(ScenarioNode node)
         => node.Kind is ScenarioNodeKind.ServiceCall
+            or ScenarioNodeKind.ClientOperationInvocation
             or ScenarioNodeKind.MethodCall
             or ScenarioNodeKind.EntityQuery
             or ScenarioNodeKind.StateAssignment
