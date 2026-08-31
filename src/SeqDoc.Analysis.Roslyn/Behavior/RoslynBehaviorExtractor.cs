@@ -85,7 +85,7 @@ internal static class RoslynBehaviorExtractor
             cancellationToken.ThrowIfCancellationRequested();
             var (byTree, modelByTree) = projectContexts[loadedProject.StableId.Value];
 
-            EdmxMetadataFactCollector.AddEvaluatedItems(loadedProject, profile, repositoryRoot, frameworkRequest);
+            EdmxMetadataFactCollector.AddEvaluatedItems(loadedProject, profile, repositoryRoot, frameworkRequest, cancellationToken);
 
             dependencyInjectionFacts.SetAuthoritativeSymbols(
                 loadedProject.StableId,
@@ -2189,8 +2189,13 @@ internal static class RoslynBehaviorExtractor
             methodId,
             operationById,
             documents,
+            models,
+            project,
+            profileId,
+            frameworkRequest,
             methodEvidence,
-            nonGetFacts);
+            nonGetFacts,
+            cancellationToken);
         CollectConfigurationSemanticFacts(
             cfg,
             methodId,
@@ -3544,6 +3549,26 @@ internal static class RoslynBehaviorExtractor
                             0,
                             0,
                             documents);
+                        frameworkRequest.AddOperation(RoslynEntityFramework6FactCollector.Enrich(
+                            call,
+                            FrameworkAnalysisRequestProjector.ProjectOperationDescriptor(
+                                call,
+                                methodId,
+                                invocationId,
+                                ResolveEvidence(call, documents, methodEvidence),
+                                operationById,
+                                documents,
+                                models,
+                                project,
+                                profileId,
+                                localInitializers: localInitializers,
+                                hostChainProof: frameworkRequest.HostChainProof,
+                                dispatchCancellationToken: cancellationToken),
+                            operationById,
+                            models,
+                            localInitializers,
+                            documents,
+                            cfg));
                     }
 
                     break;
@@ -3643,8 +3668,13 @@ internal static class RoslynBehaviorExtractor
         MethodId methodId,
         Dictionary<IOperation, OperationId> operationById,
         IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents,
+        IReadOnlyDictionary<SyntaxTree, SemanticModel> models,
+        StableProjectId project,
+        CompilationProfileId profile,
+        FrameworkAnalysisRequestCollector frameworkRequest,
         ImmutableArray<EvidenceRef> methodEvidence,
-        RoslynNonGetSemanticFactCollector nonGetFacts)
+        RoslynNonGetSemanticFactCollector nonGetFacts,
+        CancellationToken cancellationToken)
     {
         // The accepted traversal keys operationById by the control-flow-graph operation instances;
         // the body tree can expose distinct instances for the same source span. A stable span index
@@ -3655,6 +3685,7 @@ internal static class RoslynBehaviorExtractor
         var visited = new HashSet<IOperation>(ReferenceEqualityComparer.Instance);
         foreach (var operation in EnumerateOperationsInSourceOrder(bodyOperation))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!visited.Add(operation))
             {
                 continue;
@@ -3679,6 +3710,16 @@ internal static class RoslynBehaviorExtractor
                         ResolveEvidence(assignment, documents, methodEvidence));
                     break;
                 case IInvocationOperation call:
+                    var sourceOperationId = TryResolveCompilerBoundOperationId(call, operationById, spanToId, out var boundOperationId)
+                        ? boundOperationId
+                        : CreateOperationId(call, methodId, "Invocation", 0, 0, 0, documents);
+                    frameworkRequest.AddOperation(RoslynEntityFramework6FactCollector.Enrich(
+                        call,
+                        FrameworkAnalysisRequestProjector.ProjectOperationDescriptor(
+                            call, methodId, sourceOperationId, ResolveEvidence(call, documents, methodEvidence),
+                            operationById, documents, models, project, profile,
+                            dispatchCancellationToken: cancellationToken),
+                        operationById, models, documents: documents));
                     if (RoslynNonGetSemanticFactCollector.TryMatchQueryTerminal(call.TargetMethod, out _))
                     {
                         var queryId = TryResolveCompilerBoundOperationId(call, operationById, spanToId, out var flattenedQueryId)

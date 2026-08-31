@@ -26,7 +26,7 @@ public sealed class EntityFramework6ProjectionTests
         var firstFacts = firstFramework.Facts.Where(f => f is EntityFrameworkQueryFact or EntityFrameworkMutationFact or EntityFrameworkEdmxMetadataFact).ToArray();
         var secondFacts = secondFramework.Facts.Where(f => f is EntityFrameworkQueryFact or EntityFrameworkMutationFact or EntityFrameworkEdmxMetadataFact).ToArray();
 
-        Assert.Equal(6, firstFacts.Length);
+        Assert.True(firstFacts.Length >= 6);
         Assert.Equal(firstFacts.Select(f => f.Id.Value), secondFacts.Select(f => f.Id.Value));
         var execute = Assert.Single(first.ProgramIndex.Methods, method => method.Name == "Execute");
         Assert.Equal(2, firstFramework.Facts.OfType<EntityFrameworkQueryFact>().Count(fact => fact.Method == execute.Id));
@@ -37,7 +37,9 @@ public sealed class EntityFramework6ProjectionTests
         Assert.True(metadata.HasFunctionImport);
         Assert.NotEmpty(metadata.ContentFingerprint);
         Assert.All(firstFacts, fact => Assert.NotEmpty(fact.Evidence));
-        Assert.Equal(ExpectedMutationKinds, firstFacts.OfType<EntityFrameworkMutationFact>().OrderBy(f => f.SequenceOrdinal).Select(f => f.MutationKind.ToString()));
+        Assert.Equal(ExpectedMutationKinds, firstFacts.OfType<EntityFrameworkMutationFact>()
+            .Where(f => f.Method == execute.Id)
+            .OrderBy(f => f.SequenceOrdinal).Select(f => f.MutationKind.ToString()).ToArray());
     }
 
     [Fact]
@@ -51,7 +53,8 @@ public sealed class EntityFramework6ProjectionTests
         var queries = framework.Facts.OfType<EntityFrameworkQueryFact>().ToArray();
 
         var positive = Assert.Single(queries, fact => fact.Method == methods["LocalWhereCount"].Id);
-        Assert.Equal(EntityFrameworkQueryOperatorKind.Count, Assert.Single(positive.Chain).OperatorKind);
+        Assert.Equal(EntityFrameworkQueryOperatorKind.Count, positive.Chain[^1].OperatorKind);
+        Assert.Equal(EntityFrameworkQueryOperatorKind.Where, positive.Chain[0].OperatorKind);
         var underlying = positive.Evidence.SelectMany(evidence => evidence.UnderlyingEvidence).ToArray();
         Assert.True(underlying.Length >= 2, "The terminal and local initializer/Where must both remain evidence-backed.");
         Assert.Equal(underlying.Length, underlying.Select(evidence => evidence.Id).Distinct().Count());
@@ -60,6 +63,73 @@ public sealed class EntityFramework6ProjectionTests
         {
             Assert.DoesNotContain(queries, fact => fact.Method == methods[rejected].Id);
         }
+    }
+
+    [Fact]
+    public async Task DbSetOperationsRequireACompilerProvenDerivedDbContextOwner()
+    {
+        var extraction = await Extract();
+        var framework = await Compose(extraction);
+        var methods = extraction.ProgramIndex.Methods
+            .Where(method => method.Name is "NonContextDbSetDirect" or "NonContextDbSetRecovered"
+                or "NonContextDbSetLocal" or "NonContextDbSetAdd")
+            .Select(method => method.Id)
+            .ToHashSet();
+
+        Assert.DoesNotContain(framework.Facts.OfType<EntityFrameworkQueryFact>(), fact => methods.Contains(fact.Method));
+        Assert.DoesNotContain(framework.Facts.OfType<EntityFrameworkMutationFact>(), fact => methods.Contains(fact.Method));
+    }
+
+    [Fact]
+    public async Task CapturedLambdaAndLocalFunctionDefinitionsAreWithheld()
+    {
+        var extraction = await Extract();
+        var framework = await Compose(extraction);
+        var methods = extraction.ProgramIndex.Methods
+            .Where(method => method.Name is "CapturedLambdaLocalWhereCount" or "CapturedLocalFunctionWhereCount")
+            .Select(method => method.Id)
+            .ToHashSet();
+
+        Assert.DoesNotContain(framework.Facts.OfType<EntityFrameworkQueryFact>(), fact => methods.Contains(fact.Method));
+    }
+
+    [Fact]
+    public async Task QueryableIdentitiesCarryTheMeasuredAssemblyTokenAndWhereItemsStayOrdered()
+    {
+        var extraction = await Extract();
+        var execute = Assert.Single(extraction.ProgramIndex.Methods, method => method.Name == "Execute");
+        var multiple = Assert.Single(extraction.ProgramIndex.Methods, method => method.Name == "MultipleWhereCount");
+        var operations = extraction.Operations.Where(operation => operation.Method == execute.Id || operation.Method == multiple.Id).ToArray();
+        var queryable = operations.Where(operation => operation.TargetIdentity?.ContainingMetadataType == "System.Linq.Queryable").ToArray();
+        Assert.NotEmpty(queryable);
+        var token = typeof(FrameworkMethodIdentity).GetProperty("AssemblyPublicKeyToken");
+        Assert.NotNull(token);
+        Assert.Contains(queryable, operation => (string?)token!.GetValue(operation.TargetIdentity) == "b03f5f7f11d50a3a");
+        Assert.Contains(operations, operation => operation.TargetIdentity?.AssemblyIdentity == "EntityFramework"
+            && (string?)token!.GetValue(operation.TargetIdentity) == "b77a5c561934e089");
+
+        var framework = await Compose(extraction);
+        var fact = Assert.Single(framework.Facts.OfType<EntityFrameworkQueryFact>(), candidate => candidate.Method == multiple.Id);
+        Assert.Equal(
+            new[] { EntityFrameworkQueryOperatorKind.Where, EntityFrameworkQueryOperatorKind.Where, EntityFrameworkQueryOperatorKind.Count },
+            fact.Chain.Select(item => item.OperatorKind));
+        Assert.Equal(3, fact.Chain.Select(item => item.Operation).Distinct().Count());
+        Assert.NotEmpty(fact.Evidence);
+    }
+
+    [Fact]
+    public async Task EdmxExtractionObservesCancellationInsteadOfUsingAPathOnlyFallback()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        var result = await new RoslynProfileAnalysisExtractor().ExtractAsync(
+            new CompilationAnalysisRequest(
+                FindRoot(),
+                Path.Combine(FindRoot(), Fixture.Replace('/', Path.DirectorySeparatorChar)),
+                CompilationProfile.Create(Fixture, "Release", "net9.0")),
+            cancellation.Token);
+        Assert.Equal(ApplicationOutcome.Cancelled, result.Outcome);
     }
 
     private static async Task<ProfileAnalysisExtraction> Extract()

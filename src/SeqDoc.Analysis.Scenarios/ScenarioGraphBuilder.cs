@@ -2029,7 +2029,7 @@ public static class ScenarioGraphBuilder
         List<ScenarioNode> nodes,
         List<ScenarioEdge> edges)
     {
-        if (!NonGetFactsBound(request))
+        if (!NonGetFactsBound(request) && !FrameworkFactsBound(request))
         {
             return;
         }
@@ -2043,7 +2043,9 @@ public static class ScenarioGraphBuilder
         foreach (var mutation in semanticMutations
                      .Concat(frameworkMutations)
                      .GroupBy(fact => fact.Operation.Value, StringComparer.Ordinal)
-                     .Select(group => group.First())
+                     .Select(group => MergeCompatibleMutations(group))
+                     .Where(fact => fact is not null)
+                     .Select(fact => fact!)
                      .OrderBy(fact => fact.SequenceOrdinal)
                      .ThenBy(fact => fact.Operation.Value, StringComparer.Ordinal))
         {
@@ -2076,6 +2078,27 @@ public static class ScenarioGraphBuilder
                 mutation.Evidence,
                 mutation.Certainty,
                 mutation.SequenceOrdinal));
+        }
+
+        static EntityFrameworkMutationFact? MergeCompatibleMutations(IEnumerable<EntityFrameworkMutationFact> candidates)
+        {
+            var facts = candidates.OrderBy(fact => fact.Id.Value, StringComparer.Ordinal).ToArray();
+            var first = facts[0];
+            if (facts.Any(fact => fact.MutationKind != first.MutationKind
+                || !string.Equals(fact.DbContextType, first.DbContextType, StringComparison.Ordinal)
+                || !string.Equals(fact.EntityType, first.EntityType, StringComparison.Ordinal)
+                || !string.Equals(fact.TargetMember, first.TargetMember, StringComparison.Ordinal)
+                || fact.ArgumentOperation != first.ArgumentOperation))
+            {
+                return null;
+            }
+
+            var certainty = facts.Max(fact => fact.Certainty);
+            return first with
+            {
+                Evidence = facts.SelectMany(fact => fact.Evidence).DistinctBy(evidence => evidence.Id.Value).OrderBy(evidence => evidence.Id.Value, StringComparer.Ordinal).ToImmutableArray(),
+                Certainty = certainty,
+            };
         }
     }
 

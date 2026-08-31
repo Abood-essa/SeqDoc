@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Frameworks;
 using SeqDoc.Core.Identity;
+using SeqDoc.Core.ProgramIndex;
 using SeqDoc.Core.Semantics;
 
 namespace SeqDoc.FrameworkModels.EntityFramework;
@@ -15,12 +16,17 @@ public sealed class EntityFramework6Model : IFrameworkBehaviorModel
     private const string DbContext = "System.Data.Entity.DbContext";
     private const string DbSet = "System.Data.Entity.DbSet`1";
     private const string Queryable = "System.Linq.Queryable";
+    private const string EfToken = "b77a5c561934e089";
+    private const string QueryableToken = "b03f5f7f11d50a3a";
 
     public FrameworkModelDescriptor Descriptor { get; } = new(ModelIdValue, ModelVersionValue, "Entity Framework 6 and EDMX", 201);
 
     public bool IsApplicable(FrameworkDetectionContext context)
-        => context.ProgramIndex.References.Any(reference =>
-            string.Equals(reference.Identity, EfAssembly, StringComparison.Ordinal)
+        => context.ProgramIndex.References.Any(reference => reference.Kind == ProgramReferenceKind.Package
+            && string.Equals(reference.Identity, EfAssembly, StringComparison.Ordinal)
+            && string.Equals(reference.Version, "6.4.4", StringComparison.Ordinal))
+        && context.ProgramIndex.References.Any(reference => reference.Kind == ProgramReferenceKind.Assembly
+            && string.Equals(reference.Identity, EfAssembly, StringComparison.Ordinal)
             && string.Equals(reference.Version, EfVersion, StringComparison.Ordinal));
     public ValueTask<ModelResult> AnalyzeSymbolAsync(SymbolDescriptor symbol, FrameworkAnalysisContext context, CancellationToken cancellationToken)
         => ValueTask.FromResult(ModelResult.Unrecognized);
@@ -53,7 +59,7 @@ public sealed class EntityFramework6Model : IFrameworkBehaviorModel
             return ValueTask.FromResult(ModelResult.Unrecognized);
         }
         var chain = operation.QueryChain;
-        if (chain is not null && identity.AssemblyIdentity == Queryable && identity.AssemblyVersion == "9.0.0.0" && identity.ContainingMetadataType == Queryable && identity.GenericArity == 1)
+        if (chain is not null && identity.AssemblyIdentity == Queryable && identity.AssemblyVersion == "9.0.0.0" && identity.AssemblyPublicKeyToken == QueryableToken && identity.ContainingMetadataType == Queryable && identity.GenericArity == 1)
         {
             var kind = identity.MethodMetadataName switch { "FirstOrDefault" => EntityFrameworkQueryOperatorKind.FirstOrDefault, "Count" => EntityFrameworkQueryOperatorKind.Count, _ => EntityFrameworkQueryOperatorKind.Unknown };
             if (kind != EntityFrameworkQueryOperatorKind.Unknown && ExactQueryable(identity, kind, chain)
@@ -64,11 +70,11 @@ public sealed class EntityFramework6Model : IFrameworkBehaviorModel
             }
         }
         var target = identity;
-        if (target.AssemblyIdentity != EfAssembly || target.AssemblyVersion != EfVersion)
+        if (target.AssemblyIdentity != EfAssembly || target.AssemblyVersion != EfVersion || target.AssemblyPublicKeyToken != EfToken)
         {
             return ValueTask.FromResult(ModelResult.Unrecognized);
         }
-        if (chain is not null && target.ContainingMetadataType == DbSet && target.MethodMetadataName == "Add" && target.GenericArity == 0 && target.Parameters.Length == 1 && target.Parameters[0].RefKind == ParameterRefKind.None && target.Parameters[0].FullyQualifiedType == chain.EntityType && target.ReturnType == chain.EntityType)
+        if (chain is not null && target.ContainingMetadataType == DbSet && target.MethodMetadataName == "Add" && target.GenericArity == 0 && target.Parameters.Length == 1 && target.Parameters[0].RefKind == ParameterRefKind.None && target.Parameters[0].FullyQualifiedType == chain.EntityType)
         {
             return ValueTask.FromResult(new ModelResult(true, [Mutation(context.Profile.Id, operation, EntityFrameworkMutationKind.Add, chain.ContainingType, chain.EntityType)]));
         }
@@ -128,6 +134,7 @@ public sealed class EntityFramework6Model : IFrameworkBehaviorModel
     private static bool ExactWhereStep(FrameworkMethodIdentity identity, string entity)
         => identity.AssemblyIdentity == Queryable
             && identity.AssemblyVersion == "9.0.0.0"
+            && identity.AssemblyPublicKeyToken == QueryableToken
             && identity.ContainingMetadataType == Queryable
             && identity.MethodMetadataName == "Where"
             && identity.GenericArity == 1
@@ -136,8 +143,27 @@ public sealed class EntityFramework6Model : IFrameworkBehaviorModel
             && identity.Parameters[0].FullyQualifiedType == $"System.Linq.IQueryable<{entity}>"
             && identity.Parameters[1].FullyQualifiedType == $"System.Linq.Expressions.Expression<System.Func<{entity}, System.Boolean>>"
             && identity.ReturnType == $"System.Linq.IQueryable<{entity}>";
-    private static EntityFrameworkQueryFact Query(CompilationProfileId profile, OperationDescriptor o, FrameworkQueryChainDescriptor c, EntityFrameworkQueryOperatorKind k) => new()
-    { Id = Id(profile, o, "query"), Method = o.Method, Operation = o.Id, DbContextType = c.ContainingType, DbSetMemberType = c.ReceiverType, EntityType = c.EntityType, Chain = [new EntityFrameworkQueryChainItem(k, o.Id, null)], PredicateOperation = o.PredicateShape?.ComparisonOperation, PredicateOperator = ComparisonOperatorKind.Equal, Evidence = Evidence(o, "query"), Certainty = o.Certainty };
+    private static EntityFrameworkQueryFact Query(CompilationProfileId profile, OperationDescriptor o, FrameworkQueryChainDescriptor c, EntityFrameworkQueryOperatorKind k)
+    {
+        var chain = c.Steps.Select(step => new EntityFrameworkQueryChainItem(step.TargetIdentity.MethodMetadataName == "Where"
+                ? EntityFrameworkQueryOperatorKind.Where : EntityFrameworkQueryOperatorKind.Unknown,
+            step.Operation, step.NavigationMemberIdentity)).ToList();
+        chain.Add(new EntityFrameworkQueryChainItem(k, o.Id, null));
+        return new EntityFrameworkQueryFact
+        {
+            Id = Id(profile, o, "query"),
+            Method = o.Method,
+            Operation = o.Id,
+            DbContextType = c.ContainingType,
+            DbSetMemberType = c.ReceiverType,
+            EntityType = c.EntityType,
+            Chain = chain.ToImmutableArray(),
+            PredicateOperation = o.PredicateShape?.ComparisonOperation,
+            PredicateOperator = ComparisonOperatorKind.Equal,
+            Evidence = Evidence(o, "query"),
+            Certainty = o.Certainty,
+        };
+    }
     private static EntityFrameworkMutationFact Mutation(CompilationProfileId profile, OperationDescriptor o, EntityFrameworkMutationKind k, string context, string entity) => new()
     { Id = Id(profile, o, "mutation"), Method = o.Method, Operation = o.Id, MutationKind = k, SequenceOrdinal = o.SourceStart, DbContextType = context, EntityType = entity, Evidence = Evidence(o, "mutation"), Certainty = o.Certainty };
     private static BehaviorFactId Id(CompilationProfileId profile, OperationDescriptor o, string kind) => StableIdentity.CreateBehaviorFactId(new BehaviorFactIdentityDescriptor(profile, ModelIdValue, ModelVersionValue, kind, new OperationBehaviorFactAnchor(o.Method, o.Id), 0));

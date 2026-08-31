@@ -35,6 +35,11 @@ public sealed class NonEfContext
     public IQueryable<Record> Records => _marker == 0 ? Enumerable.Empty<Record>().AsQueryable() : Enumerable.Empty<Record>().AsQueryable();
 }
 
+public sealed class NonContextDbSetOwner
+{
+    public DbSet<Record> Records { get; } = null!;
+}
+
 public sealed class Operations
 {
     public void Execute(RecordsContext context, int id)
@@ -98,5 +103,50 @@ public sealed class Operations
     {
         var records = context.Records.Select(record => record);
         _ = records.Count();
+    }
+
+    public void NonContextDbSetDirect(NonContextDbSetOwner owner) => _ = owner.Records.Count();
+
+    public void NonContextDbSetRecovered(NonContextDbSetOwner owner)
+    {
+        var records = owner.Records;
+        _ = records.Count();
+    }
+
+    public void NonContextDbSetLocal(NonContextDbSetOwner owner)
+    {
+        var records = owner.Records;
+        _ = records.Count();
+    }
+
+    public void NonContextDbSetAdd(NonContextDbSetOwner owner, int id)
+        => owner.Records.Add(new Record { Id = id });
+
+    public void CapturedLambdaLocalWhereCount(RecordsContext context, int id)
+    {
+        Func<int> count = () =>
+        {
+            var records = context.Records.Where(record => record.Id == id);
+            return records.Count();
+        };
+        _ = count();
+    }
+
+    public void CapturedLocalFunctionWhereCount(RecordsContext context, int id)
+    {
+        int Count()
+        {
+            var records = context.Records.Where(record => record.Id == id);
+            return records.Count();
+        }
+        _ = Count();
+    }
+
+    public void MultipleWhereCount(RecordsContext context, int id)
+    {
+        _ = context.Records
+            .Where(record => record.Id > 0)
+            .Where(record => record.Id == id)
+            .Count();
     }
 }

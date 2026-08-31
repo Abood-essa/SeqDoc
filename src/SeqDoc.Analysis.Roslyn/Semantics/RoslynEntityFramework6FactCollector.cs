@@ -20,7 +20,7 @@ internal static class RoslynEntityFramework6FactCollector
         var localSymbol = FindLocalSymbol(receiver, models);
         var property = FindDbSetProperty(receiver) ?? FindDbSetProperty(call);
         var sourceProperty = property is null ? FindSourceDbSetProperty(call, models) : null;
-        if (sourceProperty is not null)
+        if (sourceProperty is not null && IsDerivedContext(receiver?.Type))
         {
             var enriched = descriptor with
             {
@@ -71,13 +71,14 @@ internal static class RoslynEntityFramework6FactCollector
         }
         if (property is not null && property.Property.Type is INamedTypeSymbol set
             && set.OriginalDefinition.ContainingAssembly?.Identity.Name == "EntityFramework"
+            && HasToken(set.OriginalDefinition.ContainingAssembly, "b77a5c561934e089")
             && set.OriginalDefinition.ContainingAssembly.Identity.Version?.ToString() == "6.0.0.0"
             && RoslynProgramIndexExtractor.GetMetadataName(set.OriginalDefinition) == DbSet && set.TypeArguments.Length == 1)
         {
             var entity = set.TypeArguments[0].ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat);
             var context = property.Property.ContainingType?.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat) ?? "";
             var discoveredSteps = descriptor.QueryChain?.Steps ?? BuildWhereSteps(receiver, operationIds, descriptor.Id);
-            if (receiver is IInvocationOperation && discoveredSteps is null)
+            if (!IsDerivedContext(property.Property.ContainingType) || (receiver is IInvocationOperation && discoveredSteps is null))
             {
                 return descriptor;
             }
@@ -90,12 +91,16 @@ internal static class RoslynEntityFramework6FactCollector
             return Normalize(enriched, call);
         }
         if (call.TargetMethod.OriginalDefinition.ContainingAssembly?.Identity.Name == "EntityFramework"
+            && HasToken(call.TargetMethod.OriginalDefinition.ContainingAssembly, "b77a5c561934e089")
             && call.TargetMethod.OriginalDefinition.ContainingAssembly.Identity.Version?.ToString() == "6.0.0.0"
             && RoslynProgramIndexExtractor.GetMetadataName(call.TargetMethod.OriginalDefinition.ContainingType) == DbSet
             && call.TargetMethod.OriginalDefinition.MetadataName == "Add"
             && call.TargetMethod.OriginalDefinition.Arity == 0
             && receiver?.Type is INamedTypeSymbol receiverSet
+            && property is not null
+            && IsDerivedContext(property.Property.ContainingType)
             && receiverSet.OriginalDefinition.ContainingAssembly?.Identity.Name == "EntityFramework"
+            && HasToken(receiverSet.OriginalDefinition.ContainingAssembly, "b77a5c561934e089")
             && receiverSet.OriginalDefinition.ContainingAssembly.Identity.Version?.ToString() == "6.0.0.0"
             && RoslynProgramIndexExtractor.GetMetadataName(receiverSet.OriginalDefinition) == DbSet)
         {
@@ -112,6 +117,7 @@ internal static class RoslynEntityFramework6FactCollector
             return Normalize(enriched, call);
         }
         if (call.TargetMethod.OriginalDefinition.ContainingAssembly?.Identity.Name == "EntityFramework"
+            && HasToken(call.TargetMethod.OriginalDefinition.ContainingAssembly, "b77a5c561934e089")
             && call.TargetMethod.OriginalDefinition.ContainingAssembly.Identity.Version?.ToString() == "6.0.0.0"
             && RoslynProgramIndexExtractor.GetMetadataName(call.TargetMethod.OriginalDefinition.ContainingType) == "System.Data.Entity.DbContext"
             && IsDerivedContext(receiver?.Type))
@@ -189,6 +195,7 @@ internal static class RoslynEntityFramework6FactCollector
 
     private static bool IsExactWhere(IMethodSymbol method)
         => method.ContainingAssembly?.Identity.Name == "System.Linq.Queryable"
+            && HasToken(method.ContainingAssembly, "b03f5f7f11d50a3a")
             && method.ContainingAssembly.Identity.Version?.ToString() == "9.0.0.0"
             && RoslynProgramIndexExtractor.GetMetadataName(method.ContainingType) == "System.Linq.Queryable"
             && method.MetadataName == "Where" && method.Arity == 1 && method.Parameters.Length == 2
@@ -203,7 +210,9 @@ internal static class RoslynEntityFramework6FactCollector
             && function.TypeArguments[1].SpecialType == SpecialType.System_Boolean;
 
     private static bool IsExactCount(IMethodSymbol method)
-        => method.MetadataName == "Count" && method.Arity == 1 && method.Parameters.Length == 1
+        => method.ContainingAssembly?.Identity.Name == "System.Linq.Queryable"
+            && HasToken(method.ContainingAssembly, "b03f5f7f11d50a3a")
+            && method.MetadataName == "Count" && method.Arity == 1 && method.Parameters.Length == 1
             && method.Parameters[0].RefKind == RefKind.None
             && method.Parameters[0].Type is INamedTypeSymbol source
             && IsQueryableOf(source, method.TypeParameters[0])
@@ -220,6 +229,7 @@ internal static class RoslynEntityFramework6FactCollector
         if (type is not INamedTypeSymbol set || set.TypeArguments.Length != 1
             || RoslynProgramIndexExtractor.GetMetadataName(set.OriginalDefinition) != DbSet
             || set.OriginalDefinition.ContainingAssembly?.Identity.Name != "EntityFramework"
+            || !HasToken(set.OriginalDefinition.ContainingAssembly, "b77a5c561934e089")
             || set.OriginalDefinition.ContainingAssembly.Identity.Version?.ToString() != "6.0.0.0")
         {
             return false;
@@ -389,19 +399,17 @@ internal static class RoslynEntityFramework6FactCollector
             method.Parameters.Select(parameter => new ParameterIdentityDescriptor(
                 RoslynProgramIndexExtractor.ToParameterRefKind(parameter.RefKind),
                 parameter.Type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat))).ToImmutableArray(),
-            method.ReturnType.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
-            method.ContainingAssembly.Identity.Version?.ToString());
+             method.ReturnType.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
+             method.ContainingAssembly.Identity.Version?.ToString(),
+             method.ContainingAssembly.Identity.PublicKeyToken is { Length: > 0 } token
+                 ? Convert.ToHexString(token.ToArray()).ToLowerInvariant()
+                 : null);
 
     private static (string SetType, string ContextType, string MemberName, string EntityType)? FindSourceDbSetProperty(IInvocationOperation call, IReadOnlyDictionary<SyntaxTree, SemanticModel> models)
     {
         if (!models.TryGetValue(call.Syntax.SyntaxTree, out var model))
         {
-            model = models.Values.FirstOrDefault(candidate =>
-                string.Equals(candidate.SyntaxTree.FilePath, call.Syntax.SyntaxTree.FilePath, StringComparison.Ordinal));
-            if (model is null)
-            {
-                return null;
-            }
+            return null;
         }
 
         var syntaxRoots = new[] { call.Syntax, call.Instance?.Syntax }
@@ -413,6 +421,7 @@ internal static class RoslynEntityFramework6FactCollector
                 && property.Type is INamedTypeSymbol set
                 && RoslynProgramIndexExtractor.GetMetadataName(set.OriginalDefinition) == DbSet
                 && set.OriginalDefinition.ContainingAssembly?.Identity.Name == "EntityFramework"
+                && HasToken(set.OriginalDefinition.ContainingAssembly, "b77a5c561934e089")
                 && set.OriginalDefinition.ContainingAssembly.Identity.Version?.ToString() == "6.0.0.0")
             {
                 return (
@@ -442,6 +451,7 @@ internal static class RoslynEntityFramework6FactCollector
                 && property.Property.Type is INamedTypeSymbol set
                 && RoslynProgramIndexExtractor.GetMetadataName(set.OriginalDefinition) == DbSet
                 && set.OriginalDefinition.ContainingAssembly?.Identity.Name == "EntityFramework"
+                && HasToken(set.OriginalDefinition.ContainingAssembly, "b77a5c561934e089")
                 && set.OriginalDefinition.ContainingAssembly.Identity.Version?.ToString() == "6.0.0.0")
             {
                 return property;
@@ -462,6 +472,7 @@ internal static class RoslynEntityFramework6FactCollector
         {
             if (RoslynProgramIndexExtractor.GetMetadataName(current.OriginalDefinition) == "System.Data.Entity.DbContext"
                 && current.OriginalDefinition.ContainingAssembly?.Identity.Name == "EntityFramework"
+                && HasToken(current.OriginalDefinition.ContainingAssembly, "b77a5c561934e089")
                 && current.OriginalDefinition.ContainingAssembly.Identity.Version?.ToString() == "6.0.0.0")
             {
                 return true;
@@ -469,6 +480,10 @@ internal static class RoslynEntityFramework6FactCollector
         }
         return false;
     }
+
+    private static bool HasToken(IAssemblySymbol? assembly, string expected)
+        => assembly?.Identity.PublicKeyToken is { Length: > 0 } token
+            && Convert.ToHexString(token.ToArray()).Equals(expected, StringComparison.OrdinalIgnoreCase);
 
 
     private static IOperation? Unwrap(IOperation? operation)

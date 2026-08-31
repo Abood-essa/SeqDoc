@@ -59,6 +59,24 @@ public sealed class EntityFramework6ModelTests
         Assert.Empty(rejected.Facts);
     }
 
+    [Fact]
+    public async Task QueryFactPreservesWeakestCertaintyAndAllOperationEvidence()
+    {
+        var operation = Query("Count") with
+        {
+            Certainty = CertaintyLevel.Conservative,
+            Evidence = [Evidence(), Evidence("initializer")],
+        };
+
+        var result = await new EntityFramework6Model().AnalyzeOperationAsync(operation, ContextFor(), CancellationToken.None);
+        var fact = Assert.IsType<EntityFrameworkQueryFact>(Assert.Single(result.Facts));
+
+        Assert.Equal(CertaintyLevel.Conservative, fact.Certainty);
+        var underlying = fact.Evidence.SelectMany(evidence => evidence.UnderlyingEvidence).Select(evidence => evidence.Id).ToArray();
+        Assert.Contains(new EvidenceId("source"), underlying);
+        Assert.Contains(new EvidenceId("initializer"), underlying);
+    }
+
     [Theory]
     [InlineData("Add")]
     [InlineData("SaveChanges")]
@@ -138,7 +156,9 @@ public sealed class EntityFramework6ModelTests
     [InlineData("EntityFrameworkCore", "6.0.0.0", false)]
     public void ApplicabilityRequiresTheExactEf6Reference(string assembly, string version, bool expected)
     {
-        var index = EmptyIndex([new ProgramReference("ref", new ProjectId("project"), ProgramReferenceKind.Package, assembly, version, [])]);
+        var index = EmptyIndex([
+            new ProgramReference("package", new ProjectId("project"), ProgramReferenceKind.Package, assembly, assembly == "EntityFramework" && version == "6.0.0.0" ? "6.4.4" : version, []),
+            new ProgramReference("assembly", new ProjectId("project"), ProgramReferenceKind.Assembly, assembly, version, [])]);
         Assert.Equal(expected, new EntityFramework6Model().IsApplicable(new FrameworkDetectionContext(Profile, index)));
     }
 
@@ -150,26 +170,26 @@ public sealed class EntityFramework6ModelTests
             ? ImmutableArray.Create(new ParameterIdentityDescriptor(ParameterRefKind.None, $"System.Linq.IQueryable<{Entity}>"))
             : ImmutableArray.Create(new ParameterIdentityDescriptor(ParameterRefKind.None, $"System.Linq.IQueryable<{Entity}>"), new ParameterIdentityDescriptor(ParameterRefKind.None, $"System.Linq.Expressions.Expression<System.Func<{Entity}, System.Boolean>>"));
         return new(new OperationId("op:" + name), new MethodId("method:Execute"), "Invocation", new DocumentId("doc"), 10, 1, [Evidence()], CertaintyLevel.Exact,
-            new FrameworkMethodIdentity("System.Linq.Queryable", "System.Linq.Queryable", name, 1, parameters, name == "Count" ? "System.Int32" : Entity, "9.0.0.0"),
+            new FrameworkMethodIdentity("System.Linq.Queryable", "System.Linq.Queryable", name, 1, parameters, name == "Count" ? "System.Int32" : Entity, "9.0.0.0", "b03f5f7f11d50a3a"),
             QueryChain: new FrameworkQueryChainDescriptor(DbSet, Context, "Records", Entity, []),
             PredicateShape: name == "FirstOrDefault" ? new(PredicateShapeKind.EqualityComparison, new OperationId("predicate")) : null);
     }
 
     private static OperationDescriptor Mutation(string name) => new(new OperationId("op:" + name), new MethodId("method:Execute"), "Invocation", new DocumentId("doc"), name == "Add" ? 20 : 30, 1, [Evidence()], CertaintyLevel.Exact,
         new FrameworkMethodIdentity(Ef, name == "Add" ? "System.Data.Entity.DbSet`1" : "System.Data.Entity.DbContext", name, 0,
-            name == "Add" ? [new(ParameterRefKind.None, Entity)] : [], name == "Add" ? Entity : "System.Int32", Version),
+            name == "Add" ? [new(ParameterRefKind.None, Entity)] : [], name == "Add" ? Entity : "System.Int32", Version, "b77a5c561934e089"),
             QueryChain: new FrameworkQueryChainDescriptor(DbSet, Context, "Records", Entity, []));
 
     private static FrameworkMethodIdentity Where() => new(
         "System.Linq.Queryable", "System.Linq.Queryable", "Where", 1,
         [new(ParameterRefKind.None, $"System.Linq.IQueryable<{Entity}>"), new(ParameterRefKind.None, $"System.Linq.Expressions.Expression<System.Func<{Entity}, System.Boolean>>")],
-        $"System.Linq.IQueryable<{Entity}>", "9.0.0.0");
+         $"System.Linq.IQueryable<{Entity}>", "9.0.0.0", "b03f5f7f11d50a3a");
 
     private static OperationDescriptor EdmxOperation(ImmutableArray<CompilerProvenArgument> arguments)
         => new(new OperationId("op:edmx"), new MethodId("method:metadata"), "EdmxMetadata", new DocumentId("doc"), 1, 1,
             [Evidence()], CertaintyLevel.Exact, ConstantArguments: arguments);
 
-    private static EvidenceRef Evidence() => new(new EvidenceId("source"), EvidenceKind.Source, "Operations.cs", new SourceRange(new DocumentId("doc"), new SourcePosition(1, 0), new SourcePosition(1, 1)), "Execute", null, CertaintyLevel.Exact);
+    private static EvidenceRef Evidence(string id = "source") => new(new EvidenceId(id), EvidenceKind.Source, "Operations.cs", new SourceRange(new DocumentId("doc"), new SourcePosition(1, 0), new SourcePosition(1, 1)), "Execute", null, CertaintyLevel.Exact);
 
     private static ProgramIndexSnapshot EmptyIndex(ImmutableArray<ProgramReference>? references = null) => new(1, "test", Profile, [], [], [], [], [], [], [], references ?? [new("ref", new ProjectId("project"), ProgramReferenceKind.Package, Ef, Version, [])], [], [], [], "input", "fingerprint");
 }

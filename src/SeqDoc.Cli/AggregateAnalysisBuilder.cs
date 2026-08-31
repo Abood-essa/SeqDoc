@@ -53,6 +53,7 @@ internal sealed class AggregateAnalysisBuilder : IAnalysisBuilder
             new AspNetCoreMinimalApiModel(),
             new CoreWcfServiceModel(),
             new EntityFrameworkQueryModel(),
+            new EntityFramework6Model(),
             new FusionCacheGetOrSetModel(),
             new MediatRDispatchModel(),
             new HostedWorkerModel(),

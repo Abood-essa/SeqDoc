@@ -42,6 +42,14 @@ public sealed class EdmxScenarioProjectionTests
         Assert.Contains(graph.Edges, edge => edge.Target == node.Id && edge.Kind == ScenarioEdgeKind.Observation);
         Assert.Contains("runtime behavior are not inferred", node.Detail, StringComparison.Ordinal);
 
+        var repeated = Assert.Single(SeqDoc.Analysis.Scenarios.ScenarioGraphBuilder.Build(valid).Graphs,
+            candidate => candidate.RootMethod == rootMethod);
+        Assert.Equal(graph.DebugProjection, repeated.DebugProjection);
+        var firstPlan = SeqDoc.Application.Documentation.DocumentationPlanner.Plan(graph);
+        var repeatedPlan = SeqDoc.Application.Documentation.DocumentationPlanner.Plan(repeated);
+        Assert.Equal(firstPlan.Diagram.Messages.Select(message => message.Id), repeatedPlan.Diagram.Messages.Select(message => message.Id));
+        Assert.Equal(firstPlan.Wording.DebugProjection, repeatedPlan.Wording.DebugProjection);
+
         var foreign = valid with { FrameworkFacts = valid.FrameworkFacts with { ProfileId = ScenarioTestFactory.ForeignProfile.Id } };
         var foreignGraph = Assert.Single(SeqDoc.Analysis.Scenarios.ScenarioGraphBuilder.Build(foreign).Graphs,
             candidate => candidate.RootMethod == rootMethod);

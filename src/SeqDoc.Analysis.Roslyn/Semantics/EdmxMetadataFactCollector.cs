@@ -12,7 +12,7 @@ namespace SeqDoc.Analysis.Roslyn.Semantics;
 
 internal static class EdmxMetadataFactCollector
 {
-    public static void AddEvaluatedItems(LoadedProject project, CompilationProfile profile, string repositoryRoot, FrameworkAnalysisRequestCollector request)
+    public static void AddEvaluatedItems(LoadedProject project, CompilationProfile profile, string repositoryRoot, FrameworkAnalysisRequestCollector request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(project.Project.FilePath))
         {
@@ -33,6 +33,7 @@ internal static class EdmxMetadataFactCollector
             .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase);
         foreach (var group in items)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var fullPath = group.Key;
             var relative = Path.GetRelativePath(repositoryRoot, fullPath).Replace(Path.DirectorySeparatorChar, '/');
             if (relative.StartsWith("../", StringComparison.Ordinal) || Path.IsPathRooted(relative))
@@ -45,7 +46,9 @@ internal static class EdmxMetadataFactCollector
             try
             {
                 bytes = File.ReadAllBytes(fullPath);
+                cancellationToken.ThrowIfCancellationRequested();
                 document = XDocument.Parse(Encoding.UTF8.GetString(bytes), LoadOptions.PreserveWhitespace);
+                cancellationToken.ThrowIfCancellationRequested();
             }
             catch (IOException)
             {
@@ -72,6 +75,7 @@ internal static class EdmxMetadataFactCollector
             bool function = root.Descendants().Any(x => x.Name == XName.Get("Function", ssdl));
             var evidence = new EvidenceRef(new EvidenceId("evidence:edmx:" + relative), EvidenceKind.Source, relative,
                 new SourceRange(new DocumentId("document:edmx:" + relative), new SourcePosition(0, 0), new SourcePosition(0, 1)), "EDMX", "evaluated EDMX item", CertaintyLevel.Exact);
+            cancellationToken.ThrowIfCancellationRequested();
             var fingerprint = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
             request.AddOperation(new OperationDescriptor(new OperationId($"operation:edmx:{project.StableId.Value}:{relative}:{fingerprint}"),
                 new MethodId("metadata:edmx:" + project.StableId.Value), "EdmxMetadata", evidence.Range!.Document, 0, bytes.Length, [evidence], CertaintyLevel.Exact,

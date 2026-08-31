@@ -447,6 +447,25 @@ public sealed class CliProcessTests
     }
 
     [Fact]
+    public async Task AnalyzeRegistersEf6ModelAndGeneratesEdmxDocumentationThroughTheRealCli()
+    {
+        string root = FindRepositoryRoot();
+        using var cache = new TemporaryCache();
+        string output = System.IO.Path.Combine(cache.DirectoryPath, "docs");
+
+        string target = "tests/fixtures/PassC/EntityFramework6Edmx/EntityFramework6Edmx.csproj";
+        var result = await RunAsync("analyze", target,
+            "--repository-root", root, "--cache", cache.Path, "--output", output, "--json");
+
+        Assert.Equal(0, result.ExitCode);
+        using var document = JsonDocument.Parse(result.Output);
+        Assert.Equal("Succeeded", document.RootElement.GetProperty("outcome").GetString());
+        Assert.True(File.Exists(System.IO.Path.Combine(output, "index.md")));
+        Assert.Contains(Directory.GetFiles(output, "*.md", SearchOption.TopDirectoryOnly), file =>
+            File.ReadAllText(file).Contains("EDMX metadata boundary", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task AnalyzeEntryRequiresOutputAndSelectsExactlyOneFlow()
     {
         string root = FindRepositoryRoot();
