@@ -468,6 +468,50 @@ public sealed class CoreWcfClientInvocationProjectionTests
         Assert.DoesNotContain(plan.Wording.Phrases, item => item.Key == "client-operation-invocation");
     }
 
+    [Fact]
+    public async Task Net9CompatibilityTupleCallSiteRootedAsAConfiguredMethodProducesExactlyOneVisibleClientInvocationMessage()
+    {
+        // Issue #44: the configured-method root branch of ScenarioGraphBuilder must join a compiler-proven
+        // ServiceClientInvocationFact exactly like the HTTP controller-action branch already does. This is
+        // the real-producer vertical: CalculatorCaller.CallAdd is rooted via ConfiguredRoots (not an
+        // HttpEntryPointFact), so the configured branch owns the whole join through DocumentationPlanner.
+        const string ns = "ClassicWcfNet9V800";
+        var (programIndex, behavior, framework, profile) = await AnalyzeFullPipelineAsync(
+            "tests/fixtures/PassC/ClassicWcfNet9Compatibility/ClassicWcfNet9V800/ClassicWcfNet9V800.csproj", "net9.0");
+        var caller = FindMethod(programIndex, $"{ns}.CalculatorCaller", "CallAdd");
+
+        // The invocation fact is produced compilation-wide, independent of how the graph is rooted.
+        Assert.Single(
+            framework.Facts.OfType<ServiceClientInvocationFact>(),
+            fact => fact.CallerMethod == caller.Id);
+
+        var request = new ScenarioAnalysisRequest(
+            profile, programIndex, behavior, framework,
+            new SemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], "semantic-test"),
+            new DependencyInjectionFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], "di-test"),
+            new StructuralResultFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], "structural-test"),
+            new NonGetSemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], [], [], [], [], "non-get-test"))
+        {
+            ConfiguredRoots = ImmutableArray.Create(caller.Id),
+        };
+
+        var graphSet = ScenarioGraphBuilder.Build(request);
+        var graph = Assert.Single(graphSet.Graphs, item => item.RootMethod == caller.Id);
+        Assert.Equal(ScenarioRootKind.ConfiguredMethod, graph.RootKind);
+        var node = Assert.Single(graph.Nodes, item => item.Kind == ScenarioNodeKind.ClientOperationInvocation);
+        Assert.DoesNotContain(graph.Nodes, item => item.Kind == ScenarioNodeKind.MethodCall);
+        Assert.Equal($"{ns}.CalculatorClient", node.Presentation?.ClientTypeName);
+        Assert.Equal("Add", node.Presentation?.CalledMemberName);
+        Assert.Equal(CertaintyLevel.Exact, node.Certainty);
+
+        var plan = DocumentationPlanner.Plan(graph);
+        var message = Assert.Single(plan.Diagram.Messages, item => item.Label == "Add");
+        var participant = Assert.Single(plan.Diagram.Participants, item => item.Label == "CalculatorClient");
+        Assert.Equal(participant.Key, message.Target);
+        var phrase = Assert.Single(plan.Wording.Phrases, item => item.Key == "client-operation-invocation");
+        Assert.DoesNotContain("HTTP", phrase.Text, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static void AssertClaim(
         ProgramIndexSnapshot programIndex,
         ServiceClientInvocationFact[] invocations,
