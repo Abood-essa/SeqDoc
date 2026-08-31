@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using SeqDoc.Analysis.Behavior;
 using SeqDoc.Application.Analysis;
 using SeqDoc.Core.Behavior;
+using SeqDoc.Core.Diagnostics;
 using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Identity;
 using SeqDoc.Core.ProgramIndex;
@@ -234,6 +235,68 @@ public sealed class BehaviorAnalyzerTests
         var result = await new BehaviorAnalyzer().AnalyzeAsync(request, CancellationToken.None);
         Assert.True(result.IsSuccess);
         Assert.Equal(64, result.Value!.BehaviorFingerprint.Length);
+    }
+
+    [Fact]
+    public async Task AnalyzeAsyncAllowsOnlyTheRatifiedWithholdDiagnostics()
+    {
+        string[] allowedCodes = ["BD2001", "BD2002", "BD2003", "BD2010", "BD2011", "BD3001"];
+        var diagnostics = allowedCodes.Select(CreateDiagnostic).ToImmutableArray();
+        var input = new ExtractedBehaviorInput(
+            Profile, "index-fingerprint", [], new ExtractedTypeHierarchy([], true), [], [], [], diagnostics, string.Empty);
+
+        var result = await new BehaviorAnalyzer().AnalyzeAsync(
+            new BehaviorAnalysisRequest(CreateEmptyIndex(), input), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(allowedCodes, result.Value!.Diagnostics.Select(diagnostic => diagnostic.Code));
+        Assert.Equal(diagnostics.Select(diagnostic => diagnostic.Id), result.Value.Diagnostics.Select(diagnostic => diagnostic.Id));
+        Assert.Equal(diagnostics.Select(diagnostic => diagnostic.Certainty), result.Value.Diagnostics.Select(diagnostic => diagnostic.Certainty));
+        Assert.Equal(diagnostics.SelectMany(diagnostic => diagnostic.Evidence), result.Value.Diagnostics.SelectMany(diagnostic => diagnostic.Evidence));
+    }
+
+    [Fact]
+    public async Task AnalyzeAsyncTreatsUnknownFutureBehaviorDiagnosticsAsBlocking()
+    {
+        var diagnostic = CreateDiagnostic("BD9999");
+        var input = new ExtractedBehaviorInput(
+            Profile, "index-fingerprint", [], new ExtractedTypeHierarchy([], true), [], [], [], [diagnostic], string.Empty);
+
+        var result = await new BehaviorAnalyzer().AnalyzeAsync(
+            new BehaviorAnalysisRequest(CreateEmptyIndex(), input), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ApplicationOutcome.AnalysisFailure, result.Outcome);
+        Assert.Null(result.Value);
+        var retained = Assert.Single(result.Diagnostics);
+        Assert.Equal(diagnostic.Id, retained.Id);
+        Assert.Equal(diagnostic.Code, retained.Code);
+        Assert.Equal(diagnostic.Certainty, retained.Certainty);
+    }
+
+    [Fact]
+    public async Task AnalyzeAsyncDiagnosticInputOrderDoesNotChangeFingerprintOrLoseDiagnostics()
+    {
+        var tiedId = new DiagnosticId("diagnostic:v1:tied");
+        var earlier = CreateDiagnostic(tiedId, "BD2001", "A", "detail-a");
+        var later = CreateDiagnostic(tiedId, "BD3001", "B", "different detail");
+        var diagnostics = ImmutableArray.Create(later, earlier);
+        var reversed = diagnostics.Reverse().ToImmutableArray();
+
+        var first = await AnalyzeWithDiagnostics(diagnostics);
+        var second = await AnalyzeWithDiagnostics(reversed);
+
+        Assert.True(first.IsSuccess);
+        Assert.True(second.IsSuccess);
+        Assert.Equal(first.Value!.BehaviorFingerprint, second.Value!.BehaviorFingerprint);
+        Assert.Equal("A", first.Value.Diagnostics[0].Summary);
+        Assert.Equal("B", first.Value.Diagnostics[1].Summary);
+        Assert.Equal("detail-a", first.Value.Diagnostics[0].InternalDetail);
+        Assert.Equal("different detail", first.Value.Diagnostics[1].InternalDetail);
+        Assert.Equal(first.Value.Diagnostics.Select(diagnostic => diagnostic.Id), second.Value.Diagnostics.Select(diagnostic => diagnostic.Id));
+        Assert.Equal(first.Value.Diagnostics.Select(diagnostic => diagnostic.Code), second.Value.Diagnostics.Select(diagnostic => diagnostic.Code));
+        Assert.Equal(first.Value.Diagnostics.Select(diagnostic => diagnostic.Summary), second.Value.Diagnostics.Select(diagnostic => diagnostic.Summary));
+        Assert.Equal(first.Value.Diagnostics.Select(diagnostic => diagnostic.InternalDetail), second.Value.Diagnostics.Select(diagnostic => diagnostic.InternalDetail));
     }
 
     [Fact]
@@ -513,6 +576,8 @@ public sealed class BehaviorAnalyzerTests
         Assert.Contains(flow.Nodes, node => node.Kind == FlowNodeKind.Decision);
         Assert.Contains(flow.Edges, edge => edge.Kind == FlowEdgeKind.True);
         Assert.Contains(flow.Edges, edge => edge.Kind == FlowEdgeKind.False);
+        Assert.DoesNotContain(flow.Regions, region => region.Kind == FlowRegionKind.NaturalLoop);
+        Assert.DoesNotContain(flow.Edges, edge => edge.Kind == FlowEdgeKind.LoopBack);
     }
 
     [Fact]
@@ -564,4 +629,31 @@ public sealed class BehaviorAnalyzerTests
             [],
             "manifest",
             "index-fingerprint");
+
+    private static AnalysisDiagnostic CreateDiagnostic(string code) =>
+        CreateDiagnostic(new DiagnosticId($"diagnostic:v1:{code}"), code, $"Test diagnostic {code}.", null);
+
+    private static AnalysisDiagnostic CreateDiagnostic(
+        DiagnosticId id, string code, string summary, string? internalDetail) =>
+        new(
+            id,
+            code,
+            DiagnosticSeverity.Warning,
+            AnalysisStage.FrameworkModel,
+            summary,
+            new DiagnosticLocation("test"),
+            "test cause",
+            "test impact",
+            "test action",
+            CertaintyLevel.Exact,
+            internalDetail: internalDetail);
+
+    private static Task<ApplicationResult<BehaviorSnapshot>> AnalyzeWithDiagnostics(
+        ImmutableArray<AnalysisDiagnostic> diagnostics)
+    {
+        var input = new ExtractedBehaviorInput(
+            Profile, "index-fingerprint", [], new ExtractedTypeHierarchy([], true), [], [], [], diagnostics, string.Empty);
+        return new BehaviorAnalyzer().AnalyzeAsync(
+            new BehaviorAnalysisRequest(CreateEmptyIndex(), input), CancellationToken.None);
+    }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -14,8 +15,8 @@ namespace SeqDoc.AcceptanceTests;
 /// Issue #8 acceptance: the merged #41/#44 outbound service-client producer must reach visible
 /// Markdown and Mermaid through the real, config-driven analysis pipeline for the two positive
 /// external lanes (CreditTransfer Web, SMS UI Web), the SMS WindowsHost lane must prove
-/// project/profile isolation, and every analyzed lane must be deterministic and within its diagram
-/// budget.
+/// project/profile isolation, and all four external lanes must be deterministic and within their
+/// diagram budgets.
 ///
 /// Harness path: <b>in-process production CLI</b>. Each lane calls <see cref="CliHost.RunAsync"/> with
 /// the exact <c>analyze --project ... --config &lt;yaml&gt; --output ... --json</c> contract the shipped
@@ -27,8 +28,9 @@ namespace SeqDoc.AcceptanceTests;
 /// <c>OutputSetActivator</c>. MSBuild registration happens inside the resolver (not in <c>Program.Main</c>),
 /// so calling <see cref="CliHost.RunAsync"/> in-process is the faithful path and needs no subprocess; a
 /// hand-rolled <c>CompilationProfile.Create</c> would produce different profile/assembly hashes and the
-/// frozen <c>sms-gateway-ui.yaml</c> roots would not resolve. If the corpus, a lane project, or a usable
-/// MSBuild/SDK is unavailable, the affected lane is skipped.
+/// frozen <c>sms-gateway-ui.yaml</c> roots would not resolve. If the Provided corpus is absent, the
+/// suite skips as a whole; when it exists, a missing lane project or unusable MSBuild/SDK is an
+/// explicit failure rather than a silently skipped lane.
 ///
 /// These claims assert structural, wording and determinism properties on the real produced artifacts,
 /// not frozen profile/fingerprint equality (the external corpus packages float; the point-in-time
@@ -59,8 +61,6 @@ public sealed class ServiceClientExternalCorpusTests
         // Issue #8 pins exactly. SmsWindowsHost and FraudManagement are the isolation / regression
         // lanes running against the floating external corpus (no lock files): a NuGet float that
         // adds one document must not red the suite, but a drop below the frozen floor still fails.
-        // FraudManagement is best-effort - when its maintained checkout does not build it is silently
-        // excluded (see fixture); the two pinned positive lanes must always be present.
         var analyzed = RequireAllLaneScope();
 
         var expectations = new Dictionary<CorpusLane, (int Expected, bool Exact)>
@@ -95,11 +95,10 @@ public sealed class ServiceClientExternalCorpusTests
     }
 
     /// <summary>
-    /// Shared guard for the three all-lane claims. The whole corpus being absent is a clean skip
-    /// (matches <c>CorpusMinimalApiTests</c>); otherwise the two Issue #8-pinned positive lanes must
-    /// have been analyzed - a genuinely missing pinned lane is a loud failure - and the per-lane body
-    /// then runs only over the lanes that actually produced a result (best-effort FraudManagement is
-    /// excluded when its maintained checkout does not build).
+    /// Shared guard for all all-lane claims. The whole Provided corpus being absent is a clean skip
+    /// (matches <c>CorpusMinimalApiTests</c>); otherwise all four lanes must have been analyzed.
+    /// A missing lane or a lane build/infrastructure failure is a loud failure, including for the
+    /// FraudManagement regression lane. The per-lane body therefore runs over all four required lanes.
     /// </summary>
     private CorpusLane[] RequireAllLaneScope()
     {
@@ -108,8 +107,11 @@ public sealed class ServiceClientExternalCorpusTests
             throw SkipException.ForSkip("the Provided external test-project corpus is not installed.");
         }
 
-        Assert.Contains(CorpusLane.CreditTransfer, _corpus.AnalyzedLanes);
-        Assert.Contains(CorpusLane.SmsUiWeb, _corpus.AnalyzedLanes);
+        foreach (CorpusLane lane in Enum.GetValues<CorpusLane>())
+        {
+            Assert.True(_corpus.AnalyzedLanes.Contains(lane),
+                $"{lane}: required lane was not analyzed. Exact reason: {_corpus.SkipReason(lane)}");
+        }
         return _corpus.AnalyzedLanes.ToArray();
     }
 
@@ -236,6 +238,7 @@ public sealed class ServiceClientExternalCorpusTests
     [Fact]
     public void WindowsHostLaneKeepsTheUiWebServiceClientOutOfItsProfile()
     {
+        RequireAllLaneScope();
         var run = _corpus.Require(CorpusLane.SmsWindowsHost).Run1;
 
         // Floor, not exact: WindowsHost is an isolation lane on the floating external corpus (see claim 1).
@@ -281,6 +284,9 @@ public sealed class ServiceClientExternalCorpusTests
             Assert.Equal(
                 first.Select(file => file.RelativePath).OrderBy(path => path, StringComparer.Ordinal),
                 second.Select(file => file.RelativePath).OrderBy(path => path, StringComparer.Ordinal));
+            Assert.True(
+                result.Run1.DiagnosticRecords.SequenceEqual(result.Run2!.DiagnosticRecords),
+                    $"{lane}: complete diagnostic records differ between runs.");
 
             foreach (var file in first)
             {
@@ -363,8 +369,9 @@ public sealed class ServiceClientExternalCorpusTests
         Assert.Contains("service-client boundary", run.FlowMarkdown, StringComparison.Ordinal);
     }
 
-    private static IEnumerable<PositiveLane> PositiveLanes()
+    private IEnumerable<PositiveLane> PositiveLanes()
     {
+        RequireAllLaneScope();
         yield return new PositiveLane(
             CorpusLane.CreditTransfer,
             "CreditTransferServiceClient",
@@ -396,6 +403,7 @@ public enum CorpusLane
 public sealed record LaneRun(
     string Outcome,
     ImmutableArray<string> DiagnosticCodes,
+    ImmutableArray<string> DiagnosticRecords,
     string DiagnosticSummary,
     int MaxMermaidCharacters,
     ImmutableArray<RenderedFile> Files)
@@ -432,14 +440,15 @@ public sealed class ServiceClientExternalCorpusFixture : IAsyncLifetime
     private readonly Dictionary<CorpusLane, LaneResult> _results = [];
     private readonly Dictionary<CorpusLane, string> _skips = [];
     private readonly List<string> _tempDirectories = [];
+    private string? _smsWorktree;
 
-    /// <summary>True only when the Provided corpus itself could not be resolved (every lane skipped
-    /// for the same reason). A best-effort or infrastructure failure of a single lane does not set this.</summary>
+    /// <summary>True only when the Provided corpus itself could not be resolved. A missing lane or an
+    /// infrastructure/build failure of a single lane does not set this and is reported as a required-lane failure.</summary>
     public bool CorpusAbsent { get; private set; }
 
-    /// <summary>The lanes that produced a <see cref="LaneResult"/>, in stable enum order. The all-lane
-    /// claims iterate this set; a lane that was absent, hit an infrastructure/build failure, or threw
-    /// is not included (best-effort FraudManagement is silently excluded that way).</summary>
+    /// <summary>The lanes that produced a <see cref="LaneResult"/>, in stable enum order. When the
+    /// Provided corpus exists, <see cref="RequireAllLaneScope"/> requires this collection to contain
+    /// all four lanes, so an absent, failed, or throwing lane cannot be silently excluded.</summary>
     public IReadOnlyCollection<CorpusLane> AnalyzedLanes =>
         _results.Keys.OrderBy(lane => (int)lane).ToArray();
 
@@ -463,6 +472,7 @@ public sealed class ServiceClientExternalCorpusFixture : IAsyncLifetime
 
         string repositoryRoot = ExternalCorpusResolver.DiscoverRepositoryRoot(AppContext.BaseDirectory);
         string examples = Path.Combine(repositoryRoot, "docs", "examples");
+        _smsWorktree = CreateIsolatedWorktree(Path.Combine(providedRoot, "SMSGateway-om"));
 
         await LoadAsync(
             CorpusLane.CreditTransfer,
@@ -472,13 +482,13 @@ public sealed class ServiceClientExternalCorpusFixture : IAsyncLifetime
             secondRun: true);
         await LoadAsync(
             CorpusLane.SmsWindowsHost,
-            Path.Combine(providedRoot, "SMSGateway-om"),
+            _smsWorktree,
             "Source/LP.SMSGateway.WindowsHost/LP.SMSGateway.WindowsHost.csproj",
             Path.Combine(examples, "sms-gateway.yaml"),
             secondRun: true);
         await LoadAsync(
             CorpusLane.SmsUiWeb,
-            Path.Combine(providedRoot, "SMSGateway-om"),
+            _smsWorktree,
             "Source/LP.SMSGateway.UI.Web/LP.SMSGateway.UI.Web.csproj",
             Path.Combine(examples, "sms-gateway-ui.yaml"),
             secondRun: true);
@@ -492,6 +502,22 @@ public sealed class ServiceClientExternalCorpusFixture : IAsyncLifetime
 
     public Task DisposeAsync()
     {
+        Exception? cleanupFailure = null;
+        if (_smsWorktree is not null)
+        {
+            try
+            {
+                string sourceRoot = Path.Combine(
+                    ExternalCorpusResolver.Current.RequireGroup(ExternalCorpusGroup.Provided).Root,
+                    "SMSGateway-om");
+                RemoveIsolatedWorktree(sourceRoot, _smsWorktree);
+            }
+            catch (Exception exception)
+            {
+                cleanupFailure = exception;
+            }
+        }
+
         foreach (string directory in _tempDirectories)
         {
             try
@@ -510,6 +536,11 @@ public sealed class ServiceClientExternalCorpusFixture : IAsyncLifetime
             }
         }
 
+        if (cleanupFailure is not null)
+        {
+            throw new InvalidOperationException("SMS isolated worktree cleanup did not complete safely.", cleanupFailure);
+        }
+
         return Task.CompletedTask;
     }
 
@@ -524,6 +555,9 @@ public sealed class ServiceClientExternalCorpusFixture : IAsyncLifetime
             ? $"{lane}: {reason}"
             : $"{lane}: lane was not analyzed.");
     }
+
+    public string SkipReason(CorpusLane lane) =>
+        _skips.TryGetValue(lane, out var reason) ? reason : "no diagnostic was recorded";
 
     private async Task LoadAsync(
         CorpusLane lane,
@@ -547,25 +581,35 @@ public sealed class ServiceClientExternalCorpusFixture : IAsyncLifetime
 
         try
         {
-            var first = await RunAsync(lane, laneRoot, target, configPath);
-            if (IsInfrastructureFailure(first))
+            string? preparedBundleConfig = lane == CorpusLane.SmsUiWeb
+                ? PrepareSmsUiBundleConfig(laneRoot)
+                : null;
+            try
             {
-                _skips[lane] = $"analysis could not run in this environment (outcome '{first.Outcome}'): {first.DiagnosticSummary}";
-                return;
-            }
-
-            LaneRun? second = null;
-            if (secondRun)
-            {
-                second = await RunAsync(lane, laneRoot, target, configPath);
-                if (IsInfrastructureFailure(second))
+                var first = await RunAsync(lane, laneRoot, target, configPath);
+                if (IsInfrastructureFailure(first))
                 {
-                    _skips[lane] = $"second determinism run could not complete (outcome '{second.Outcome}').";
+                    _skips[lane] = $"analysis could not run in this environment (outcome '{first.Outcome}'): {first.DiagnosticSummary}";
                     return;
                 }
-            }
 
-            _results[lane] = new LaneResult(lane.ToString(), first, second);
+                LaneRun? second = null;
+                if (secondRun)
+                {
+                    second = await RunAsync(lane, laneRoot, target, configPath);
+                    if (IsInfrastructureFailure(second))
+                    {
+                        _skips[lane] = $"second determinism run could not complete (outcome '{second.Outcome}').";
+                        return;
+                    }
+                }
+
+                _results[lane] = new LaneResult(lane.ToString(), first, second);
+            }
+            finally
+            {
+                RemovePreparedBundleConfig(preparedBundleConfig);
+            }
         }
         catch (Exception exception) when (exception is not SkipException)
         {
@@ -596,6 +640,52 @@ public sealed class ServiceClientExternalCorpusFixture : IAsyncLifetime
 
         // A command-line / path / cache-preparation failure is an environment problem, not a finding.
         return run.DiagnosticCodes.Any(code => code is "SD4000" or "SD4004" or "SD4006");
+    }
+
+    private static string? PrepareSmsUiBundleConfig(string laneRoot)
+    {
+        string path = Path.Combine(laneRoot, "Source", "LP.SMSGateway.UI.Web", "bundleconfig.json");
+        if (File.Exists(path))
+        {
+            return null;
+        }
+
+        bool created = false;
+        try
+        {
+            using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+            created = true;
+            byte[] content = Encoding.UTF8.GetBytes("[]\n");
+            stream.Write(content, 0, content.Length);
+            return path;
+        }
+        catch (IOException) when (!created && File.Exists(path))
+        {
+            return null;
+        }
+        catch
+        {
+            if (created && File.Exists(path))
+            {
+                File.Delete(path);
+            }
+
+            throw;
+        }
+    }
+
+    private static void RemovePreparedBundleConfig(string? path)
+    {
+        if (path is null || !File.Exists(path))
+        {
+            return;
+        }
+
+        byte[] expected = Encoding.UTF8.GetBytes("[]\n");
+        if (File.ReadAllBytes(path).AsSpan().SequenceEqual(expected))
+        {
+            File.Delete(path);
+        }
     }
 
     private async Task<LaneRun> RunAsync(
@@ -630,24 +720,31 @@ public sealed class ServiceClientExternalCorpusFixture : IAsyncLifetime
         string outcome = root.GetProperty("outcome").GetString() ?? "unknown";
 
         var codes = ImmutableArray<string>.Empty;
+        var records = ImmutableArray<string>.Empty;
         var summary = new StringBuilder();
         if (root.TryGetProperty("diagnostics", out var diagnostics) && diagnostics.ValueKind == JsonValueKind.Array)
         {
             var builder = ImmutableArray.CreateBuilder<string>();
+            var recordBuilder = ImmutableArray.CreateBuilder<string>();
             foreach (var diagnostic in diagnostics.EnumerateArray())
             {
+                recordBuilder.Add(diagnostic.GetRawText());
                 string code = diagnostic.GetProperty("code").GetString() ?? string.Empty;
                 builder.Add(code);
-                summary.Append(code).Append(' ');
+                summary.Append(code)
+                    .Append(": ")
+                    .Append(diagnostic.TryGetProperty("technicalCause", out var cause) ? cause.GetString() : null)
+                    .Append(' ');
             }
 
             codes = builder.ToImmutable();
+            records = recordBuilder.ToImmutable();
         }
 
         int budget = ReadMermaidBudget(root);
         var files = ReadGeneratedFiles(outputDirectory);
 
-        return new LaneRun(outcome, codes, summary.ToString().Trim(), budget, files);
+        return new LaneRun(outcome, codes, records, summary.ToString().Trim(), budget, files);
     }
 
     private static int ReadMermaidBudget(JsonElement root)
@@ -692,5 +789,136 @@ public sealed class ServiceClientExternalCorpusFixture : IAsyncLifetime
         Directory.CreateDirectory(path);
         _tempDirectories.Add(path);
         return path;
+    }
+
+    private string CreateIsolatedWorktree(string sourceRoot)
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"seqdoc-i8-sms-worktree-{Guid.NewGuid():N}");
+        var result = RunGit(sourceRoot, "worktree", "add", "--detach", path, "HEAD");
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"Provided corpus exists but SMS isolation could not be established at the checked-out revision. git error: {result.Output}");
+        }
+
+        CopyBuildArtifacts(sourceRoot, path);
+        _tempDirectories.Add(path);
+        return path;
+    }
+
+    private static void CopyBuildArtifacts(string sourceRoot, string destinationRoot)
+    {
+        foreach (string sourceDirectory in Directory.EnumerateDirectories(sourceRoot, "bin", SearchOption.AllDirectories)
+            .Concat(Directory.EnumerateDirectories(sourceRoot, "obj", SearchOption.AllDirectories)))
+        {
+            string relative = Path.GetRelativePath(sourceRoot, sourceDirectory);
+            string destinationDirectory = Path.Combine(destinationRoot, relative);
+            Directory.CreateDirectory(destinationDirectory);
+            foreach (string sourceFile in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+            {
+                string fileRelative = Path.GetRelativePath(sourceRoot, sourceFile);
+                string destinationFile = Path.Combine(destinationRoot, fileRelative);
+                Directory.CreateDirectory(Path.GetDirectoryName(destinationFile)!);
+                File.Copy(sourceFile, destinationFile, overwrite: true);
+            }
+        }
+    }
+
+    private static void RemoveIsolatedWorktree(string sourceRoot, string worktreePath)
+    {
+        const int attempts = 8;
+        const int retryDelayMilliseconds = 500;
+        string expectedPath = Path.GetFullPath(worktreePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var observations = new List<string>();
+
+        for (int attempt = 1; attempt <= attempts; attempt++)
+        {
+            var remove = RunGit(sourceRoot, "worktree", "remove", "--force", worktreePath);
+            var prune = RunGit(sourceRoot, "worktree", "prune", "--expire", "now");
+            bool registered = IsRegisteredWorktree(sourceRoot, expectedPath);
+            bool directoryExists = Directory.Exists(worktreePath);
+            observations.Add($"attempt {attempt}: remove={remove.ExitCode} ({remove.Output}); prune={prune.ExitCode} ({prune.Output}); registered={registered}; directory={directoryExists}");
+
+            if (remove.ExitCode == 0 && prune.ExitCode == 0 && !registered && !directoryExists)
+            {
+                return;
+            }
+
+            if (directoryExists && !registered)
+            {
+                try
+                {
+                    Directory.Delete(worktreePath, recursive: true);
+                }
+                catch (IOException exception)
+                {
+                    observations.Add($"directory delete: {exception.Message}");
+                }
+                catch (UnauthorizedAccessException exception)
+                {
+                    observations.Add($"directory delete: {exception.Message}");
+                }
+            }
+
+            if (attempt < attempts)
+            {
+                Thread.Sleep(retryDelayMilliseconds);
+            }
+        }
+
+        bool remainsRegistered = IsRegisteredWorktree(sourceRoot, expectedPath);
+        bool remainsOnDisk = Directory.Exists(worktreePath);
+        throw new InvalidOperationException(
+            $"SMS isolated worktree cleanup failed after {attempts} bounded attempts. "
+            + $"registered={remainsRegistered}; directory={remainsOnDisk}; "
+            + string.Join(" | ", observations));
+    }
+
+    private static bool IsRegisteredWorktree(string sourceRoot, string expectedPath)
+    {
+        var result = RunGit(sourceRoot, "worktree", "list", "--porcelain");
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"Could not verify SMS isolated worktree registration (git exit {result.ExitCode}): {result.Output}");
+        }
+
+        foreach (string line in result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!line.StartsWith("worktree ", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            string actualPath = Path.GetFullPath(line["worktree ".Length..].Trim())
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (string.Equals(actualPath, expectedPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static (int ExitCode, string Output) RunGit(string workingDirectory, params string[] arguments)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "git",
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (string argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start git.");
+        string output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        return (process.ExitCode, output.Trim());
     }
 }
