@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="2.0" xmlns:edmx="http://schemas.microsoft.com/ado/2008/10/edmx">
+  <edmx:Runtime>
+    <edmx:StorageModels>
+      <Schema Namespace="InitialRedTest.Store" Provider="System.Data.SqlClient" ProviderManifestToken="2012" Alias="Self" xmlns="http://schemas.microsoft.com/ado/2009/11/edm/ssdl">
+        <EntityType Name="Record">
+          <Key><PropertyRef Name="Id" /></Key>
+          <Property Name="Id" Type="int" Nullable="false" />
+        </EntityType>
+        <EntityContainer Name="StoreContainer">
+          <EntitySet Name="Records" EntityType="InitialRedTest.Store.Record" />
+        </EntityContainer>
+        <Function Name="DeclaredStoreFunction" ReturnType="Collection(Int32)" />
+      </Schema>
+    </edmx:StorageModels>
+    <edmx:ConceptualModels>
+      <Schema Namespace="InitialRedTest" Alias="Self" xmlns="http://schemas.microsoft.com/ado/2009/11/edm">
+        <EntityType Name="Record"><Key><PropertyRef Name="Id" /></Key><Property Name="Id" Type="Int32" Nullable="false" /></EntityType>
+        <EntityContainer Name="RecordsContext"><FunctionImport Name="DeclaredFunction" ReturnType="Collection(Int32)" /><EntitySet Name="Records" EntityType="InitialRedTest.Record" /></EntityContainer>
+      </Schema>
+    </edmx:ConceptualModels>
+    <edmx:Mappings>
+      <Mapping Space="C-S" xmlns="http://schemas.microsoft.com/ado/2009/11/mapping/cs">
+        <EntityContainerMapping StorageEntityContainer="StoreContainer" CdmEntityContainer="RecordsContext" />
+      </Mapping>
+    </edmx:Mappings>
+  </edmx:Runtime>
+</edmx:Edmx>

@@ -21,7 +21,8 @@ public sealed record FrameworkMethodIdentity(
     int GenericArity,
     ImmutableArray<ParameterIdentityDescriptor> Parameters,
     string? ReturnType = null,
-    string? AssemblyVersion = null);
+    string? AssemblyVersion = null,
+    string? AssemblyPublicKeyToken = null);
 
 /// <summary>
 /// One compiler-proven constant argument of an invoked method, ordered by declaration position. The
@@ -253,7 +254,8 @@ public sealed record OperationDescriptor(
 public sealed record FrameworkTypeIdentity(
     string AssemblyIdentity,
     string AssemblyVersion,
-    string MetadataName);
+    string MetadataName,
+    string? AssemblyPublicKeyToken = null);
 
 /// <summary>
 /// One compiler-proven base-type-chain entry: the exact original identity plus, for a constructed

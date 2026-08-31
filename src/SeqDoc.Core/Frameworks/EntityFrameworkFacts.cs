@@ -22,6 +22,8 @@ public enum EntityFrameworkQueryOperatorKind
     SingleOrDefaultAsync,
     FirstOrDefaultAsync,
     CountAsync,
+    FirstOrDefault,
+    Count,
 }
 
 /// <summary>
@@ -157,4 +159,18 @@ public sealed record EntityFrameworkMutationFact : BehaviorFact
 
     /// <summary>Canonical tracked-set member for Clear mutations.</summary>
     public string? TargetMember { get; init; }
+}
+
+/// <summary>One loaded-project EDMX declaration. Metadata is evidence of a source boundary only; it never proves execution.</summary>
+public sealed record EntityFrameworkEdmxMetadataFact : BehaviorFact
+{
+    public required ProjectId Project { get; init; }
+
+    public required string RepositoryRelativePath { get; init; }
+
+    public required string ContentFingerprint { get; init; }
+
+    public required bool HasFunctionImport { get; init; }
+
+    public required bool HasStoreFunction { get; init; }
 }

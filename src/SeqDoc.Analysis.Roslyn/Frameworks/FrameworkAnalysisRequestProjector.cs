@@ -1115,7 +1115,10 @@ internal static class FrameworkAnalysisRequestProjector
                     parameter.Type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat)))
                 .ToImmutableArray(),
             target.ReturnType.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
-            assembly?.Identity.Version?.ToString());
+            assembly?.Identity.Version?.ToString(),
+            assembly?.Identity.PublicKeyToken is { Length: > 0 } token
+                ? Convert.ToHexString(token.ToArray()).ToLowerInvariant()
+                : null);
     }
 
     private static bool IsCanonicalConstructedTypeArgument(INamedTypeSymbol type)
