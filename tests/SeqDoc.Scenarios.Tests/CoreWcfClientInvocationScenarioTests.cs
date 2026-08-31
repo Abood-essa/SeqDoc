@@ -1,9 +1,13 @@
+using System.Collections.Immutable;
 using SeqDoc.Analysis.Scenarios;
 using SeqDoc.Application.Documentation;
+using SeqDoc.Core.Behavior;
+using SeqDoc.Core.DiagramPlan;
 using SeqDoc.Core.Evidence;
 using SeqDoc.Core.Frameworks;
 using SeqDoc.Core.Identity;
 using SeqDoc.Core.ScenarioGraph;
+using SeqDoc.Core.Semantics;
 using Xunit;
 
 namespace SeqDoc.Scenarios.Tests;
@@ -110,6 +114,62 @@ public sealed class CoreWcfClientInvocationScenarioTests
                 ProfileId = baseRequest.Profile.Id,
                 ProgramIndexFingerprint = baseRequest.ProgramIndex.IndexFingerprint,
             },
+        };
+    }
+
+    private static ScenarioAnalysisRequest WithRootPredicateFacts(ScenarioAnalysisRequest request)
+    {
+        var source = ScenarioTestFactory.CreateGetRequest(decisionGuarded: true).PredicateSemanticFacts!;
+        var mapping = source.Mappings.Single();
+        var behavior = request.Behavior with
+        {
+            MethodFlows = request.Behavior.MethodFlows
+                .Select(flow => flow.Method == ScenarioTestFactory.ActionMethod
+                    && flow.Nodes.OfType<DecisionFlowNode>().Any()
+                    ? flow with
+                    {
+                        Edges = flow.Edges.AddRange(
+                            flow.Nodes.OfType<InvocationFlowNode>()
+                                .Where(invocation => !flow.Edges.Any(edge => edge.Source == invocation.Id))
+                                .Select((invocation, ordinal) => new FlowEdge(
+                                    new($"flow-edge:v1:root-direct:terminal:{ordinal}"),
+                                    flow.Method,
+                                    invocation.Id,
+                                    flow.Nodes.OfType<ExitFlowNode>().Single().Id,
+                                    FlowEdgeKind.Normal,
+                                    null,
+                                    invocation.Evidence,
+                                    invocation.Certainty)))
+                    }
+                    : flow)
+                .ToImmutableArray(),
+        };
+        return request with
+        {
+            Behavior = behavior,
+            PredicateSemanticFacts = new PredicateSemanticFactSet(
+                source.SchemaVersion,
+                source.ProducerVersion,
+                request.Profile,
+                request.ProgramIndex.IndexFingerprint,
+                source.Predicates,
+                [new PredicateDecisionMappingFact(
+                    mapping.Id,
+                    mapping.PredicateId,
+                    ScenarioTestFactory.ActionMethod,
+                    request.Behavior.MethodFlows
+                        .SelectMany(flow => flow.Nodes)
+                        .OfType<DecisionFlowNode>()
+                        .Where(decision => decision.Method == ScenarioTestFactory.ActionMethod)
+                        .Select(decision => decision.Condition)
+                        .Distinct()
+                        .ToImmutableArray(),
+                    request.Profile.Id,
+                    request.ProgramIndex.IndexFingerprint,
+                    mapping.Evidence,
+                    mapping.Certainty)],
+                source.Diagnostics,
+                source.DebugProjection),
         };
     }
 
@@ -332,15 +392,10 @@ public sealed class CoreWcfClientInvocationScenarioTests
     }
 
     [Fact]
-    public void ConfiguredMethodRootGuardedClientInvocationHasNoTopologyArmMembershipAndNoGenericDuplicate()
+    public void ConfiguredMethodRootGuardedClientInvocationHasExactTopologyArmMembershipAndNoGenericDuplicate()
     {
-        // Behavior-pinning only (no production change): ScenarioNodeKind.ClientOperationInvocation is
-        // deliberately NOT in ScenarioGraphBuilder.IsMaterialTopologyNode, so BuildTopology assigns a
-        // client-invocation node no arm membership on EITHER arm of a guarded configured root. This is
-        // pre-existing and identical on the HTTP controller-action path; giving client nodes arm
-        // membership would be a scope-expanding production change that also alters the HTTP path. This
-        // test locks the current behavior so a future reviewer sees the gap is known, not an oversight.
-        var baseRequest = ScenarioTestFactory.CreateConfiguredRootDirectCallRequest(decisionGuarded: true);
+        var baseRequest = WithRootPredicateFacts(
+            ScenarioTestFactory.CreateConfiguredRootDirectCallRequest(decisionGuarded: true));
         var request = baseRequest with
         {
             FrameworkFacts = baseRequest.FrameworkFacts with
@@ -363,22 +418,69 @@ public sealed class CoreWcfClientInvocationScenarioTests
         Assert.Equal(actionNode.Id, edge.Source);
         Assert.Equal(ScenarioEdgeKind.Call, edge.Kind);
 
-        // The guarded fixture really does populate topology arms, so "no membership under either arm"
-        // is a meaningful claim: graph.Topology exposes Decisions, Arms, and Memberships
-        // (ImmutableArray<ScenarioMembership>, each carrying .Arm and .ScenarioNode). The client node
-        // appears in NO membership row, i.e. under neither arm.
-        Assert.NotEmpty(graph.Topology.Arms);
-        Assert.DoesNotContain(graph.Topology.Memberships, membership => membership.ScenarioNode == clientNode.Id);
+        var decision = Assert.Single(graph.Topology.Decisions);
+        var trueArm = Assert.Single(graph.Topology.Arms, arm => arm.Decision == decision.Id && arm.IsTrue);
+        var falseArm = Assert.Single(graph.Topology.Arms, arm => arm.Decision == decision.Id && !arm.IsTrue);
+        Assert.Single(graph.Topology.Memberships,
+            membership => membership.Arm == trueArm.Id && membership.ScenarioNode == clientNode.Id);
+        Assert.DoesNotContain(graph.Topology.Memberships,
+            membership => membership.Arm == falseArm.Id && membership.ScenarioNode == clientNode.Id);
 
         // The generic-MethodCall exclusion still applied under the guard: no generic node (and hence no
         // generic-node membership) for the same call-site operation.
         Assert.DoesNotContain(graph.Nodes, node =>
             node.Kind == ScenarioNodeKind.MethodCall && node.Operation == ScenarioTestFactory.RootDirectCallOperation);
 
-        // The observable proof survives: exactly one client-operation-invocation message for the call site.
-        var plan = DocumentationPlanner.Plan(graph);
+        var plan = DocumentationPlanner.Plan(ScenarioTestFactory.WithExactOwnerWording(graph));
         Assert.Single(plan.Wording.Phrases, phrase => phrase.Key == "client-operation-invocation");
         Assert.Single(plan.Diagram.Messages, message => message.Label == "SendAsync");
+        var fragment = Assert.Single(plan.Diagram.Sequence.Fragments);
+        Assert.Equal(DiagramFragmentKind.Opt, fragment.Kind);
+        var messageEdge = Assert.Single(graph.Edges, item => item.Target == clientNode.Id);
+        var messageId = new DiagramPlanElementId("diagram-element:v1:message:" + messageEdge.Id.Value);
+        Assert.Contains(messageId, fragment.MessageRefs);
+        Assert.DoesNotContain(messageId, plan.Diagram.Sequence.MessageRefs);
+
+    }
+
+    [Fact]
+    public void HttpRootGuardedClientInvocationUsesTheSameExactArmMembershipAndTypedReplacement()
+    {
+        var baseRequest = WithRootPredicateFacts(
+            ScenarioTestFactory.CreateRootDirectCallRequest(decisionGuarded: true));
+        var request = baseRequest with
+        {
+            FrameworkFacts = baseRequest.FrameworkFacts with
+            {
+                Facts = baseRequest.FrameworkFacts.Facts.AddRange(CreateInvocationFact(), CreateBoundaryFact()),
+                ProfileId = baseRequest.Profile.Id,
+                ProgramIndexFingerprint = baseRequest.ProgramIndex.IndexFingerprint,
+            },
+        };
+
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(request).Graphs);
+
+        Assert.Equal(ScenarioRootKind.HttpEntryPoint, graph.RootKind);
+        var clientNode = Assert.Single(graph.Nodes, node => node.Kind == ScenarioNodeKind.ClientOperationInvocation);
+        Assert.DoesNotContain(graph.Nodes, node => node.Kind == ScenarioNodeKind.MethodCall
+            && node.Operation == ScenarioTestFactory.RootDirectCallOperation);
+        var decision = Assert.Single(graph.Topology.Decisions);
+        var trueArm = Assert.Single(graph.Topology.Arms, arm => arm.Decision == decision.Id && arm.IsTrue);
+        var falseArm = Assert.Single(graph.Topology.Arms, arm => arm.Decision == decision.Id && !arm.IsTrue);
+        Assert.Single(graph.Topology.Memberships,
+            membership => membership.Arm == trueArm.Id && membership.ScenarioNode == clientNode.Id);
+        Assert.DoesNotContain(graph.Topology.Memberships,
+            membership => membership.Arm == falseArm.Id && membership.ScenarioNode == clientNode.Id);
+
+        var plan = DocumentationPlanner.Plan(ScenarioTestFactory.WithExactOwnerWording(graph));
+        Assert.Single(plan.Diagram.Messages, message => message.Label == "SendAsync");
+        var fragment = Assert.Single(plan.Diagram.Sequence.Fragments);
+        Assert.Equal(DiagramFragmentKind.Opt, fragment.Kind);
+        var edge = Assert.Single(graph.Edges, item => item.Target == clientNode.Id);
+        var messageId = new DiagramPlanElementId("diagram-element:v1:message:" + edge.Id.Value);
+        Assert.Contains(messageId, fragment.MessageRefs);
+        Assert.DoesNotContain(messageId, plan.Diagram.Sequence.MessageRefs);
+
     }
 
     [Fact]
@@ -594,7 +696,8 @@ public sealed class CoreWcfClientInvocationScenarioTests
             ClientKind = ServiceClientKind.SourceClient,
         };
 
-        var baseRequest = ScenarioTestFactory.CreateRootDirectCallRequest(decisionGuarded: true);
+        var baseRequest = WithRootPredicateFacts(
+            ScenarioTestFactory.CreateRootDirectCallRequest(decisionGuarded: true));
         ScenarioAnalysisRequest BuildRequest(BehaviorFact[] facts) => baseRequest with
         {
             FrameworkFacts = baseRequest.FrameworkFacts with

@@ -3855,6 +3855,7 @@ public static class ScenarioGraphBuilder
     /// </summary>
     private static bool IsMaterialTopologyNode(ScenarioNode node)
         => node.Kind is ScenarioNodeKind.ServiceCall
+            or ScenarioNodeKind.ClientOperationInvocation
             or ScenarioNodeKind.MethodCall
             or ScenarioNodeKind.EntityQuery
             or ScenarioNodeKind.StateAssignment
