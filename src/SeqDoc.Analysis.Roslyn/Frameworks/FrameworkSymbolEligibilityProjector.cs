@@ -201,7 +201,10 @@ internal static class FrameworkSymbolEligibilityProjector
         return new FrameworkTypeIdentity(
             assembly?.Identity.Name ?? string.Empty,
             assembly?.Identity.Version?.ToString() ?? string.Empty,
-            RoslynProgramIndexExtractor.GetMetadataName(type));
+            RoslynProgramIndexExtractor.GetMetadataName(type),
+            assembly?.Identity.PublicKeyToken is { Length: > 0 } token
+                ? Convert.ToHexString(token.ToArray()).ToLowerInvariant()
+                : null);
     }
 
     /// <summary>

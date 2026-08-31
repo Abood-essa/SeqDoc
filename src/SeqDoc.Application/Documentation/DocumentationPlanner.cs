@@ -3455,7 +3455,7 @@ public static class DocumentationPlanner
         if (presentation is not null && !string.IsNullOrWhiteSpace(presentation.EntityTypeName))
         {
             string entity = ShortTypeName(presentation.EntityTypeName);
-            if (presentation.QueryOperatorKind == EntityFrameworkQueryOperatorKind.CountAsync)
+            if (presentation.QueryOperatorKind is EntityFrameworkQueryOperatorKind.CountAsync or EntityFrameworkQueryOperatorKind.Count)
             {
                 return TryPluralize(entity) is { } plural
                     ? $"The service queries the data store: counts {plural}."
@@ -3464,7 +3464,8 @@ public static class DocumentationPlanner
 
             if (presentation.QueryOperatorKind is
                 EntityFrameworkQueryOperatorKind.SingleOrDefaultAsync
-                or EntityFrameworkQueryOperatorKind.FirstOrDefaultAsync)
+                or EntityFrameworkQueryOperatorKind.FirstOrDefaultAsync
+                or EntityFrameworkQueryOperatorKind.FirstOrDefault)
             {
                 return $"The service queries the data store: finds at most one {entity}.";
             }
@@ -3486,8 +3487,10 @@ public static class DocumentationPlanner
         return presentation.QueryOperatorKind switch
         {
             EntityFrameworkQueryOperatorKind.SingleOrDefaultAsync
-                or EntityFrameworkQueryOperatorKind.FirstOrDefaultAsync => $"Find at most one {entity}",
-            EntityFrameworkQueryOperatorKind.CountAsync => TryPluralize(entity) is { } plural ? $"Count {plural}" : $"Count items of type {entity}",
+                or EntityFrameworkQueryOperatorKind.FirstOrDefaultAsync
+                or EntityFrameworkQueryOperatorKind.FirstOrDefault => $"Find at most one {entity}",
+            EntityFrameworkQueryOperatorKind.CountAsync
+                or EntityFrameworkQueryOperatorKind.Count => TryPluralize(entity) is { } plural ? $"Count {plural}" : $"Count items of type {entity}",
             _ => null,
         };
     }

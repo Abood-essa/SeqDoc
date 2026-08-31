@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <InformationalVersion>1.0.0+fixture</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <ContinuousIntegrationBuild>false</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EntityFramework" />
+    <PackageReference Include="System.CodeDom" />
+    <PackageReference Include="System.ComponentModel.Annotations" />
+    <PackageReference Include="System.Configuration.ConfigurationManager" />
+    <PackageReference Include="System.Data.SqlClient" />
+    <EmbeddedResource Include="Model.edmx" />
+  </ItemGroup>
+</Project>

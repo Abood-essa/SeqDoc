@@ -447,6 +447,45 @@ public sealed class CliProcessTests
     }
 
     [Fact]
+    public async Task AnalyzeRegistersEf6ModelAndGeneratesEdmxDocumentationThroughTheRealCli()
+    {
+        string root = FindRepositoryRoot();
+        using var repository = new TemporaryRepository(root);
+        await repository.RestoreAsync();
+        using var cache = new TemporaryCache();
+        string output = System.IO.Path.Combine(cache.DirectoryPath, "docs");
+
+        var bootstrap = await RunAsync("analyze", repository.ProjectPath,
+            "--repository-root", repository.Path, "--cache", cache.Path, "--output", output, "--json");
+        Assert.Equal(8, bootstrap.ExitCode);
+        using (var bootstrapDocument = JsonDocument.Parse(bootstrap.Output))
+        {
+            Assert.Equal("DocumentationGenerationFailure", bootstrapDocument.RootElement.GetProperty("outcome").GetString());
+            Assert.Equal("SD4008", bootstrapDocument.RootElement.GetProperty("diagnostics")[0].GetProperty("code").GetString());
+        }
+        Assert.Equal(string.Empty, bootstrap.Error);
+
+        var catalog = await RunAsync("catalog", repository.ProjectPath,
+            "--repository-root", repository.Path, "--cache", cache.Path, "--kind", "method", "--query", "Execute", "--json");
+        Assert.Equal(0, catalog.ExitCode);
+        using var catalogDocument = JsonDocument.Parse(catalog.Output);
+        string methodId = Assert.Single(catalogDocument.RootElement.GetProperty("data").GetProperty("items").EnumerateArray())
+            .GetProperty("id").GetString()!;
+        string configuration = cache.WriteConfiguration($"schemaVersion: 1\nselection:\n  roots: [{methodId}]\n");
+
+        var result = await RunAsync("analyze", repository.ProjectPath,
+            "--repository-root", repository.Path, "--cache", cache.Path, "--output", output,
+            "--config", configuration, "--json");
+
+        Assert.True(result.ExitCode == 0, $"OUT:\n{result.Output}\nERR:\n{result.Error}");
+        using var document = JsonDocument.Parse(result.Output);
+        Assert.Equal("Succeeded", document.RootElement.GetProperty("outcome").GetString());
+        Assert.True(File.Exists(System.IO.Path.Combine(output, "index.md")));
+        Assert.Contains(Directory.GetFiles(output, "*.md", SearchOption.TopDirectoryOnly), file =>
+            File.ReadAllText(file).Contains("EDMX metadata boundary", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task AnalyzeEntryRequiresOutputAndSelectsExactlyOneFlow()
     {
         string root = FindRepositoryRoot();
@@ -714,6 +753,76 @@ public sealed class CliProcessTests
             if (Directory.Exists(DirectoryPath))
             {
                 Directory.Delete(DirectoryPath, recursive: true);
+            }
+        }
+    }
+
+    private sealed class TemporaryRepository : IDisposable
+    {
+        public TemporaryRepository(string sourceRoot)
+        {
+            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"seqdoc-ef6-repository-{Guid.NewGuid():N}");
+            string source = System.IO.Path.Combine(sourceRoot, "tests", "fixtures", "PassC", "EntityFramework6Edmx");
+            Directory.CreateDirectory(Path);
+            CopyDirectory(source, Path);
+            File.WriteAllText(System.IO.Path.Combine(Path, "GlobalUsings.cs"), "global using System;\n");
+
+            ProjectPath = System.IO.Path.Combine(Path, "EntityFramework6Edmx.csproj");
+        }
+
+        public string Path { get; }
+
+        public string ProjectPath { get; }
+
+        private static void CopyDirectory(string source, string destination)
+        {
+            Directory.CreateDirectory(destination);
+            foreach (string file in Directory.GetFiles(source))
+            {
+                File.Copy(file, System.IO.Path.Combine(destination, System.IO.Path.GetFileName(file)));
+            }
+
+            foreach (string directory in Directory.GetDirectories(source))
+            {
+                if (string.Equals(System.IO.Path.GetFileName(directory), "bin", StringComparison.Ordinal)
+                    || string.Equals(System.IO.Path.GetFileName(directory), "obj", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                CopyDirectory(directory, System.IO.Path.Combine(destination, System.IO.Path.GetFileName(directory)));
+            }
+        }
+
+        public async Task RestoreAsync()
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "dotnet",
+                    WorkingDirectory = Path,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                },
+            };
+            process.StartInfo.ArgumentList.Add("restore");
+            process.StartInfo.ArgumentList.Add(ProjectPath);
+            process.StartInfo.ArgumentList.Add("--locked-mode");
+            Assert.True(process.Start());
+            string output = await process.StandardOutput.ReadToEndAsync();
+            string error = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            Assert.True(process.ExitCode == 0, $"Temporary repository restore failed.\nOUT:\n{output}\nERR:\n{error}");
+        }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(Path))
+            {
+                Directory.Delete(Path, recursive: true);
             }
         }
     }
