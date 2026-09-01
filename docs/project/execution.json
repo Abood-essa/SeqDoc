@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "mode": "idle",
+  "mode": "active",
   "activePlanPath": null,
-  "activeCheckpointPath": null,
-  "activeCheckpointId": null,
-  "nextAction": "Idle: no product checkpoint is active; Issue #8 awaits Qais's Readiness: PASS and exact acceptance-lane evidence."
+  "activeCheckpointPath": "docs/work/persistence/I12",
+  "activeCheckpointId": "I12",
+  "nextAction": "Issue #12 is active. Ahmad may create a fresh branch from ca5bc4b, establish the focused producer-to-observable red assertion, and implement only the frozen persisted-transition allowlist; re-audit shared PR #48 paths before review."
 }
