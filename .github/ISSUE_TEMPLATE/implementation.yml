@@ -1,5 +1,5 @@
 name: Implementation sub-issue
-description: A reviewable slice of an approved workstream.
+description: A reviewable slice of an approved workstream; canonical work-item records own lifecycle and dependencies.
 title: "[Implementation] "
 labels: ["implementation"]
 body:
@@ -8,6 +8,13 @@ body:
     attributes:
       label: Parent workstream
       placeholder: "#123"
+    validations:
+      required: true
+  - type: input
+    id: canonical-record
+    attributes:
+      label: Canonical record and checkpoint ID/path
+      description: Name the work-item record and checkpoint ID/path; maintainers must transition the record, not labels.
     validations:
       required: true
   - type: textarea

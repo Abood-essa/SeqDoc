@@ -1,0 +1,23 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/7",
+  "dependencies": [],
+  "expectedGithubState": "CLOSED",
+  "id": "GH-7",
+  "kind": "github-issue",
+  "lifecycle": "Closed",
+  "lifecycleLabel": null,
+  "nextAction": null,
+  "number": 7,
+  "owner": "qais",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/7",
+  "statusReason": "Completed and merged.",
+  "title": "[Services] CoreWCF service roots and dispatch presentation",
+  "track": "services"
+}

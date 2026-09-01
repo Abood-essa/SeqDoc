@@ -5,14 +5,20 @@ project instruction source for coding agents. Human contributors follow the same
 
 ## Start every task
 
-1. Read the assigned GitHub issue completely, including dependencies and acceptance criteria.
+1. Read the canonical record in `docs/project/work-items/` first, then read the assigned GitHub issue completely, including dependencies and acceptance criteria. The registry is current-state authority; GitHub is specification/history.
 2. Read `README.md`, `docs/architecture.md`, `docs/decisions.md`, `docs/contributing.md`, and
    `docs/project/testing-policy.md`.
 3. Inspect `git status`, the target files, nearby tests, and recent commits before proposing changes.
 4. Comment a short implementation plan on the issue or draft PR. Identify target paths, risks, tests, and blockers.
 5. Stay inside the issue scope. Ask before changing architecture, public contracts, or unrelated files.
 
-GitHub issues are execution authority for contributor work. Files under `docs/project/` are maintainer-owned durable
+Canonical work state is the sole authority for lifecycle, selection, ownership, dependencies, contracts, baselines,
+and checkpoints. Use `python tools/governance/work_state.py transition` for normal state edits; do not hand-edit
+execution, status, parallel-workstreams, labels, or capsule state. `Ready` permits a public contributor to start from
+the frozen contract/baseline; `Active` means that implementation has started. Both authorize implementation, while at
+most one selected record authorizes the root Orchestrator; zero selected records represent an idle Orchestrator.
+
+Issue bodies are specification authority; canonical work-item records are lifecycle and execution authority. Files under `docs/project/` are maintainer-owned durable
 strategy and execution state; do not edit them unless the issue explicitly requires it.
 
 ## Product invariants

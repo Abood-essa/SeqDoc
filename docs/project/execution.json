@@ -1,8 +1,10 @@
 {
-  "schemaVersion": 1,
-  "mode": "idle",
-  "activePlanPath": null,
-  "activeCheckpointPath": null,
   "activeCheckpointId": null,
-  "nextAction": "Idle: no product checkpoint is active; Issue #8 awaits Qais's Readiness: PASS and exact acceptance-lane evidence."
+  "activeCheckpointPath": null,
+  "activePlanPath": null,
+  "generatedBy": "tools/governance/work_state.py",
+  "mode": "idle",
+  "nextAction": "No work item is selected.",
+  "schemaVersion": 1,
+  "sourceId": null
 }

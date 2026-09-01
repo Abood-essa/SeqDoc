@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Reflection;
 using SeqDoc.Analysis.Scenarios;
 using SeqDoc.Application.Documentation;
 using SeqDoc.Core.Evidence;
@@ -611,6 +612,39 @@ public sealed class ScenarioTopologyTests
         Assert.True(graph.Topology.Arms.IsEmpty);
         Assert.True(graph.Topology.Memberships.IsEmpty);
         Assert.True(graph.Topology.Terminals.IsEmpty);
+    }
+
+    [Fact]
+    public void PublicConstructorsPreserveFourAndSixParameterMetadataSignatures()
+    {
+        var constructors = typeof(ScenarioTopology).GetConstructors(BindingFlags.Public | BindingFlags.Instance);
+        var legacyTypes = new[]
+        {
+            typeof(ImmutableArray<ScenarioDecision>), typeof(ImmutableArray<ScenarioArm>),
+            typeof(ImmutableArray<ScenarioMembership>), typeof(ImmutableArray<ScenarioArmTerminal>)
+        };
+        var currentTypes = legacyTypes.Concat(new[]
+        {
+            typeof(ImmutableArray<ScenarioFlowContainer>), typeof(ImmutableArray<ScenarioFlowPlacement>)
+        }).ToArray();
+
+        var legacy = Assert.Single(constructors, constructor => constructor.GetParameters()
+            .Select(parameter => parameter.ParameterType).SequenceEqual(legacyTypes));
+        Assert.NotNull(Assert.Single(constructors, constructor => constructor.GetParameters()
+            .Select(parameter => parameter.ParameterType).SequenceEqual(currentTypes)));
+
+        var topology = (ScenarioTopology)legacy.Invoke(new object[]
+        {
+            default(ImmutableArray<ScenarioDecision>), default(ImmutableArray<ScenarioArm>),
+            default(ImmutableArray<ScenarioMembership>), default(ImmutableArray<ScenarioArmTerminal>)
+        });
+
+        Assert.True(topology.Decisions.IsEmpty);
+        Assert.True(topology.Arms.IsEmpty);
+        Assert.True(topology.Memberships.IsEmpty);
+        Assert.True(topology.Terminals.IsEmpty);
+        Assert.True(topology.FlowContainers.IsEmpty);
+        Assert.True(topology.FlowPlacements.IsEmpty);
     }
 
     [Fact]

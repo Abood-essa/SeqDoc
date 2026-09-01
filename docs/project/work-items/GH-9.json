@@ -1,0 +1,23 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/9",
+  "dependencies": [],
+  "expectedGithubState": "CLOSED",
+  "id": "GH-9",
+  "kind": "github-issue",
+  "lifecycle": "Closed",
+  "lifecycleLabel": null,
+  "nextAction": null,
+  "number": 9,
+  "owner": "ahmad",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/9",
+  "statusReason": "Completed and merged.",
+  "title": "[Persistence] Shared query mutation save and state contracts",
+  "track": "persistence"
+}

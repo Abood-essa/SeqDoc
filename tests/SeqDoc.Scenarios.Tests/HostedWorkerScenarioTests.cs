@@ -136,7 +136,8 @@ public sealed class HostedWorkerScenarioTests
 
     private static ScenarioGraphDiagnostic AssertUnsupportedPlacement(ScenarioGraph graph, string boundary)
     {
-        var diagnostic = Assert.Single(graph.Diagnostics, item => item.Code == "SC-WORKER-UNSUPPORTED-PLACEMENT");
+        var diagnostic = Assert.Single(graph.Diagnostics, item => item.Code == "SC-WORKER-UNSUPPORTED-PLACEMENT"
+            && item.Detail.Contains(boundary, StringComparison.Ordinal));
         Assert.Contains(boundary, diagnostic.Detail, StringComparison.Ordinal);
         Assert.NotEmpty(diagnostic.Evidence);
         Assert.Equal(SeqDoc.Core.Evidence.CertaintyLevel.Conservative, diagnostic.Certainty);
@@ -150,7 +151,8 @@ public sealed class HostedWorkerScenarioTests
         var graph = Assert.Single(
             ScenarioGraphBuilder.Build(CreateSchedulerRequest(SchedulerPlacement.Guarded)).Graphs,
             item => item.RootKind == ScenarioRootKind.HostedWorker);
-        var diagnostic = Assert.Single(graph.Diagnostics, item => item.Code == "SC-WORKER-UNSUPPORTED-PLACEMENT");
+        var diagnostic = Assert.Single(graph.Diagnostics, item => item.Code == "SC-WORKER-UNSUPPORTED-PLACEMENT"
+            && item.Detail.Contains("registrationOperation", StringComparison.Ordinal));
         var documentation = DocumentationPlanner.Plan(graph);
         var fallback = Assert.Single(documentation.Wording.Phrases,
             phrase => phrase.Key == "fallback:SC-WORKER-UNSUPPORTED-PLACEMENT");
@@ -200,11 +202,13 @@ public sealed class HostedWorkerScenarioTests
             ScenarioGraphBuilder.Build(reversedRequest).Graphs,
             item => item.RootKind == ScenarioRootKind.HostedWorker);
         var forwardDiagnostics = forwardGraph.Diagnostics
-            .Where(item => item.Code == "SC-WORKER-UNSUPPORTED-PLACEMENT")
+            .Where(item => item.Code == "SC-WORKER-UNSUPPORTED-PLACEMENT"
+                && item.Detail.Contains("registrationOperation", StringComparison.Ordinal))
             .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
             .ToArray();
         var reversedDiagnostics = reversedGraph.Diagnostics
-            .Where(item => item.Code == "SC-WORKER-UNSUPPORTED-PLACEMENT")
+            .Where(item => item.Code == "SC-WORKER-UNSUPPORTED-PLACEMENT"
+                && item.Detail.Contains("registrationOperation", StringComparison.Ordinal))
             .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
             .ToArray();
 

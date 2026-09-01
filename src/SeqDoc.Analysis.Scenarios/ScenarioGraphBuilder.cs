@@ -1,4 +1,6 @@
 using System.Collections.Immutable;
+using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using SeqDoc.Core.Behavior;
 using SeqDoc.Core.Configuration;
@@ -255,6 +257,13 @@ public static class ScenarioGraphBuilder
                 request.ProgramIndex.IndexFingerprint,
                 StringComparison.Ordinal);
 
+    private static bool BehaviorSnapshotBound(ScenarioAnalysisRequest request)
+        => request.Behavior.Profile is { } profile
+            && profile.Id == request.Profile.Id
+            && !string.IsNullOrWhiteSpace(request.Behavior.ProgramIndexFingerprint)
+            && string.Equals(request.Behavior.ProgramIndexFingerprint,
+                request.ProgramIndex.IndexFingerprint, StringComparison.Ordinal);
+
     private static bool NonGetFactsBound(ScenarioAnalysisRequest request)
         => request.NonGetSemanticFacts?.Profile is { } profile
             && profile.Id == request.Profile.Id
@@ -316,13 +325,15 @@ public static class ScenarioGraphBuilder
         if (entryPoint.ActionKind == ScenarioActionKind.HostedWorker)
         {
             AddHostedWorkerLifecycle(request, entryPoint, actionNode, nodes, edges, diagnostics);
-            return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, ScenarioTopology.Empty);
+            var hostedTopology = BuildHostedWorkerTopology(request, entryPoint, actionNode, nodes, edges, diagnostics);
+            return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, hostedTopology);
         }
 
         if (entryPoint.ActionKind == ScenarioActionKind.ConfiguredMethod)
         {
             var method = request.ProgramIndex.Methods.Single(item => item.Id == entryPoint.RootMethod);
-            if (request.Behavior.Profile.Id != request.Profile.Id
+            if (request.Behavior.Profile is not { } behaviorProfile
+                || behaviorProfile.Id != request.Profile.Id
                 || !string.Equals(request.Behavior.ProgramIndexFingerprint, request.ProgramIndex.IndexFingerprint, StringComparison.Ordinal))
             {
                 var mismatch = CreateDiagnostic(profileId, entryPointId, "SC-DIRECT-MISMATCH",
@@ -3509,6 +3520,7 @@ public static class ScenarioGraphBuilder
         foreach (var scheduler in request.FrameworkFacts.Facts
                      .OfType<SchedulerJobFact>()
                      .Where(_ => FrameworkFactsBound(request))
+                     .Where(_ => BehaviorSnapshotBound(request))
                      .Where(item => lifecycle.Any(lifecycleItem => lifecycleItem.Method == item.RegistrationMethod))
                      .OrderBy(item => item.SourceStart)
                      .ThenBy(item => item.Id.Value, StringComparer.Ordinal))
@@ -3550,7 +3562,8 @@ public static class ScenarioGraphBuilder
                 Combine(entry.Evidence, scheduler.Evidence),
                 Combine(entry.Evidence, scheduler.Evidence).Max(item => item.Certainty),
                 ordinal++);
-            var source = nodes.LastOrDefault(item => item.Method == scheduler.RegistrationMethod) ?? actionNode;
+            var source = nodes.SingleOrDefault(item => item.Method == scheduler.RegistrationMethod
+                && item.Presentation?.HostedWorkerLifecycleStep is not null) ?? actionNode;
             nodes.Add(node);
             edges.Add(CreateEdge(
                 request.Profile.Id,
@@ -3561,6 +3574,613 @@ public static class ScenarioGraphBuilder
                 "timer registration",
                 ordinal,
                 Combine(entry.Evidence, scheduler.Evidence)));
+        }
+    }
+
+    private static ScenarioTopology BuildHostedWorkerTopology(
+        ScenarioAnalysisRequest request, NormalizedEntry entry, ScenarioNode actionNode, List<ScenarioNode> nodes,
+        List<ScenarioEdge> edges, List<ScenarioGraphDiagnostic> diagnostics)
+    {
+        var containers = new List<ScenarioFlowContainer>();
+        var placements = new List<ScenarioFlowPlacement>();
+        var controlCandidates = new List<WorkerControlCandidate>();
+        var wrapperParentOverrides = new Dictionary<(MethodId Method, FlowRegionId Wrapper), FlowRegionId>();
+        var conflictingOverrides = new HashSet<(MethodId Method, FlowRegionId Wrapper)>();
+        var ambiguousLoops = new HashSet<(MethodId Method, FlowRegionId Region)>();
+        var worker = entry.HostedWorker!;
+        var behaviorBound = request.Behavior.Profile is { } behaviorProfile
+            && behaviorProfile.Id == request.Profile.Id
+            && !string.IsNullOrWhiteSpace(request.Behavior.ProgramIndexFingerprint)
+            && string.Equals(request.Behavior.ProgramIndexFingerprint, request.ProgramIndex.IndexFingerprint, StringComparison.Ordinal);
+        if (!behaviorBound)
+        {
+            diagnostics.Add(CreateDiagnostic(request.Profile.Id, entry.EntryPointId,
+                "SC-WORKER-UNSUPPORTED-PLACEMENT",
+                "Hosted-worker controls were withheld because the behavior snapshot does not match the active analysis.",
+                "behavior identity mismatch: behavior profile or Program Index fingerprint did not match for the hosted worker graph.",
+                entry.Evidence, CertaintyLevel.Conservative));
+            return new ScenarioTopology([], [], [], [], [], []);
+        }
+        void Observe(MethodId method, HostedWorkerControlKind kind, string detail, FlowNodeId? anchor,
+            FlowRegionId? region, int block, ImmutableArray<FlowRegionId> containers, ImmutableArray<EvidenceRef> evidence)
+            => controlCandidates.Add(new(method, kind, detail, anchor, region, block, containers, evidence));
+        bool RecordWrapperParent(MethodId method, FlowRegionId wrapper, FlowRegionId loop,
+            HostedWorkerControlKind controlKind, ImmutableArray<EvidenceRef> evidence)
+        {
+            var key = (method, wrapper);
+            if (conflictingOverrides.Contains(key))
+            {
+                return false;
+            }
+            if (wrapperParentOverrides.TryGetValue(key, out var existing))
+            {
+                if (existing == loop)
+                {
+                    return true;
+                }
+                conflictingOverrides.Add(key);
+                diagnostics.Add(CreateDiagnostic(request.Profile.Id, entry.EntryPointId,
+                    "SC-WORKER-UNSUPPORTED-PLACEMENT",
+                    "A hosted-worker exception wrapper has conflicting exact loop ancestry.",
+                    $"method={method.Value}; control={controlKind}; wrapper={wrapper.Value}; exact loop ancestry is ambiguous.",
+                    evidence, CertaintyLevel.Conservative));
+                return false;
+            }
+            wrapperParentOverrides.Add(key, loop);
+            return true;
+        }
+        foreach (var method in new[] { worker.StartMethod, worker.ExecuteMethod, worker.StopMethod }
+            .Where(item => item is not null).Select(item => item!.Value).Distinct().OrderBy(item => item.Value, StringComparer.Ordinal))
+        {
+            var flows = request.Behavior.MethodFlows.Where(flow => flow.Method == method).ToArray();
+            // Hand-built framework-only requests can intentionally omit the behavior snapshot;
+            // there is no lifecycle mapping claim to diagnose in that case.
+            if (request.Behavior.MethodFlows.IsDefaultOrEmpty)
+            {
+                continue;
+            }
+            if (flows.Length != 1)
+            {
+                var mappedMethod = request.ProgramIndex.Methods.FirstOrDefault(item => item.Id == method);
+                var requiresFlow = !string.IsNullOrWhiteSpace(mappedMethod?.BodyFingerprint)
+                    && request.FrameworkFacts.Facts.OfType<SchedulerJobFact>()
+                        .Any(fact => fact.RegistrationMethod == method);
+                if (flows.Length == 0 && !requiresFlow)
+                {
+                    continue;
+                }
+                var flowEvidence = flows.SelectMany(flow => flow.Nodes.SelectMany(node => node.Evidence))
+                    .ToImmutableArray();
+                diagnostics.Add(CreateDiagnostic(request.Profile.Id, entry.EntryPointId,
+                    "SC-WORKER-UNSUPPORTED-PLACEMENT",
+                    "Hosted-worker method flow mapping is not unique.",
+                    $"method={method.Value}; flow-count={flows.Length}; {(flows.Length == 0 ? "no method flow was available" : "multiple method flows were available")}.",
+                    Combine(entry.Evidence, flowEvidence), CertaintyLevel.Conservative));
+                continue;
+            }
+            var flow = flows[0];
+            var programMethod = request.ProgramIndex.Methods.FirstOrDefault(item => item.Id == method);
+            var cancellationOrdinal = programMethod?.Parameters
+                .Select((parameter, ordinal) => (parameter, ordinal))
+                .Where(item => item.parameter.FullyQualifiedType == "System.Threading.CancellationToken")
+                .Select(item => (int?)item.ordinal).SingleOrDefault();
+            if (cancellationOrdinal is not null)
+            {
+                var recognizedCancellation = flow.Nodes.OfType<InvocationFlowNode>().Where(item =>
+                    item.TargetIdentity is { } identity
+                    && identity.AssemblyIdentity == "System.Runtime"
+                    && identity.AssemblyVersion == "10.0.0.0"
+                    && identity.ContainingMetadataType == "System.Threading.CancellationToken"
+                    && identity.MethodMetadataName == "ThrowIfCancellationRequested"
+                    && identity.GenericArity == 0 && identity.Parameters.IsEmpty
+                     && identity.ReturnType == "System.Void"
+                     && item.IsPlatformTarget && !item.IsDynamic
+                     && item.TargetAssemblyFullIdentity == "System.Runtime, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+                     && item.ReceiverOriginalTypeIdentity == new FrameworkTypeIdentity("System.Runtime", "10.0.0.0", "System.Threading.CancellationToken")
+                     && item.ReceiverOriginalTypeFullAssemblyIdentity == "System.Runtime, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a")
+                    .ToArray();
+                var cancellationCandidates = recognizedCancellation.Where(item => item.ReceiverParameterOrdinal == cancellationOrdinal
+                        && item.ReceiverIdentity == $"{method.Value}:parameter:{cancellationOrdinal.Value}")
+                    .Select(item => (Node: item,
+                        Containers: ContainingChain(flow, item.BlockOrdinal, null)))
+                    .GroupBy(item => item.Node.Operation)
+                    .ToArray();
+                if (recognizedCancellation.Length > 0 && cancellationCandidates.Length == 0)
+                {
+                    diagnostics.Add(CreateDiagnostic(request.Profile.Id, entry.EntryPointId,
+                        "SC-WORKER-UNSUPPORTED-PLACEMENT",
+                        "A recognized cancellation operation could not be mapped to the lifecycle cancellation parameter.",
+                        $"method={method.Value}; control=CancellationCheck; exact receiver ordinal or symbol was missing or ambiguous.",
+                        Combine(entry.Evidence, recognizedCancellation.SelectMany(item => item.Evidence).ToImmutableArray()),
+                        CertaintyLevel.Conservative));
+                }
+                foreach (var group in cancellationCandidates)
+                {
+                    var candidates = group.ToArray();
+                    var first = candidates[0];
+                    var placementAgrees = candidates.All(candidate =>
+                        candidate.Node.Method == first.Node.Method
+                        && candidate.Node.ReceiverParameterOrdinal == first.Node.ReceiverParameterOrdinal
+                        && candidate.Node.ReceiverIdentity == first.Node.ReceiverIdentity
+                        && candidate.Node.TargetAssemblyFullIdentity == first.Node.TargetAssemblyFullIdentity
+                        && candidate.Node.TargetIdentity == first.Node.TargetIdentity
+                        && candidate.Node.BlockOrdinal == first.Node.BlockOrdinal
+                        && candidate.Containers.SequenceEqual(first.Containers));
+                    if (!placementAgrees)
+                    {
+                        diagnostics.Add(CreateDiagnostic(request.Profile.Id, entry.EntryPointId,
+                            "SC-WORKER-UNSUPPORTED-PLACEMENT",
+                            "A recognized cancellation check has conflicting exact anchors.",
+                            $"method={method.Value}; control=CancellationCheck; operation={group.Key.Value}; exact receiver, identity, block, evidence, or control placement disagreed.",
+                            Combine(candidates.SelectMany(candidate => candidate.Node.Evidence).ToImmutableArray(), entry.Evidence),
+                            CertaintyLevel.Conservative));
+                        continue;
+                    }
+                    var evidence = candidates.SelectMany(candidate => candidate.Node.Evidence)
+                        .DistinctBy(item => item.Id)
+                        .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
+                        .ToImmutableArray();
+                    Observe(method,
+                        HostedWorkerControlKind.CancellationCheck, "cancellation check", first.Node.Id, null,
+                        first.Node.BlockOrdinal, first.Containers, evidence);
+                }
+            }
+            foreach (var loop in flow.Nodes.OfType<LoopNode>().OrderBy(item => item.Id.Value, StringComparer.Ordinal))
+            {
+                if (loop.Header is null || loop.HeaderBlockOrdinal < 0 || loop.BodyBlockOrdinals.IsDefaultOrEmpty) { continue; }
+                var region = flow.Regions.FirstOrDefault(item => item.Id == loop.Region);
+                if (region is null) { continue; }
+                var containingLoops = flow.Nodes.OfType<LoopNode>()
+                    .Where(other => other.Id != loop.Id && other.HeaderBlockOrdinal >= 0
+                        && other.BodyBlockOrdinals.Concat([other.HeaderBlockOrdinal]).Contains(loop.HeaderBlockOrdinal)
+                        && loop.BodyBlockOrdinals.Concat([loop.HeaderBlockOrdinal]).All(other.BodyBlockOrdinals.Concat([other.HeaderBlockOrdinal]).Contains))
+                    .OrderBy(other => other.BodyBlockOrdinals.Length)
+                    .ToArray();
+                var smallestLength = containingLoops.Select(other => other.BodyBlockOrdinals.Length).DefaultIfEmpty(-1).Min();
+                var smallestLoops = containingLoops.Where(other => other.BodyBlockOrdinals.Length == smallestLength).ToArray();
+                if (smallestLoops.Length > 1)
+                {
+                    ambiguousLoops.Add((method, loop.Region));
+                }
+                containers.Add(new ScenarioFlowContainer(loop.Region, method, ScenarioFlowContainerKind.NaturalLoop,
+                    loop.Header, smallestLoops.Length == 1 ? smallestLoops[0].Region : null, loop.Evidence, loop.Certainty));
+                var members = flow.Nodes.Where(node => node is InvocationFlowNode invocation
+                    && (loop.BodyBlockOrdinals.Contains(invocation.BlockOrdinal) || invocation.BlockOrdinal == loop.HeaderBlockOrdinal))
+                    .OfType<InvocationFlowNode>().ToArray();
+                var hasAwait = flow.Nodes.OfType<AwaitFlowNode>().Any(awaitNode => members.Any(invocation => invocation.Operation == awaitNode.Operand));
+                var kind = loop.LoopKind == ExtractedLoopKind.ForEachLoop
+                    ? HostedWorkerControlKind.EnumerationLoop
+                    : (loop.LoopKind is ExtractedLoopKind.ForLoop or ExtractedLoopKind.WhileLoop or ExtractedLoopKind.DoWhileLoop) && hasAwait
+                        ? HostedWorkerControlKind.AwaitedRepeatingLoop : (HostedWorkerControlKind?)null;
+                if (kind is null) { continue; }
+                if (ambiguousLoops.Contains((method, loop.Region)))
+                {
+                    diagnostics.Add(CreateDiagnostic(request.Profile.Id, entry.EntryPointId,
+                        "SC-WORKER-UNSUPPORTED-PLACEMENT",
+                        "A hosted-worker loop has ambiguous exact natural-loop ancestry.",
+                        $"method={method.Value}; control={kind.Value}; region={loop.Region.Value}; multiple equal smallest containing loops were proven.",
+                        loop.Evidence, CertaintyLevel.Conservative));
+                    continue;
+                }
+                Observe(method, kind.Value,
+                    kind == HostedWorkerControlKind.EnumerationLoop ? "enumeration loop" : "awaited repeating loop",
+                    loop.Header, loop.Region, loop.HeaderBlockOrdinal, [loop.Region], loop.Evidence);
+                foreach (var continuation in (flow.CatchContinuations.IsDefault ? [] : flow.CatchContinuations)
+                    .Where(item => item.LoopRegion == loop.Region))
+                {
+                    var wrapperId = flow.Regions.FirstOrDefault(region => region.Id == continuation.TryRegion)?.Parent
+                        ?? continuation.TryRegion;
+                    var wrapper = flow.Regions.FirstOrDefault(region => region.Id == wrapperId
+                        && region.Kind == FlowRegionKind.TryAndCatch);
+                    if (wrapper is null || !RecordWrapperParent(method, wrapper.Id, loop.Region,
+                        HostedWorkerControlKind.CatchLoopContinuation, continuation.Evidence))
+                    {
+                        continue;
+                    }
+                    Observe(method,
+                        HostedWorkerControlKind.CatchLoopContinuation, "catch-to-loop continuation boundary",
+                        loop.Header, loop.Region, continuation.DestinationBlockOrdinal,
+                        [loop.Region, wrapperId, continuation.CatchRegion], continuation.Evidence);
+                }
+            }
+            foreach (var exceptionRegion in flow.Regions.Where(item =>
+                item.Kind is FlowRegionKind.Try or FlowRegionKind.Catch or FlowRegionKind.Finally or FlowRegionKind.TryAndCatch or FlowRegionKind.TryAndFinally))
+            {
+                var kind = exceptionRegion.Kind switch
+                {
+                    FlowRegionKind.Catch => ScenarioFlowContainerKind.CatchRegion,
+                    FlowRegionKind.Finally => ScenarioFlowContainerKind.FinallyRegion,
+                    FlowRegionKind.Try => ScenarioFlowContainerKind.TryRegion,
+                    FlowRegionKind.TryAndCatch => ScenarioFlowContainerKind.TryAndCatchRegion,
+                    _ => ScenarioFlowContainerKind.TryAndFinallyRegion,
+                };
+                var containingLoopRegions = flow.Nodes.OfType<LoopNode>()
+                    .Where(loop => exceptionRegion.StartBlockOrdinal is { } start && exceptionRegion.EndBlockOrdinal is { } end
+                        && loop.HeaderBlockOrdinal >= 0
+                        && Enumerable.Range(start, end - start + 1).All(block => loop.BodyBlockOrdinals.Contains(block) || block == loop.HeaderBlockOrdinal))
+                    .OrderBy(loop => loop.BodyBlockOrdinals.Length).ToArray();
+                var parent = exceptionRegion.Kind == FlowRegionKind.TryAndCatch || exceptionRegion.Kind == FlowRegionKind.TryAndFinally
+                    ? containingLoopRegions.Length == 1 ? containingLoopRegions[0].Region : null
+                    : exceptionRegion.Parent;
+                containers.Add(new ScenarioFlowContainer(exceptionRegion.Id, method, kind, null,
+                    parent, exceptionRegion.Evidence, exceptionRegion.Certainty));
+            }
+
+            var invocations = flow.Nodes.OfType<InvocationFlowNode>().ToArray();
+            var acquireCandidates = invocations.Where(IsSemaphoreAcquire).Where(item =>
+                flow.Nodes.OfType<AwaitFlowNode>().Any(awaitNode => awaitNode.Operand == item.Operation))
+                .SelectMany(acquire =>
+                {
+                    var loops = flow.Nodes.OfType<LoopNode>().Where(loop => loop.BodyBlockOrdinals.Contains(acquire.BlockOrdinal)).ToArray();
+                    var releases = invocations.Where(IsSemaphoreRelease)
+                    .Where(release => release.ReceiverIdentity == acquire.ReceiverIdentity)
+                    .Where(release => loops.Any(loop =>
+                         (loop.BodyBlockOrdinals.Contains(release.BlockOrdinal) && IsDirectPair(flow, acquire, release, loop))
+                         || IsExactFinallyPair(flow, acquire, release, loop) is not null)
+                     && loops.Any(loop => CanonicalLoopForRelease(flow, release)?.Id == loop.Id))
+                    .ToArray();
+                    return loops.Length == 1 ? releases.Select(release => (Acquire: acquire, Release: release, Loop: loops[0])) : [];
+                }).ToArray();
+            foreach (var candidate in acquireCandidates.Where(item =>
+                acquireCandidates.Count(other => other.Acquire.Id == item.Acquire.Id) == 1
+                && acquireCandidates.Count(other => other.Release.Id == item.Release.Id) == 1))
+            {
+                var finallyRegion = IsExactFinallyPair(flow, candidate.Acquire, candidate.Release, candidate.Loop);
+                if (finallyRegion is not null
+                    && (finallyRegion.Parent is not { } wrapperId
+                        || !RecordWrapperParent(method, wrapperId, candidate.Loop.Region,
+                            HostedWorkerControlKind.SemaphoreBoundary,
+                            candidate.Acquire.Evidence.Concat(candidate.Release.Evidence).ToImmutableArray())))
+                {
+                    continue;
+                }
+                var wrapperIdForChain = finallyRegion?.Parent;
+                ImmutableArray<FlowRegionId> chain = finallyRegion is null
+                    ? [candidate.Loop.Region]
+                    : [candidate.Loop.Region, wrapperIdForChain!.Value, finallyRegion.Id];
+                Observe(method, HostedWorkerControlKind.SemaphoreBoundary,
+                    "semaphore synchronization boundary", candidate.Acquire.Id, candidate.Loop.Region, candidate.Acquire.BlockOrdinal,
+                     chain, candidate.Acquire.Evidence.Concat(candidate.Release.Evidence).ToImmutableArray());
+            }
+            foreach (var acquire in invocations.Where(IsRecognizedSemaphoreAcquire)
+                .Where(acquire => !acquireCandidates.Any(candidate => candidate.Acquire.Id == acquire.Id
+                    && acquireCandidates.Count(other => other.Acquire.Id == acquire.Id) == 1
+                    && acquireCandidates.Count(other => other.Release.Id == candidate.Release.Id) == 1)))
+            {
+                var related = acquireCandidates.Where(candidate => candidate.Acquire.Id == acquire.Id)
+                    .SelectMany(candidate => candidate.Release.Evidence).ToImmutableArray();
+                diagnostics.Add(CreateDiagnostic(request.Profile.Id, entry.EntryPointId,
+                    "SC-WORKER-UNSUPPORTED-PLACEMENT",
+                    "A recognized semaphore operation has no unique exact acquire/release placement.",
+                    $"method={method.Value}; control=SemaphoreBoundary; acquire={acquire.Id.Value}",
+                    Combine(acquire.Evidence, related), CertaintyLevel.Conservative));
+            }
+
+            var claimedTerminalNodes = flow.Outcomes
+                .Where(item => item.Kind is FlowOutcomeKind.ExplicitReturn or FlowOutcomeKind.EscapingThrow)
+                .Where(item => item.TerminalNode is not null)
+                .Select(item => item.TerminalNode!.Value)
+                .ToHashSet();
+            foreach (var returnGroup in flow.Nodes.OfType<ReturnFlowNode>()
+                         .Where(item => item.BlockOrdinal is not null && !claimedTerminalNodes.Contains(item.Id))
+                         .GroupBy(item => item.BlockOrdinal!.Value)
+                         .OrderBy(group => group.Key))
+            {
+                var candidates = returnGroup
+                    .Select(node => (Node: node, Containers: ContainingChain(flow, node.BlockOrdinal!.Value, null)))
+                    .OrderBy(item => item.Node.Id.Value, StringComparer.Ordinal)
+                    .ToArray();
+                var first = candidates[0];
+                if (candidates.Any(item => !item.Containers.SequenceEqual(first.Containers)))
+                {
+                    diagnostics.Add(CreateDiagnostic(request.Profile.Id, entry.EntryPointId,
+                        "SC-WORKER-UNSUPPORTED-PLACEMENT",
+                        "A return boundary has conflicting exact block containment.",
+                        $"method={method.Value}; block={returnGroup.Key}; duplicate return anchors disagreed.",
+                        Combine(candidates.SelectMany(item => item.Node.Evidence).ToImmutableArray(), entry.Evidence),
+                        CertaintyLevel.Conservative));
+                    continue;
+                }
+
+                var evidence = Combine(
+                    candidates.SelectMany(item => item.Node.Evidence).ToImmutableArray(),
+                    first.Containers.SelectMany(regionId => flow.Regions.Where(region => region.Id == regionId)
+                        .SelectMany(region => region.Evidence)).ToImmutableArray());
+                Observe(method, HostedWorkerControlKind.ReturnBoundary, "return boundary", first.Node.Id, null,
+                    returnGroup.Key, first.Containers, evidence);
+            }
+
+            foreach (var outcome in flow.Outcomes.Where(item => item.Kind == FlowOutcomeKind.EscapingThrow))
+            {
+                if (outcome.TerminalNode is null) { continue; }
+                Observe(method,
+                    outcome.Kind == FlowOutcomeKind.ExplicitReturn ? HostedWorkerControlKind.ReturnBoundary : HostedWorkerControlKind.ThrowBoundary,
+                    outcome.Kind == FlowOutcomeKind.ExplicitReturn ? "return boundary" : "throw boundary",
+                    outcome.TerminalNode, null, outcome.BlockOrdinal ?? int.MaxValue,
+                    ContainingChain(flow, outcome.BlockOrdinal ?? int.MaxValue, null), outcome.Evidence);
+            }
+        }
+
+        var distinctContainers = containers.GroupBy(item => (item.Method, item.Region)).Select(group => group.First())
+            .ToArray();
+        var canonicalContainers = distinctContainers.Select(container => container with
+        {
+            Parent = wrapperParentOverrides.TryGetValue((container.Method, container.Region), out var exactParent)
+                ? exactParent
+                : FindCanonicalParent(container, distinctContainers)
+        }).ToImmutableArray();
+        var normalizedCandidates = new List<WorkerControlCandidate>();
+        var rejectedCandidateKinds = new HashSet<(MethodId Method, HostedWorkerControlKind Kind)>();
+        foreach (var candidate in controlCandidates.OrderBy(item => item.Method.Value, StringComparer.Ordinal)
+            .ThenBy(item => item.Block).ThenBy(item => item.Kind).ThenBy(item => item.Anchor?.Value, StringComparer.Ordinal))
+        {
+            if (NormalizeCandidate(candidate) is { } normalized)
+            {
+                normalizedCandidates.Add(normalized);
+            }
+            else if (rejectedCandidateKinds.Add((candidate.Method, candidate.Kind)))
+            {
+                diagnostics.Add(CreateDiagnostic(request.Profile.Id, entry.EntryPointId,
+                    "SC-WORKER-UNSUPPORTED-PLACEMENT",
+                    "A hosted-worker control has no unique canonical container ancestry.",
+                    $"method={candidate.Method.Value}; control={candidate.Kind}; declared container ancestry was missing, foreign, cyclic, or inconsistent.",
+                    candidate.Evidence, CertaintyLevel.Conservative));
+            }
+        }
+        distinctContainers = canonicalContainers
+            .OrderBy(item => item.Method.Value, StringComparer.Ordinal).ThenBy(item => item.Region.Value, StringComparer.Ordinal).ToArray();
+        foreach (var candidate in normalizedCandidates)
+        {
+            var node = AddWorkerControl(request, entry, actionNode, nodes, edges, candidate.Method, candidate.Kind,
+                candidate.Detail, candidate.Anchor, candidate.Region, candidate.Block, candidate.Containers, candidate.Evidence);
+            placements.Add(new ScenarioFlowPlacement(node.Id, candidate.Method, candidate.Anchor,
+                candidate.Containers, [], node.Evidence, node.Certainty));
+        }
+        return new ScenarioTopology([], [], [], [], distinctContainers.ToImmutableArray(), placements.OrderBy(item => item.ScenarioNode.Value, StringComparer.Ordinal).ToImmutableArray());
+
+        static bool IsSemaphoreAcquire(InvocationFlowNode node)
+            => node.TargetIdentity is { } identity && identity.AssemblyIdentity == "System.Threading"
+                && identity.AssemblyVersion == "10.0.0.0" && node.IsPlatformTarget
+                && identity.ContainingMetadataType == "System.Threading.SemaphoreSlim"
+                && identity.MethodMetadataName == "WaitAsync" && identity.GenericArity == 0
+                && identity.Parameters.Length == 1 && identity.Parameters[0].RefKind == ParameterRefKind.None
+                 && identity.Parameters[0].FullyQualifiedType == "System.Threading.CancellationToken"
+                 && identity.ReturnType == "System.Threading.Tasks.Task"
+                 && node.TargetAssemblyFullIdentity == "System.Threading, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+                 && node.ReceiverOriginalTypeIdentity == new FrameworkTypeIdentity("System.Threading", "10.0.0.0", "System.Threading.SemaphoreSlim")
+                 && node.ReceiverOriginalTypeFullAssemblyIdentity == "System.Threading, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+                 && node.ReceiverIdentity is not null;
+        static bool IsRecognizedSemaphoreAcquire(InvocationFlowNode node)
+            => node.TargetIdentity is { } identity && identity.AssemblyIdentity == "System.Threading"
+                && identity.AssemblyVersion == "10.0.0.0" && node.IsPlatformTarget
+                && identity.ContainingMetadataType == "System.Threading.SemaphoreSlim"
+                && identity.MethodMetadataName == "WaitAsync" && identity.GenericArity == 0
+                && identity.Parameters.Length == 1
+                && identity.Parameters[0].RefKind == ParameterRefKind.None
+                && identity.Parameters[0].FullyQualifiedType == "System.Threading.CancellationToken"
+                && identity.ReturnType == "System.Threading.Tasks.Task"
+                && node.TargetAssemblyFullIdentity == "System.Threading, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+                && node.ReceiverIdentity is not null;
+        static bool IsSemaphoreRelease(InvocationFlowNode node)
+            => node.TargetIdentity is { } identity && identity.AssemblyIdentity == "System.Threading"
+                && identity.AssemblyVersion == "10.0.0.0" && node.IsPlatformTarget
+                && identity.ContainingMetadataType == "System.Threading.SemaphoreSlim"
+                && identity.MethodMetadataName == "Release" && identity.GenericArity == 0
+                 && identity.Parameters.IsEmpty && identity.ReturnType == "System.Int32"
+                 && node.TargetAssemblyFullIdentity == "System.Threading, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+                 && node.ReceiverOriginalTypeIdentity == new FrameworkTypeIdentity("System.Threading", "10.0.0.0", "System.Threading.SemaphoreSlim")
+                 && node.ReceiverOriginalTypeFullAssemblyIdentity == "System.Threading, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+                 && node.ReceiverIdentity is not null;
+
+        static FlowRegion? IsExactFinallyPair(MethodFlowSnapshot flow, InvocationFlowNode acquire,
+            InvocationFlowNode release, LoopNode loop)
+        {
+            var finallyRegions = flow.Regions.Where(region => region.Kind == FlowRegionKind.Finally
+                && region.Parent is not null
+                && region.StartBlockOrdinal <= release.BlockOrdinal
+                && region.EndBlockOrdinal >= release.BlockOrdinal).ToArray();
+            if (finallyRegions.Length != 1) { return null; }
+            var finallyRegion = finallyRegions[0];
+            var wrapper = flow.Regions.Where(region => region.Id == finallyRegion.Parent
+                && region.Kind == FlowRegionKind.TryAndFinally).ToArray();
+            if (wrapper.Length != 1) { return null; }
+            var tryRegions = flow.Regions.Where(region => region.Kind == FlowRegionKind.Try
+                && region.Parent == wrapper[0].Id).ToArray();
+            if (tryRegions.Length != 1 || tryRegions[0].StartBlockOrdinal is null
+                || tryRegions[0].EndBlockOrdinal is null || wrapper[0].StartBlockOrdinal is null
+                || wrapper[0].EndBlockOrdinal is null || finallyRegion.StartBlockOrdinal is null
+                || finallyRegion.EndBlockOrdinal is null) { return null; }
+            var loopMembers = loop.BodyBlockOrdinals.Append(loop.HeaderBlockOrdinal).ToHashSet();
+            static bool InLoop(FlowRegion region, HashSet<int> members) =>
+                region.StartBlockOrdinal is { } start && region.EndBlockOrdinal is { } end
+                && Enumerable.Range(start, end - start + 1).All(members.Contains);
+            if (!InLoop(tryRegions[0], loopMembers)
+                || wrapper[0].StartBlockOrdinal is not { } wrapperStart
+                || !loopMembers.Contains(wrapperStart)) { return null; }
+            var branches = flow.OrdinaryBranches.IsDefault ? [] : flow.OrdinaryBranches;
+            var incoming = branches.Where(branch => branch.SourceBlockOrdinal == acquire.BlockOrdinal
+                && branch.DestinationBlockOrdinal == wrapper[0].StartBlockOrdinal
+                && branch.DestinationBlockOrdinal != branch.SourceBlockOrdinal).ToArray();
+            return incoming.Length == 1 && release.BlockOrdinal >= finallyRegion.StartBlockOrdinal
+                && release.BlockOrdinal <= finallyRegion.EndBlockOrdinal
+                && acquire.EvaluationOrdinal < release.EvaluationOrdinal
+                && ControlsCompatible(flow, acquire, release, allowFinallyRelease: true) ? finallyRegion : null;
+        }
+
+        static FlowRegionId? FindCanonicalParent(ScenarioFlowContainer container, IReadOnlyList<ScenarioFlowContainer> all)
+        {
+            var sameMethod = all.Where(item => item.Method == container.Method && item.Region != container.Region).ToArray();
+            if (container.Kind == ScenarioFlowContainerKind.NaturalLoop)
+            {
+                return container.Parent;
+            }
+            return container.Parent is { } parent && sameMethod.Any(item => item.Region == parent)
+                ? parent : null;
+        }
+
+        WorkerControlCandidate? NormalizeCandidate(WorkerControlCandidate candidate)
+        {
+            var declared = candidate.Containers;
+            if (declared.IsDefaultOrEmpty)
+            {
+                return candidate with { Containers = [] };
+            }
+            var byKey = canonicalContainers.Where(item => item.Method == candidate.Method)
+                .ToDictionary(item => item.Region);
+            var chain = new List<FlowRegionId>();
+            var seen = new HashSet<FlowRegionId>();
+            var current = declared[^1];
+            while (true)
+            {
+                if (!seen.Add(current) || !byKey.TryGetValue(current, out var container))
+                {
+                    return null;
+                }
+                chain.Insert(0, current);
+                if (container.Parent is not { } parent)
+                {
+                    break;
+                }
+                current = parent;
+            }
+            var previous = -1;
+            foreach (var semantic in declared)
+            {
+                var index = chain.IndexOf(semantic);
+                if (index <= previous || index != previous + 1 && previous >= 0)
+                {
+                    return null;
+                }
+                previous = index;
+            }
+            return candidate with { Containers = chain.ToImmutableArray() };
+        }
+
+        static ImmutableArray<FlowRegionId> ContainingChain(MethodFlowSnapshot flow, int block, FlowRegionId? exact)
+        {
+            if (exact is { } region)
+            {
+                return [region];
+            }
+            var candidates = flow.Regions.Where(item => item.StartBlockOrdinal is { } start
+                && item.EndBlockOrdinal is { } end && start <= block && block <= end).ToArray();
+            var loops = flow.Nodes.OfType<LoopNode>()
+                .Where(loop => loop.HeaderBlockOrdinal >= 0
+                    && (loop.HeaderBlockOrdinal == block || loop.BodyBlockOrdinals.Contains(block)))
+                .OrderBy(loop => loop.BodyBlockOrdinals.Length).Select(loop => loop.Region).ToList();
+            var exceptions = candidates.Where(item => item.Kind is FlowRegionKind.Try or FlowRegionKind.Catch
+                or FlowRegionKind.Filter or FlowRegionKind.Finally or FlowRegionKind.TryAndCatch or FlowRegionKind.TryAndFinally)
+                .OrderBy(item => item.StartBlockOrdinal).Select(item => item.Id);
+            loops.AddRange(exceptions);
+            return loops.Distinct().ToImmutableArray();
+        }
+
+        static bool IsDirectPair(MethodFlowSnapshot flow, InvocationFlowNode acquire, InvocationFlowNode release, LoopNode loop)
+        {
+            if (acquire.BlockOrdinal == release.BlockOrdinal)
+            {
+                return acquire.EvaluationOrdinal < release.EvaluationOrdinal && ControlsCompatible(flow, acquire, release);
+            }
+            var exits = loop.Exits.ToHashSet();
+            var pending = new Queue<FlowNodeId>([acquire.Id]);
+            var reachable = new HashSet<FlowNodeId> { acquire.Id };
+            while (pending.TryDequeue(out var current))
+            {
+                foreach (var edge in flow.Edges.Where(edge => edge.Source == current
+                    && edge.Kind is FlowEdgeKind.Normal or FlowEdgeKind.True or FlowEdgeKind.False))
+                {
+                    if (edge.Kind == FlowEdgeKind.LoopBack || edge.Target == loop.Header || exits.Contains(edge.Target))
+                    {
+                        continue;
+                    }
+                    if (reachable.Add(edge.Target))
+                    {
+                        pending.Enqueue(edge.Target);
+                    }
+                }
+            }
+            if (!reachable.Contains(release.Id)) { return false; }
+            return ControlsCompatible(flow, acquire, release);
+        }
+
+        static LoopNode? CanonicalLoopForBlock(MethodFlowSnapshot flow, int block)
+        {
+            var loops = flow.Nodes.OfType<LoopNode>()
+                .Where(item => item.HeaderBlockOrdinal == block || item.BodyBlockOrdinals.Contains(block))
+                .OrderBy(item => item.BodyBlockOrdinals.Length)
+                .ToArray();
+            return loops.Length == 0 ? null : loops[0];
+        }
+
+        static LoopNode? CanonicalLoopForRelease(MethodFlowSnapshot flow, InvocationFlowNode release)
+        {
+            var direct = CanonicalLoopForBlock(flow, release.BlockOrdinal);
+            if (direct is not null) { return direct; }
+            var finallyRegions = flow.Regions.Where(region => region.Kind == FlowRegionKind.Finally
+                && region.StartBlockOrdinal <= release.BlockOrdinal
+                && region.EndBlockOrdinal >= release.BlockOrdinal).ToArray();
+            if (finallyRegions.Length != 1) { return null; }
+            var region = finallyRegions[0];
+            var wrapper = flow.Regions.FirstOrDefault(item => item.Id == region.Parent
+                && item.Kind == FlowRegionKind.TryAndFinally);
+            var tryRegion = wrapper is null ? null : flow.Regions.FirstOrDefault(item => item.Kind == FlowRegionKind.Try
+                && item.Parent == wrapper.Id);
+            if (wrapper is null || tryRegion is null) { return null; }
+            var loops = flow.Nodes.OfType<LoopNode>().Where(loop => region.StartBlockOrdinal is { } start
+                && region.EndBlockOrdinal is { } end
+                && tryRegion.StartBlockOrdinal is { } tryStart
+                && tryRegion.EndBlockOrdinal is { } tryEnd
+                && Enumerable.Range(tryStart, tryEnd - tryStart + 1).All(block => loop.BodyBlockOrdinals.Contains(block)
+                    || block == loop.HeaderBlockOrdinal)
+                && wrapper.StartBlockOrdinal is { } wrapperStart
+                && loop.BodyBlockOrdinals.Contains(wrapperStart))
+                .OrderBy(loop => loop.BodyBlockOrdinals.Length).ToArray();
+            return loops.Length == 0 ? null : loops[0];
+        }
+
+        static bool ControlsCompatible(MethodFlowSnapshot flow, InvocationFlowNode acquire, InvocationFlowNode release,
+            bool allowFinallyRelease = false)
+        {
+            var acquireControls = flow.ControlDependences.Where(item => item.ControlledNode == acquire.Id).ToArray();
+            var releaseControls = flow.ControlDependences.Where(item => item.ControlledNode == release.Id).ToArray();
+            return acquireControls.Length == 0 && releaseControls.Length == 0
+                || allowFinallyRelease && acquireControls.Length == 1 && releaseControls.Length == 0
+                || acquireControls.Length == 1 && releaseControls.Length == 1
+                    && acquireControls[0].ControllingDecision == releaseControls[0].ControllingDecision
+                    && acquireControls[0].ControlledOnTrue == releaseControls[0].ControlledOnTrue;
+        }
+    }
+
+    private sealed record WorkerControlCandidate(MethodId Method, HostedWorkerControlKind Kind, string Detail,
+        FlowNodeId? Anchor, FlowRegionId? Region, int Block, ImmutableArray<FlowRegionId> Containers,
+        ImmutableArray<EvidenceRef> Evidence);
+
+    private static ScenarioNode AddWorkerControl(ScenarioAnalysisRequest request, NormalizedEntry entry, ScenarioNode actionNode,
+        List<ScenarioNode> nodes, List<ScenarioEdge> edges,
+        MethodId method, HostedWorkerControlKind kind, string detail, FlowNodeId? anchor, FlowRegionId? region, int block,
+        ImmutableArray<FlowRegionId> containers,
+        ImmutableArray<EvidenceRef> evidence)
+    {
+        var identity = $"{method.Value}\u001f{anchor?.Value ?? block.ToString(CultureInfo.InvariantCulture)}\u001f{kind}";
+        var ordinal = StableOrdinal(identity);
+        var canonicalEvidence = evidence.IsDefaultOrEmpty
+                ? entry.Evidence
+                : evidence.DistinctBy(item => item.Id).OrderBy(item => item.Id.Value, StringComparer.Ordinal).ToImmutableArray();
+        var node = CreateNodeWithPresentation(request.Profile.Id, entry.EntryPointId, ScenarioNodeKind.MethodCall,
+            $"worker-control:{method.Value}:{kind}:{anchor?.Value ?? block.ToString(CultureInfo.InvariantCulture)}", method, null, detail,
+            new ScenarioNodePresentation(TargetContainingTypeName: entry.HostedWorker!.HostedTypeName, TargetMemberName: detail,
+                HostedWorkerTypeName: entry.HostedWorker.HostedTypeName, ActionKind: ScenarioActionKind.HostedWorker,
+                 HostedWorkerControlKind: kind, HostedWorkerFlowRegion: region, HostedWorkerHeader: anchor,
+                 HostedWorkerBlockOrdinal: block), canonicalEvidence, canonicalEvidence.Max(item => item.Certainty), ordinal);
+        nodes.Add(node);
+        edges.Add(CreateEdge(request.Profile.Id, entry.EntryPointId, actionNode, node, ScenarioEdgeKind.Call,
+            detail, ordinal, canonicalEvidence));
+        return node;
+
+        static int StableOrdinal(string value)
+        {
+            var hash = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value));
+            return ((hash[0] << 24) | (hash[1] << 16) | (hash[2] << 8) | hash[3]) & int.MaxValue;
         }
     }
 

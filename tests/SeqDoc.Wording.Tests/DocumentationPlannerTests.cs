@@ -12,6 +12,88 @@ namespace SeqDoc.Wording.Tests;
 
 public sealed class DocumentationPlannerTests
 {
+    [Theory]
+    [InlineData("zero-placement")]
+    [InlineData("duplicate-placement")]
+    [InlineData("missing-container")]
+    [InlineData("foreign-node")]
+    [InlineData("foreign-method")]
+    [InlineData("foreign-parent")]
+    [InlineData("foreign-anchor")]
+    [InlineData("cycle")]
+    [InlineData("missing-guard-arm")]
+    [InlineData("duplicate-region-id")]
+    [InlineData("cross-method-region-reuse")]
+    public void HostedWorkerTopologyValidationWithholdsOnlyAffectedOutput(string shape)
+    {
+        var evidence = ImmutableArray.Create(ScenarioGraphTestFactory.SourceEvidence("p32-invalid-topology"));
+        var method = new MethodId("method:v1:Workers.Invalid.ExecuteAsync");
+        var entry = new ScenarioNode(new("scenario-node:v1:p32:entry"), ScenarioNodeKind.EntryPoint,
+            "entry", method, null, "entry", evidence, CertaintyLevel.Exact);
+        var control = new ScenarioNode(new("scenario-node:v1:p32:control"), ScenarioNodeKind.MethodCall,
+            "control", method, new("operation:v1:p32:control"), "worker control", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(ActionKind: ScenarioActionKind.HostedWorker,
+                HostedWorkerTypeName: "Workers.Invalid", HostedWorkerControlKind: HostedWorkerControlKind.CancellationCheck));
+        var sibling = new ScenarioNode(new("scenario-node:v1:p32:sibling"), ScenarioNodeKind.MethodCall,
+            "sibling", method, new("operation:v1:p32:sibling"), "unrelated valid call", evidence, CertaintyLevel.Exact,
+             presentation: new ScenarioNodePresentation(TargetContainingTypeName: "Workers.Valid", TargetMemberName: "SiblingCall"));
+        var siblingControl = new ScenarioNode(new("scenario-node:v1:p32:sibling-control"), ScenarioNodeKind.MethodCall,
+            "sibling-control", method, new("operation:v1:p32:sibling-control"), "valid sibling control", evidence, CertaintyLevel.Exact,
+            presentation: new ScenarioNodePresentation(ActionKind: ScenarioActionKind.HostedWorker,
+                HostedWorkerTypeName: "Workers.Valid", HostedWorkerControlKind: HostedWorkerControlKind.CancellationCheck));
+        var region = new FlowRegionId("flow-region:v1:p32:loop");
+        var foreignRegion = new FlowRegionId("flow-region:v1:p32:foreign");
+        var container = new ScenarioFlowContainer(region, method, ScenarioFlowContainerKind.NaturalLoop,
+            new FlowNodeId("flow-node:v1:p32:loop-header"), null, evidence, CertaintyLevel.Exact);
+        var siblingRegion = new FlowRegionId("flow-region:v1:p32:sibling-loop");
+        var siblingContainer = new ScenarioFlowContainer(siblingRegion, method, ScenarioFlowContainerKind.NaturalLoop,
+            new FlowNodeId("flow-node:v1:p32:sibling-header"), null, evidence, CertaintyLevel.Exact);
+        var placement = new ScenarioFlowPlacement(control.Id, method, null, [region], [], evidence, CertaintyLevel.Exact);
+        var siblingPlacement = new ScenarioFlowPlacement(siblingControl.Id, method, null, [siblingRegion], [], evidence, CertaintyLevel.Exact);
+        var topology = shape switch
+        {
+            "zero-placement" => new ScenarioTopology([], [], [], [], [container, siblingContainer], [siblingPlacement]),
+            "duplicate-placement" => new ScenarioTopology([], [], [], [], [container, siblingContainer], [placement, placement, siblingPlacement]),
+            "missing-container" => new ScenarioTopology([], [], [], [], [container, siblingContainer], [placement with { Containers = [foreignRegion] }, siblingPlacement]),
+            "foreign-node" => new ScenarioTopology([], [], [], [], [container, siblingContainer],
+                [placement with { ScenarioNode = new ScenarioNodeId("scenario-node:v1:p32:foreign") }, siblingPlacement]),
+            "foreign-method" => new ScenarioTopology([], [], [], [], [container, siblingContainer],
+                [placement with { Method = new MethodId("method:v1:Workers.Foreign.ExecuteAsync") }, siblingPlacement]),
+            "foreign-parent" => new ScenarioTopology([], [], [], [],
+                [container with { Parent = foreignRegion }, siblingContainer], [placement, siblingPlacement]),
+            "foreign-anchor" => new ScenarioTopology([], [], [], [], [container, siblingContainer],
+                [placement with { Anchor = new FlowNodeId("flow-node:v1:p32:foreign") }, siblingPlacement]),
+            "cycle" => new ScenarioTopology([], [], [], [], [container with { Parent = region }, siblingContainer], [placement, siblingPlacement]),
+            "missing-guard-arm" => new ScenarioTopology([], [], [], [], [container, siblingContainer],
+                 [placement with { GuardArms = [new ScenarioArmId("scenario-arm:v1:p32:missing")] }, siblingPlacement]),
+            // Hostile input: region identity is not a unique container key unless the
+            // producer has already proved that fact.  The planner must fail closed, not throw.
+            "duplicate-region-id" => new ScenarioTopology([], [], [], [],
+                [container, container with { Header = new FlowNodeId("flow-node:v1:p32:duplicate-header") }, siblingContainer],
+                [placement, siblingPlacement]),
+            "cross-method-region-reuse" => new ScenarioTopology([], [], [], [],
+                [container, container with { Method = new MethodId("method:v1:Workers.Other.ExecuteAsync") }, siblingContainer],
+                [placement, siblingPlacement]),
+            _ => throw new ArgumentOutOfRangeException(nameof(shape)),
+        };
+        var graph = new ScenarioGraph(new("entry-point:v1:p32-invalid"), ScenarioGraphTestFactory.Profile.Id, method,
+            HttpMethodKind.Unknown, "", "invalid", [entry, control, sibling, siblingControl],
+            [new ScenarioEdge(new("scenario-edge:v1:p32-control"), entry.Id, control.Id, ScenarioEdgeKind.Call,
+                "control", evidence, CertaintyLevel.Exact),
+             new ScenarioEdge(new("scenario-edge:v1:p32-sibling"), entry.Id, sibling.Id, ScenarioEdgeKind.Call,
+                 "sibling", evidence, CertaintyLevel.Exact),
+              new ScenarioEdge(new("scenario-edge:v1:p32:sibling-control"), entry.Id, siblingControl.Id, ScenarioEdgeKind.Call,
+                 "sibling control", evidence, CertaintyLevel.Exact)], [], "p32-invalid", topology, rootKind: ScenarioRootKind.HostedWorker);
+
+        var plan = DocumentationPlanner.Plan(graph);
+        Assert.Single(plan.Diagram.Diagnostics);
+        Assert.Equal("DP-WORKER-INVALID-TOPOLOGY", plan.Diagram.Diagnostics[0].Code);
+        Assert.DoesNotContain(plan.Diagram.Messages, message => message.Label == "cancellation check");
+        Assert.Contains(plan.Diagram.Messages, message => message.Label == "SiblingCall");
+        Assert.Contains(plan.Diagram.Messages, message => message.Key.Contains("sibling-control", StringComparison.Ordinal));
+        Assert.Contains(plan.Diagram.Sequence.Elements, element => element.IsMessageRef);
+    }
+
     [Fact]
     public void ConfiguredMethodUsesNeutralMethodWordingAndParticipants()
     {

@@ -1,0 +1,29 @@
+name: Canonical work state
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744
+      - run: python -B tools/governance/work_state.py validate --root .
+      - run: python -B tools/governance/work_state.py project-execution --root . --check
+      - run: python -B -m unittest tests.governance.test_work_state
+  sync:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744
+      - run: python -B tools/governance/work_state.py sync-github --root . --repository "${{ github.repository }}"
+        env:
+          GH_TOKEN: ${{ github.token }}

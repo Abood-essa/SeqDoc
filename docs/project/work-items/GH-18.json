@@ -1,0 +1,26 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/18",
+  "dependencies": [
+    "GH-16",
+    "GH-17"
+  ],
+  "expectedGithubState": "OPEN",
+  "id": "GH-18",
+  "kind": "acceptance",
+  "lifecycle": "Blocked",
+  "lifecycleLabel": "blocked",
+  "nextAction": null,
+  "number": 18,
+  "owner": "abood",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/18",
+  "statusReason": "Blocked by worker implementation prerequisites.",
+  "title": "[Workers] Supplied-project worker and recovery acceptance",
+  "track": "workers"
+}

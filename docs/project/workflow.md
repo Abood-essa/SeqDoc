@@ -2,7 +2,7 @@
 
 ## Session start
 
-1. Read `docs/README.md`, `docs/project/status.md`, and `docs/project/execution.json`.
+1. Read `docs/README.md`, the selected record in `docs/project/work-items/`, `docs/project/status.md`, and `docs/project/execution.json`.
 2. Read `docs/roadmap.md` and only the architecture/decision material relevant to the active checkpoint.
 3. Inspect Git status and preserve unrelated work.
 4. If execution is idle, do not begin product implementation without owner activation.
@@ -11,18 +11,29 @@
 Durable repository files are execution authority. Conversation summaries, model memory, and raw session exports are
 recovery aids only.
 
+The typed records under `docs/project/work-items/` are the sole current-state authority. `execution.json`, GitHub
+lifecycle labels, status, parallel-workstreams, and capsule state are projections or explanatory history. `Ready` and
+`Active` both authorize a contributor after the contract is frozen; only the selected record authorizes the root
+Orchestrator. Use `work_state.py transition` rather than hand-editing multiple views.
+
 ## Checkpoints
 
 Work on one checkpoint at a time under `docs/work/<pass>/<checkpoint>/`. Each checkpoint declares exact target
 paths, non-goals, risks, existing coverage, a soft test budget, one focused implementation command, and one final
-gate. States are `NotStarted`, `Building`, `ReviewRequired`, `ResolvingFindings`, `Verifying`, `Closed`, or
-`Blocked`.
+ gate. States are `NotStarted`, `Building`, `ReviewRequired`, `ResolvingFindings`, `Verifying`, `Closed`, `Blocked`, or
+ `Cancelled`. Lifecycle states are `Draft`, `Blocked`, `Ready`, `Active`, `ReviewRequired`, `ResolvingFindings`,
+ `Verifying`, `Closed`, or `Cancelled`; lifecycle-to-capsule projection is `Ready` → `NotStarted`, `Active` → `Building`,
+ and the remaining named states project to their matching capsule state.
 
 The Orchestrator drafts the capsule and delegates implementation; it does not edit product source, tests, build, or
 OpenCode configuration. Implementation stops at `ReviewRequired`. Invoke the independent Reviewer once, inspect the
 actual diff, and record every finding as `Fixed`, `Rejected` with evidence, or `Deferred` with explicit owner
 approval. Run the final gate only after findings are resolved. After two failed repair reruns, preserve the worktree,
-mark the checkpoint `Blocked`, and stop.
+ mark the checkpoint `Blocked`, and stop.
+
+Accepted pushes to `main` run validation first and then automatically synchronize only GitHub lifecycle labels. The
+explicit `sync-github --dry-run` and manual synchronization commands remain maintainer tools. CI never rewrites pull
+request branches and cannot mutate issue titles, bodies, assignees, non-lifecycle labels, or issue state.
 
 ## Scope and verification
 

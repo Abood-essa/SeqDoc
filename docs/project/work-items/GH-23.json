@@ -1,0 +1,23 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/23",
+  "dependencies": [],
+  "expectedGithubState": "CLOSED",
+  "id": "GH-23",
+  "kind": "acceptance",
+  "lifecycle": "Closed",
+  "lifecycleLabel": null,
+  "nextAction": null,
+  "number": 23,
+  "owner": "maintainer",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/23",
+  "statusReason": "Acceptance completed.",
+  "title": "[Traversal] Optional overview and child decomposition",
+  "track": "traversal"
+}
