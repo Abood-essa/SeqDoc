@@ -639,7 +639,13 @@ public sealed class ScenarioTopologyTests
     }
 
     private static ScenarioAnalysisRequest WithMatchingEntityMutation(ScenarioAnalysisRequest request)
-        => request with
+    {
+        var existingMutations = request.NonGetSemanticFacts.EntityFrameworkMutations;
+        var matchingSave = existingMutations.Single(fact =>
+            fact.MutationKind is EntityFrameworkMutationKind.SaveChanges or EntityFrameworkMutationKind.SaveChangesAsync);
+        var adjustedSave = matchingSave with { SequenceOrdinal = 3 };
+
+        return request with
         {
             NonGetSemanticFacts = request.NonGetSemanticFacts with
             {
@@ -649,14 +655,15 @@ public sealed class ScenarioTopologyTests
                     Method = ScenarioTestFactory.WorkItemServiceMethod,
                     Operation = ScenarioTestFactory.WorkItemStateAssignmentOperation,
                     MutationKind = EntityFrameworkMutationKind.Add,
-                    SequenceOrdinal = 1,
+                    SequenceOrdinal = 2,
                     DbContextType = "AdvancedAnalysis.DecisionTopology.Data.WorkDbContext",
                     EntityType = "AdvancedAnalysis.DecisionTopology.Models.WorkItem",
                     Evidence = [ScenarioTestFactory.SourceEvidence("workitem-state-transition-mutation")],
                     Certainty = CertaintyLevel.Exact,
-                }).Concat(request.NonGetSemanticFacts.EntityFrameworkMutations).ToImmutableArray(),
+                }).Concat(existingMutations.Select(fact => ReferenceEquals(fact, matchingSave) ? adjustedSave : fact)).ToImmutableArray(),
             },
         };
+    }
 
     private static string CollectTopology(ScenarioGraph graph) => string.Join(
         "\n",
