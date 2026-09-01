@@ -156,6 +156,67 @@ public sealed class ScenarioGraphBuilderTests
             second.Nodes.Where(node => node.Kind == ScenarioNodeKind.MethodCall).Select(node => node.Id));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ConditionalCompositionWithPersistenceFactsWithholdsInternalAssignments(bool reverseConstruction)
+    {
+        var request = ScenarioTestFactory.CreateConditionalDiRequest(reverseConstruction: reverseConstruction);
+        var methods = new[] { ScenarioTestFactory.ServiceMethod, ScenarioTestFactory.OtherServiceMethod };
+        var assignments = methods.Select((method, index) => new StateAssignmentSemanticFact(
+            new SemanticFactId($"state-assignment:v1:composition:{index}"), method,
+            new OperationId($"operation:v1:composition:assignment:{index}"),
+            "GetMeaning.Models.Gadget.Status", "GetMeaning.Models.GadgetStatus",
+            StateAssignmentValueKind.EnumConstant, "Cancelled",
+            [ScenarioTestFactory.SourceEvidence($"composition-assignment:{index}")], CertaintyLevel.Exact, 1)).ToImmutableArray();
+        var mutations = methods.SelectMany((method, index) => new[]
+        {
+            CreateCompositionMutation(method, index, EntityFrameworkMutationKind.Add, "GetMeaning.Data.GadgetDbContext", "GetMeaning.Models.Gadget", 2),
+            CreateCompositionMutation(method, index, EntityFrameworkMutationKind.SaveChangesAsync, "GetMeaning.Data.GadgetDbContext", string.Empty, 3),
+        }).ToImmutableArray();
+        var adjusted = request with
+        {
+            NonGetSemanticFacts = request.NonGetSemanticFacts with
+            {
+                StateAssignments = reverseConstruction ? assignments.Reverse().ToImmutableArray() : assignments,
+                EntityFrameworkMutations = reverseConstruction ? mutations.Reverse().ToImmutableArray() : mutations,
+            },
+        };
+
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(adjusted).Graphs);
+        Assert.NotNull(graph.Composition);
+        Assert.DoesNotContain(graph.Nodes, node => node.Kind == ScenarioNodeKind.StateAssignment);
+        var reversed = ScenarioGraphBuilder.Build(adjusted with
+        {
+            NonGetSemanticFacts = adjusted.NonGetSemanticFacts with
+            {
+                StateAssignments = adjusted.NonGetSemanticFacts.StateAssignments.Reverse().ToImmutableArray(),
+                EntityFrameworkMutations = adjusted.NonGetSemanticFacts.EntityFrameworkMutations.Reverse().ToImmutableArray(),
+            },
+        });
+        Assert.Equal(graph.DebugProjection, Assert.Single(reversed.Graphs).DebugProjection);
+    }
+
+    private static EntityFrameworkMutationFact CreateCompositionMutation(
+        MethodId method,
+        int index,
+        EntityFrameworkMutationKind kind,
+        string context,
+        string entity,
+        int ordinal)
+        => new()
+        {
+            Id = new BehaviorFactId($"ef-mut:v1:composition:{index}:{kind}"),
+            Method = method,
+            Operation = new OperationId($"operation:v1:composition:{index}:{kind}"),
+            MutationKind = kind,
+            SequenceOrdinal = ordinal,
+            DbContextType = context,
+            EntityType = entity,
+            Evidence = [ScenarioTestFactory.SourceEvidence($"composition-mutation:{index}:{kind}")],
+            Certainty = CertaintyLevel.Exact,
+        };
+
     /// <summary>
     /// CR-2 write-first contract: one exact source predicate may own two lowered decisions. Only the
     /// first ordinal receives the complete presentation tree; later lowered decisions retain a typed
@@ -1267,6 +1328,177 @@ public sealed class ScenarioGraphBuilderTests
         Assert.Equal(jsonService.Id, Assert.Single(composition.FalseArm.MemberNodes));
         Assert.Empty(composition.TrueArm.MemberNodes.Intersect(composition.FalseArm.MemberNodes));
     }
+
+    /// <summary>
+    /// Persistence-request association is consumer filtering: only an exact assignment target joined
+    /// to a same-method entity mutation and a later save is projected as a transition. Generic facts
+    /// remain available to other consumers, and input construction order cannot affect the graph.
+    /// </summary>
+    [Theory]
+    [InlineData("matching", true)]
+    [InlineData("wrong-entity", false)]
+    [InlineData("missing-mutation", false)]
+    [InlineData("missing-save", false)]
+    [InlineData("incompatible-save", false)]
+    [InlineData("equal-ordinal", false)]
+    public void PersistenceAssignmentJoinRequiresCompatibleEntityMutationAndSave(
+        string partition,
+        bool expectedStateNode)
+    {
+        var forward = BuildPersistenceAssignmentRequest(partition, reverseConstruction: false);
+        var reversed = BuildPersistenceAssignmentRequest(partition, reverseConstruction: true);
+
+        var forwardGraph = Assert.Single(ScenarioGraphBuilder.Build(forward).Graphs);
+        var reversedGraph = Assert.Single(ScenarioGraphBuilder.Build(reversed).Graphs);
+
+        Assert.Equal(expectedStateNode,
+            forwardGraph.Nodes.Any(node => node.Kind == ScenarioNodeKind.StateAssignment));
+        Assert.Equal(forwardGraph.DebugProjection, reversedGraph.DebugProjection);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void PersistenceAssignmentRequiresSameControlArm(bool reverseConstruction, bool oppositeArm)
+    {
+        var request = ScenarioTestFactory.CreateWorkItemTopologyRequest(reverseConstruction);
+        var originalAssignment = Assert.Single(request.NonGetSemanticFacts.StateAssignments);
+        var assignment = new StateAssignmentSemanticFact(
+            originalAssignment.Id,
+            originalAssignment.Method,
+            originalAssignment.Operation,
+            originalAssignment.TargetMember,
+            originalAssignment.TargetType,
+            originalAssignment.ValueKind,
+            originalAssignment.Value,
+            originalAssignment.Evidence,
+            originalAssignment.Certainty,
+            sequenceOrdinal: 0);
+        var save = Assert.Single(request.NonGetSemanticFacts.EntityFrameworkMutations,
+            fact => fact.MutationKind == EntityFrameworkMutationKind.SaveChangesAsync);
+        var mutation = new EntityFrameworkMutationFact
+        {
+            Id = new BehaviorFactId("ef-mut:v1:control-arm"),
+            Method = ScenarioTestFactory.WorkItemServiceMethod,
+            Operation = oppositeArm
+                ? ScenarioTestFactory.WorkItemConflictFactoryOperation
+                : ScenarioTestFactory.WorkItemStateAssignmentOperation,
+            MutationKind = EntityFrameworkMutationKind.Add,
+            SequenceOrdinal = 1,
+            DbContextType = "AdvancedAnalysis.DecisionTopology.Data.WorkDbContext",
+            EntityType = "AdvancedAnalysis.DecisionTopology.Models.WorkItem",
+            Evidence = [ScenarioTestFactory.SourceEvidence("control-arm-mutation")],
+            Certainty = CertaintyLevel.Exact,
+        };
+        var adjusted = request with
+        {
+            NonGetSemanticFacts = request.NonGetSemanticFacts with
+            {
+                StateAssignments = [assignment],
+                EntityFrameworkMutations = reverseConstruction
+                    ? [save, mutation]
+                    : [mutation, save],
+            },
+        };
+
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(adjusted).Graphs);
+        var stateNodes = graph.Nodes.Where(node => node.Kind == ScenarioNodeKind.StateAssignment).ToArray();
+        Assert.Equal(oppositeArm ? 0 : 1, stateNodes.Length);
+        Assert.DoesNotContain(graph.Edges, edge => oppositeArm && edge.Kind == ScenarioEdgeKind.StateAssignment);
+    }
+
+    private static ScenarioAnalysisRequest BuildPersistenceAssignmentRequest(string partition, bool reverseConstruction)
+    {
+        var baseRequest = ScenarioTestFactory.CreateGetRequest();
+        var evidence = new EvidenceRef(
+            new EvidenceId("evidence:v1:persistence-assignment"),
+            EvidenceKind.Source,
+            "src/Services/GadgetService.cs",
+            range: null,
+            symbol: "GetMeaning.Models.Gadget.Status",
+            detail: "Status = Cancelled",
+            CertaintyLevel.Exact);
+        var assignment = new StateAssignmentSemanticFact(
+            new SemanticFactId("state-assignment:v1:persistence"),
+            ScenarioTestFactory.ServiceMethod,
+            new OperationId("op:persistence:assignment"),
+            "GetMeaning.Models.Gadget.Status",
+            "GetMeaning.Models.GadgetStatus",
+            StateAssignmentValueKind.EnumConstant,
+            "Cancelled",
+            [evidence],
+            CertaintyLevel.Exact,
+            sequenceOrdinal: 1);
+        var mutations = new List<EntityFrameworkMutationFact>();
+        switch (partition)
+        {
+            case "matching":
+                mutations.Add(CreatePersistenceMutation("add", EntityFrameworkMutationKind.Add, "GetMeaning.Models.Gadget", "GetMeaning.Data.GadgetDbContext", 2));
+                mutations.Add(CreatePersistenceMutation("save", EntityFrameworkMutationKind.SaveChangesAsync, string.Empty, "GetMeaning.Data.GadgetDbContext", 3));
+                break;
+            case "wrong-entity":
+                mutations.Add(CreatePersistenceMutation("add", EntityFrameworkMutationKind.Add, "GetMeaning.Models.Other", "GetMeaning.Data.GadgetDbContext", 2));
+                mutations.Add(CreatePersistenceMutation("save", EntityFrameworkMutationKind.SaveChangesAsync, string.Empty, "GetMeaning.Data.GadgetDbContext", 3));
+                break;
+            case "missing-mutation":
+                mutations.Add(CreatePersistenceMutation("save", EntityFrameworkMutationKind.SaveChangesAsync, string.Empty, "GetMeaning.Data.GadgetDbContext", 3));
+                break;
+            case "missing-save":
+                mutations.Add(CreatePersistenceMutation("add", EntityFrameworkMutationKind.Add, "GetMeaning.Models.Gadget", "GetMeaning.Data.GadgetDbContext", 2));
+                break;
+            case "incompatible-save":
+                mutations.Add(CreatePersistenceMutation("add", EntityFrameworkMutationKind.Add, "GetMeaning.Models.Gadget", "GetMeaning.Data.GadgetDbContext", 2));
+                mutations.Add(CreatePersistenceMutation("save", EntityFrameworkMutationKind.SaveChangesAsync, string.Empty, "GetMeaning.Data.OtherDbContext", 3));
+                break;
+            case "equal-ordinal":
+                mutations.Add(CreatePersistenceMutation("add", EntityFrameworkMutationKind.Add, "GetMeaning.Models.Gadget", "GetMeaning.Data.GadgetDbContext", 1));
+                mutations.Add(CreatePersistenceMutation("save", EntityFrameworkMutationKind.SaveChangesAsync, string.Empty, "GetMeaning.Data.GadgetDbContext", 3));
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(partition), partition, null);
+        }
+
+        if (reverseConstruction)
+        {
+            mutations.Reverse();
+        }
+
+        return baseRequest with
+        {
+            NonGetSemanticFacts = baseRequest.NonGetSemanticFacts with
+            {
+                StateAssignments = [assignment],
+                EntityFrameworkMutations = mutations.ToImmutableArray(),
+            },
+        };
+    }
+
+    private static EntityFrameworkMutationFact CreatePersistenceMutation(
+        string key,
+        EntityFrameworkMutationKind kind,
+        string entityType,
+        string dbContextType,
+        int sequenceOrdinal)
+        => new()
+        {
+            Id = new BehaviorFactId($"ef-mut:v1:persistence:{key}"),
+            Method = ScenarioTestFactory.ServiceMethod,
+            Operation = new OperationId($"op:persistence:{key}"),
+            MutationKind = kind,
+            SequenceOrdinal = sequenceOrdinal,
+            DbContextType = dbContextType,
+            EntityType = entityType,
+            Evidence = [new EvidenceRef(
+                new EvidenceId($"evidence:v1:persistence:{key}"),
+                EvidenceKind.Source,
+                "src/Services/GadgetService.cs",
+                range: null,
+                symbol: key,
+                detail: null,
+                CertaintyLevel.Exact)],
+            Certainty = CertaintyLevel.Exact,
+        };
 
     private static string CollectProjection(ScenarioGraphSet set) => string.Join(
         "\n",

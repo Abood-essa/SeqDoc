@@ -77,6 +77,9 @@ public sealed class WidgetService(WidgetDbContext context) : IWidgetService
             return WidgetResult<Reservation>.ValidationError("Reservation date is in the past");
         }
 
+        var note = new ReservationNote();
+        note.Status = "draft";
+
         var currentCount = await context.Reservations
             .Where(item => item.WidgetId == widgetId)
             .CountAsync();
@@ -142,4 +145,9 @@ public sealed class WidgetService(WidgetDbContext context) : IWidgetService
         await context.SaveChangesAsync();
         return WidgetResult<Widget>.Success(updated);
     }
+}
+
+internal sealed class ReservationNote
+{
+    public string? Status { get; set; }
 }
