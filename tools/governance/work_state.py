@@ -9,7 +9,7 @@ TRANSITIONS = {"Draft": {"Blocked", "Ready", "Cancelled"}, "Blocked": {"Ready", 
 SHA = re.compile(r"^[0-9a-f]{40}$")
 URL = re.compile(r"^https://github\.com/[^/]+/[^/]+/(?:issues|pull)/[0-9]+(?:#.*)?$")
 BRANCH = re.compile(r"^[A-Za-z0-9._/-]+$")
-CAPSULE_STATES = {"Ready": "NotStarted", "Active": "Building", "ReviewRequired": "ReviewRequired", "ResolvingFindings": "ResolvingFindings", "Verifying": "Verifying", "Closed": "Closed", "Blocked": "Blocked"}
+CAPSULE_STATES = {"Ready": "NotStarted", "Active": "Building", "ReviewRequired": "ReviewRequired", "ResolvingFindings": "ResolvingFindings", "Verifying": "Verifying", "Closed": "Closed", "Blocked": "Blocked", "Cancelled": "Cancelled"}
 
 def schema(root):
     return json.loads((root / "docs/project/work-state.schema.json").read_text(encoding="utf-8"))
@@ -38,7 +38,9 @@ def validate_items(items, root=None, capsule_overrides=None):
         errors += [f"{x.get('id', '<unknown>')} missing {k}" for k in missing]
         unknown = set(x) - set(props)
         errors += [f"{x.get('id', '<unknown>')} unknown property {k}" for k in sorted(unknown)]
-        i = x.get("id"); ids[i] = x
+        i = x.get("id")
+        if i in ids: errors.append(f"duplicate id {i}")
+        else: ids[i] = x
         for k, rule in props.items():
             if k not in x: continue
             v = x[k]
@@ -53,7 +55,6 @@ def validate_items(items, root=None, capsule_overrides=None):
             if isinstance(v, list):
                 if rule.get("uniqueItems") and len(v) != len({json.dumps(a, sort_keys=True) for a in v}): errors.append(f"{i} duplicate {k}")
                 if isinstance(rule.get("items"), dict) and rule["items"].get("type") == "string" and any(not isinstance(a, str) for a in v): errors.append(f"{i} invalid item type {k}")
-        if i in ids and ids[i] is not x: errors.append(f"duplicate id {i}")
         if isinstance(i, str) and i.startswith("GH-"):
             n=x.get("number")
             if n in nums: errors.append(f"duplicate issue number {n}")

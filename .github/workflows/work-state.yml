@@ -25,3 +25,5 @@ jobs:
     steps:
       - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744
       - run: python -B tools/governance/work_state.py sync-github --root . --repository "${{ github.repository }}"
+        env:
+          GH_TOKEN: ${{ github.token }}

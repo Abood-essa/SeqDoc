@@ -61,7 +61,7 @@ class WorkStateTests(unittest.TestCase):
         before=(self.d/"docs/project/work-items/GWS1.json").read_text(); a=type("A",(),{"id":"GWS1","state":"ReviewRequired","reason":"returning to review after verification","select":True,"check":True,"dry_run":False})()
         self.assertEqual(ws.transition(self.d,a),0); self.assertEqual(before,(self.d/"docs/project/work-items/GWS1.json").read_text())
     def test_github_drift_parsing_is_read_only(self):
-        payload=json.dumps([{"number":n,"state":("CLOSED" if n in {1,2,5,6,7,8,9,10,11,14,15,19,20,21,22,23,41,44} else "OPEN"),"labels":([{"name":ws.LABELS.get(self.find("GH-"+str(n))["lifecycle"])}] if self.find("GH-"+str(n))["lifecycle"] != "Closed" else [])} for n in [x["number"] for x in self.items if "number" in x]])
+        payload=json.dumps([{"number":n,"state":next(x["expectedGithubState"] for x in self.items if x.get("number")==n),"labels":([{"name":ws.LABELS.get(self.find("GH-"+str(n))["lifecycle"])}] if self.find("GH-"+str(n))["lifecycle"] != "Closed" else [])} for n in [x["number"] for x in self.items if "number" in x]])
         with patch("subprocess.run", return_value=type("R",(),{"stdout":payload})()) as run: self.assertEqual(ws.gh(type("A",(),{"command":"check-github","repository":"x"})(),self.d),0); run.assert_called_once()
         for state in ("Draft", "Cancelled"):
             x=self.find("GH-12"); x["lifecycle"]=state; x["lifecycleLabel"]=None; self.write()
@@ -99,6 +99,7 @@ class WorkStateTests(unittest.TestCase):
         for mutation in (lambda x: x.update(schemaVersion=2), lambda x: x.update(extra=1), lambda x: x.pop("owner"), lambda x: x.update(dependencies="GH-9"), lambda x: x.update(dependencies=["GH-9","GH-9"])):
             with self.subTest(mutation=mutation):
                 candidate=__import__("copy").deepcopy(self.items); x=next(i for i in candidate if i["id"]=="GH-12"); mutation(x); self.assertTrue(ws.validate_items(candidate,self.d))
+        duplicate=__import__("copy").deepcopy(self.items); duplicate.append(__import__("copy").deepcopy(duplicate[0])); duplicate_id=duplicate[0]["id"]; errors=ws.validate_items(duplicate,self.d); self.assertEqual([e for e in errors if e == f"duplicate id {duplicate_id}"], [f"duplicate id {duplicate_id}"])
 
     def test_capsule_projection_and_execution_identity(self):
         x=self.find("GH-12"); self.assertEqual(x["checkpointId"],"I12"); self.assertEqual(ws.validate_items(self.items,self.d),[])
@@ -126,6 +127,7 @@ class WorkStateTests(unittest.TestCase):
         self.assertEqual(records["GH-12"]["lifecycle"],"Active"); self.assertTrue(records["GH-12"]["selectedForExecution"])
         execution=json.loads((self.d/"docs/project/execution.json").read_text())
         self.assertEqual((execution["activeCheckpointId"],execution["activeCheckpointPath"]),("I12","docs/work/persistence/I12"))
+        item=json.loads((self.d/"docs/project/work-items/GH-12.json").read_text()); item["lifecycle"]="Draft"; item["lifecycleLabel"]=None; item["selectedForExecution"]=False; (self.d/"docs/project/work-items/GH-12.json").write_text(json.dumps(item)); a=type("A",(),{"id":"GH-12","state":"Cancelled","reason":"cancelled governance test","select":False,"dry_run":False,"check":False})(); self.assertEqual(ws.transition(self.d,a),0); cancelled=json.loads((self.d/"docs/project/work-items/GH-12.json").read_text()); self.assertEqual(cancelled["lifecycle"],"Cancelled"); self.assertEqual(ws.validate(self.d),0); self.assertEqual((self.d/"docs/work/persistence/I12/checkpoint.md").read_text().splitlines()[4],"`Cancelled`")
 
     def test_transition_selected_to_blocked_without_recipient_leaves_idle(self):
         self.reset_gws1_transition_fixture()

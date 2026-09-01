@@ -13,5 +13,15 @@
 | GWS1-F9 | Fixed: capsule and workflow verification use `python -B`; `TemporaryDirectory` cleanup and `-B` focused tests avoid committed cache artifacts. |
 | S1 | Fixed: `gh` computes wrong lifecycle labels as attached lifecycle labels minus the expected singleton (or all when absent), adds only an absent expected label, skips unchanged edits, and uses bounded argument arrays. `test_sync_dry_run_forms_only_label_commands` inspects exact dry-run plans and proves non-lifecycle labels never enter edit arguments; one mocked remote read and no write subprocess are asserted. |
 
+## Post-closure audit dispositions
+
+| Finding | Disposition |
+|---|---|
+| Duplicate ID validation | Fixed: first occurrences are retained and every duplicate is reported deterministically; the existing schema test asserts the consolidated duplicate-ID result. |
+| Cancelled projection | Fixed: `Cancelled` is a valid lifecycle and capsule state, with an existing transition test covering a checkpointed temporary item. |
+| Workflow token | Fixed: only the push-to-main sync job receives `GH_TOKEN`; pull-request validation does not. |
+| Automatic-sync policy clarification | Fixed: validated pushes to `main` synchronize lifecycle labels only; manual and dry-run sync remain maintainer tools, with all other CI mutations prohibited. |
+| CI stale test | Fixed: GitHub drift test state is derived from each record's `expectedGithubState`. |
+
 Two contributor repair reruns failed. The mandatory checkpoint rule required a `Blocked` stop; the owner then explicitly
 authorized this bounded maintainer takeover. No second independent review ran.

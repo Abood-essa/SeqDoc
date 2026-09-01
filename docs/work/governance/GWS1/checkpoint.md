@@ -33,6 +33,9 @@ for a given Orchestrator execution projection, and zero selected items represent
 
 `Draft`, `Blocked`, `Ready`, `Active`, `ReviewRequired`, `ResolvingFindings`, `Verifying`, `Closed`, `Cancelled`.
 
+Checkpoint capsule projection states are `NotStarted`, `Building`, `ReviewRequired`, `ResolvingFindings`, `Verifying`,
+`Closed`, `Blocked`, and `Cancelled`; `Ready` projects to `NotStarted` and the other lifecycle states project by name.
+
 Only `Ready` or `Active` authorizes product implementation. `Ready` authorizes the named public contributor to create a
 branch from the frozen baseline. `Active` records that implementation has started. The selected execution item tells the
 local root Orchestrator which one item it may operate on; it does not invalidate other contributors' active items.
@@ -169,5 +172,6 @@ Run once after review resolution:
 python -B tools/governance/work_state.py validate --root .; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; python -B tools/governance/work_state.py project-execution --root . --check; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; python -B tools/governance/work_state.py check-github --root . --repository Bilaltariq41/SeqDoc; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; python -B -m unittest tests.governance.test_work_state; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; git diff --check
 ```
 
-The GitHub check is read-only in the final gate. Label synchronization is a separate explicit maintainer action after the
-candidate is accepted.
+The GitHub check is read-only in the final gate. After validation, an accepted push to `main` automatically synchronizes
+only lifecycle labels. `sync-github --dry-run` and manual synchronization remain explicit maintainer tools. CI never
+rewrites pull-request branches and cannot mutate titles, bodies, assignees, non-lifecycle labels, or issue state.
