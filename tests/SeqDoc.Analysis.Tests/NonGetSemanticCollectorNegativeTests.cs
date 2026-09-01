@@ -70,6 +70,61 @@ public sealed class NonGetSemanticCollectorNegativeTests
     }
 
     /// <summary>
+    /// F4: an exact ordinary property assignment remains a generic companion fact and retains its
+    /// non-entity target type; a true local-variable assignment and unsupported computed value do not
+    /// become state-assignment facts.
+    /// </summary>
+    [Fact]
+    public async Task AssignmentLookalikesDoNotProduceEntityTransitions()
+    {
+        var extraction = await ExtractSuccessfullyAsync();
+        var probe = FindMethod(extraction, "AssignmentLookalikeProbe");
+
+        var assignments = extraction.NonGetSemanticFacts.StateAssignments
+            .Where(assignment => assignment.Method == probe)
+            .ToArray();
+
+        foreach (var target in new[] { "WidgetDto.Status", "StatusCarrier.Status" })
+        {
+            var ordinary = Assert.Single(assignments, assignment => assignment.TargetMember.EndsWith(target, StringComparison.Ordinal));
+            Assert.Equal("System.String", ordinary.TargetType);
+            Assert.Equal(StateAssignmentValueKind.Literal, ordinary.ValueKind);
+            Assert.Equal(CertaintyLevel.Exact, ordinary.Certainty);
+            Assert.NotEmpty(ordinary.Evidence);
+        }
+
+        Assert.DoesNotContain(assignments, assignment => assignment.Value == "changed");
+        Assert.DoesNotContain(assignments, assignment => assignment.Value == "computed");
+    }
+
+    /// <summary>
+    /// F5: the accepted producer slice remains exact at the source boundary: the entity assignment
+    /// and mutation facts belong to the named service methods and retain exact evidence/certainty.
+    /// </summary>
+    [Fact]
+    public async Task FourFlowTransitionFactsRemainMethodBoundAndEvidenceBacked()
+    {
+        var extraction = await ExtractSuccessfullyAsync();
+        var reserve = FindServiceMethod(extraction, "ReserveAsync");
+        var cancel = FindServiceMethod(extraction, "CancelAsync");
+
+        Assert.Contains(extraction.NonGetSemanticFacts.StateAssignments,
+            assignment => assignment.Method == reserve && assignment.TargetMember.EndsWith("Reservation.Status", StringComparison.Ordinal)
+                && assignment.Value == "Active");
+        Assert.Contains(extraction.NonGetSemanticFacts.StateAssignments,
+            assignment => assignment.Method == cancel && assignment.TargetMember.EndsWith("Widget.Status", StringComparison.Ordinal)
+                && assignment.Value == "Cancelled");
+        var mutations = extraction.NonGetSemanticFacts.EntityFrameworkMutations
+            .Where(mutation => mutation.Method is var method && (method == reserve || method == cancel)).ToArray();
+        Assert.NotEmpty(mutations);
+        Assert.All(mutations, mutation =>
+        {
+            Assert.Equal(CertaintyLevel.Exact, mutation.Certainty);
+            Assert.NotEmpty(mutation.Evidence);
+        });
+    }
+
+    /// <summary>
     /// F6: every exact status-switch arm carries evidence for both the switch case label (the
     /// status-to-outcome mapping) and the helper invocation that produced the outcome; a lone helper
     /// invocation evidence is insufficient.
@@ -209,6 +264,14 @@ public sealed class NonGetSemanticCollectorNegativeTests
 
     private static MethodId FindMethod(ProfileAnalysisExtraction extraction, string name)
         => Assert.Single(extraction.ProgramIndex.Methods, method => method.Name == name).Id;
+
+    private static MethodId FindServiceMethod(ProfileAnalysisExtraction extraction, string name)
+    {
+        var service = Assert.Single(extraction.ProgramIndex.Types,
+            type => type.MetadataName == "BehaviorDocumentation.FourFlows.Services.WidgetService");
+        return Assert.Single(extraction.ProgramIndex.Methods,
+            method => method.Name == name && method.ContainingType == service.Id).Id;
+    }
 
     private static string FindRepositoryRoot()
     {

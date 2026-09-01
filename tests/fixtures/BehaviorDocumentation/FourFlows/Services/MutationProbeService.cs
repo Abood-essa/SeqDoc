@@ -19,4 +19,34 @@ public sealed class MutationProbeService(WidgetDbContext context)
         context.Widgets.Remove(widget);
         context.Widgets.AddRange([widget]);
     }
+
+    public void AssignmentLookalikeProbe()
+    {
+        var local = new StatusCarrier();
+        local.Status = "local";
+
+        var localValue = "initial";
+        localValue = "changed";
+        _ = localValue;
+
+        var dto = new WidgetDto();
+        dto.Status = "dto";
+
+        GetStatusCarrier().Status = GetComputedStatus();
+        context.Widgets.Add(new Widget { Label = dto.Status });
+    }
+
+    private static StatusCarrier GetStatusCarrier() => new();
+
+    private static string GetComputedStatus() => "computed";
+
+    private sealed class StatusCarrier
+    {
+        public string? Status { get; set; }
+    }
+
+    private sealed class WidgetDto
+    {
+        public string? Status { get; set; }
+    }
 }

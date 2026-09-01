@@ -107,6 +107,9 @@ public sealed class BehaviorDocumentationFourFlowTests
         Assert.Contains(outcomes, node => node.Detail.Contains("HTTP 404", StringComparison.Ordinal));
         Assert.Contains(outcomes, node => node.Detail.Contains("HTTP 409", StringComparison.Ordinal));
         Assert.Contains(outcomes, node => node.Detail.Contains("HTTP 200", StringComparison.Ordinal));
+        Assert.Contains(outcomes, node => node.Detail == "NotFound -> HTTP 404");
+        Assert.Contains(outcomes, node => node.Detail == "Conflict -> HTTP 409");
+        Assert.Contains(outcomes, node => node.Detail == "Ok -> HTTP 200");
         Assert.Equal(3, outcomes.Select(node => node.Key).Distinct(StringComparer.Ordinal).Count());
         Assert.Contains(cancel.Edges, edge => edge.Kind == ScenarioEdgeKind.OutcomeFailure && edge.Detail.Contains("NotFound", StringComparison.Ordinal));
         Assert.Contains(cancel.Edges, edge => edge.Kind == ScenarioEdgeKind.OutcomeFailure && edge.Detail.Contains("Conflict", StringComparison.Ordinal));
@@ -159,11 +162,53 @@ public sealed class BehaviorDocumentationFourFlowTests
 
         var plan = DocumentationPlanner.Plan(cancel);
         Assert.Contains(plan.Wording.Phrases, phrase => phrase.Key == "source-observation");
+        var markdown = MarkdownRenderer.RenderDocument(plan.Wording, plan.Diagram);
+        Assert.Contains("Status = Cancelled", markdown, StringComparison.Ordinal);
+        Assert.Contains("removes Widget records", markdown, StringComparison.Ordinal);
+        Assert.Contains("calls SaveChanges", markdown, StringComparison.Ordinal);
+        Assert.Contains("status outcome", markdown, StringComparison.OrdinalIgnoreCase);
+        Assert.True(
+            PhraseIndex(plan.Wording, "state-assignment", "The service assigns: Status = Cancelled.")
+                < PhraseIndex(plan.Wording, "entity-mutation", "The service mutates the data store: removes Widget records.")
+                && PhraseIndex(plan.Wording, "entity-mutation", "The service mutates the data store: removes Widget records.")
+                < PhraseIndex(plan.Wording, "entity-save", "The service calls SaveChanges on WidgetDbContext.")
+                && PhraseIndex(plan.Wording, "entity-save", "The service calls SaveChanges on WidgetDbContext.")
+                < PhraseIndex(plan.Wording, "result", "The service result is a status outcome."),
+            markdown);
+        var cancelMermaid = MermaidRenderer.Render(plan.Diagram);
+        var mermaidMessages = plan.Diagram.Messages.Select(message => message.Label).ToArray();
+        var expectedMermaid = new[] { "Assign Status", "Remove Widget range", "calls SaveChanges" };
+        if (expectedMermaid.All(label => mermaidMessages.Contains(label, StringComparer.Ordinal)))
+        {
+            Assert.True(cancelMermaid.IndexOf(expectedMermaid[0], StringComparison.Ordinal)
+                < cancelMermaid.IndexOf(expectedMermaid[1], StringComparison.Ordinal)
+                && cancelMermaid.IndexOf(expectedMermaid[1], StringComparison.Ordinal)
+                < cancelMermaid.IndexOf(expectedMermaid[2], StringComparison.Ordinal), cancelMermaid);
+        }
+        else
+        {
+            Assert.Empty(plan.Diagram.Messages.Where(message => expectedMermaid.Contains(message.Label, StringComparer.Ordinal)));
+            Assert.Contains(plan.Diagram.Diagnostics, diagnostic =>
+                diagnostic.Code is "SC011" or "SC012" or "SC013" or "DP002");
+        }
         Assert.DoesNotContain(
             plan.Diagram.Messages,
             message => message.Label.Contains("observation", StringComparison.OrdinalIgnoreCase)
                 || message.Label.Contains("TODO", StringComparison.OrdinalIgnoreCase)
                 || message.Label.Contains("notify", StringComparison.OrdinalIgnoreCase));
+
+        var generatedScenarioText = string.Join(
+            "\n",
+            plan.Wording.Phrases.Select(phrase => phrase.Text)
+                .Concat(plan.Diagram.Messages.Select(message => message.Label)));
+        foreach (var forbidden in new[]
+        {
+            "persistence succeeded", "persisted", "committed", "commit", "transaction succeeded",
+            "database updated", "rows changed", "write succeeded", "durable state", "runtime success",
+        })
+        {
+            Assert.DoesNotContain(forbidden, generatedScenarioText, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     /// <summary>Claim 5: Reserve carries conservative relational patterns and DateTime comparisons.</summary>
@@ -214,6 +259,19 @@ public sealed class BehaviorDocumentationFourFlowTests
             .ToArray();
         Assert.Contains(stateNodes, detail => detail.Contains("Status = Active", StringComparison.Ordinal));
         Assert.Contains(reserve.Edges, edge => edge.Kind == ScenarioEdgeKind.StateAssignment);
+
+        var note = Assert.Single(
+            assignments,
+            fact => fact.TargetMember.EndsWith("ReservationNote.Status", StringComparison.Ordinal));
+        Assert.Equal("draft", note.Value);
+        Assert.Equal("System.String", note.TargetType);
+        Assert.Equal(CertaintyLevel.Exact, note.Certainty);
+        Assert.NotEmpty(note.Evidence);
+        Assert.DoesNotContain(stateNodes, detail => detail.Contains("draft", StringComparison.Ordinal));
+        var reservePlan = DocumentationPlanner.Plan(reserve);
+        Assert.DoesNotContain(
+            reservePlan.Wording.Phrases,
+            phrase => phrase.Text.Contains("draft", StringComparison.Ordinal));
     }
 
     /// <summary>Claims 7+8: Reserve orders multiple aggregation queries and distinguishes CountAsync.</summary>
@@ -321,6 +379,24 @@ public sealed class BehaviorDocumentationFourFlowTests
         var add = partLinkMutations[0];
         Assert.Equal(EntityFrameworkMutationKind.Add, add.MutationKind);
         Assert.Equal(CertaintyLevel.Exact, add.Certainty);
+
+        var reservePlan = DocumentationPlanner.Plan(reserve);
+        var reserveMermaid = MermaidRenderer.Render(reservePlan.Diagram);
+        var reservationAdd = reserveMermaid.IndexOf("Add Reservation", StringComparison.Ordinal);
+        var partLinkAdd = reserveMermaid.IndexOf("Add PartLink", StringComparison.Ordinal);
+        var save = reserveMermaid.IndexOf("calls SaveChanges", StringComparison.Ordinal);
+        var expectedReserveMessages = new[] { "Assign Status", "Add Reservation", "Add PartLink", "calls SaveChanges" };
+        if (expectedReserveMessages.All(label => reservePlan.Diagram.Messages.Any(message => message.Label == label)))
+        {
+            var assignment = reserveMermaid.IndexOf("Assign Status", StringComparison.Ordinal);
+            Assert.True(assignment < reservationAdd && reservationAdd < partLinkAdd && partLinkAdd < save, reserveMermaid);
+        }
+        else
+        {
+            Assert.Empty(reservePlan.Diagram.Messages.Where(message => expectedReserveMessages.Contains(message.Label, StringComparer.Ordinal)));
+            Assert.Contains(reservePlan.Diagram.Diagnostics, diagnostic =>
+                diagnostic.Code is "SC011" or "SC012" or "SC013" or "DP002");
+        }
     }
 
     /// <summary>Claim 10: Reserve links CreatedAtAction to the unique Get entry point.</summary>
@@ -333,7 +409,10 @@ public sealed class BehaviorDocumentationFourFlowTests
             reserve.Nodes,
             node => node.Kind == ScenarioNodeKind.Outcome
                 && node.Detail.Contains("HTTP 201", StringComparison.Ordinal));
-        Assert.Contains("links to GET api/Widgets/{id}", created.Detail, StringComparison.Ordinal);
+        Assert.Equal("CreatedAtAction -> HTTP 201 links to GET api/Widgets/{id}", created.Detail);
+        var reservePlan = DocumentationPlanner.Plan(reserve);
+        var markdown = MarkdownRenderer.RenderDocument(reservePlan.Wording, reservePlan.Diagram);
+        Assert.DoesNotContain("draft", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain(reserve.Diagnostics, diagnostic => diagnostic.Code == "SC010");
     }
 

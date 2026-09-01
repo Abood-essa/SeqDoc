@@ -104,8 +104,10 @@ public sealed class ScenarioTopologyTests
     [Fact]
     public void NestedMembershipIsValidAndTopologyIsStableUnderReversedConstruction()
     {
-        var forward = ScenarioGraphBuilder.Build(ScenarioTestFactory.CreateWorkItemTopologyRequest(reverseConstruction: false));
-        var reversed = ScenarioGraphBuilder.Build(ScenarioTestFactory.CreateWorkItemTopologyRequest(reverseConstruction: true));
+        var forward = ScenarioGraphBuilder.Build(WithMatchingEntityMutation(
+            ScenarioTestFactory.CreateWorkItemTopologyRequest(reverseConstruction: false)));
+        var reversed = ScenarioGraphBuilder.Build(WithMatchingEntityMutation(
+            ScenarioTestFactory.CreateWorkItemTopologyRequest(reverseConstruction: true)));
         var forwardGraph = Assert.Single(forward.Graphs);
         var reversedGraph = Assert.Single(reversed.Graphs);
 
@@ -631,9 +633,30 @@ public sealed class ScenarioTopologyTests
 
     private static ScenarioGraph BuildWorkItemGraph()
     {
-        var set = ScenarioGraphBuilder.Build(ScenarioTestFactory.CreateWorkItemTopologyRequest());
+        var set = ScenarioGraphBuilder.Build(WithMatchingEntityMutation(
+            ScenarioTestFactory.CreateWorkItemTopologyRequest()));
         return Assert.Single(set.Graphs);
     }
+
+    private static ScenarioAnalysisRequest WithMatchingEntityMutation(ScenarioAnalysisRequest request)
+        => request with
+        {
+            NonGetSemanticFacts = request.NonGetSemanticFacts with
+            {
+                EntityFrameworkMutations = ImmutableArray.Create(new EntityFrameworkMutationFact
+                {
+                    Id = new BehaviorFactId("behavior-fact:v1:workitem:state-transition-mutation"),
+                    Method = ScenarioTestFactory.WorkItemServiceMethod,
+                    Operation = ScenarioTestFactory.WorkItemStateAssignmentOperation,
+                    MutationKind = EntityFrameworkMutationKind.Add,
+                    SequenceOrdinal = 1,
+                    DbContextType = "AdvancedAnalysis.DecisionTopology.Data.WorkDbContext",
+                    EntityType = "AdvancedAnalysis.DecisionTopology.Models.WorkItem",
+                    Evidence = [ScenarioTestFactory.SourceEvidence("workitem-state-transition-mutation")],
+                    Certainty = CertaintyLevel.Exact,
+                }).Concat(request.NonGetSemanticFacts.EntityFrameworkMutations).ToImmutableArray(),
+            },
+        };
 
     private static string CollectTopology(ScenarioGraph graph) => string.Join(
         "\n",

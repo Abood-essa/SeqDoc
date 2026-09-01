@@ -385,8 +385,10 @@ public static class ScenarioGraphBuilder
 
             var topologyNodes = nodes.Where(node => node.Kind != ScenarioNodeKind.MethodCall
                 || directExpansion.Steps.Any(step => step.ScenarioNodeId == node.Id && step.Depth == 1)).ToImmutableArray();
+            var withheldPersistenceAssignments = new HashSet<ScenarioNodeId>();
             var configuredTopology = BuildTopology(request, profileId, entryPointId, entryPoint, entryPoint.RootMethod,
-                topologyNodes, diagnostics);
+                topologyNodes, diagnostics, withheldPersistenceAssignments);
+            RemoveWithheldPersistenceAssignments(nodes, edges, ref configuredTopology, withheldPersistenceAssignments);
             directExpansion = InheritDirectCallMembership(configuredTopology, directExpansion);
             configuredTopology = AddDirectCallMemberships(configuredTopology, directExpansion, entryPoint.RootMethod, profileId);
             var calleeTopology = ComposeCalleeOccurrenceTopology(
@@ -628,6 +630,7 @@ public static class ScenarioGraphBuilder
                 switchArms);
         }
 
+        var rootWithheldPersistenceAssignments = new HashSet<ScenarioNodeId>();
         var topology = BuildTopology(
             request,
             profileId,
@@ -635,7 +638,9 @@ public static class ScenarioGraphBuilder
             entryPoint,
             resolution.ServiceMethod,
             nodes.ToImmutableArray(),
-            diagnostics);
+            diagnostics,
+            rootWithheldPersistenceAssignments);
+        RemoveWithheldPersistenceAssignments(nodes, edges, ref topology, rootWithheldPersistenceAssignments);
         return FinalizeGraph(request, entryPoint, profileId, nodes, edges, diagnostics, topology);
     }
 
@@ -1802,14 +1807,17 @@ public static class ScenarioGraphBuilder
             nodes,
             edges,
             diagnostics);
-        JoinStateAssignments(
-            request,
-            profileId,
-            entryPointId,
-            composition.TrueArm.ResolvedMethod,
-            trueServiceNode,
-            nodes,
-            edges);
+        if (!HasEfSlice(request, composition.TrueArm.ResolvedMethod))
+        {
+            JoinStateAssignments(
+                request,
+                profileId,
+                entryPointId,
+                composition.TrueArm.ResolvedMethod,
+                trueServiceNode,
+                nodes,
+                edges);
+        }
         JoinEntityMutations(
             request,
             profileId,
@@ -1846,14 +1854,17 @@ public static class ScenarioGraphBuilder
             nodes,
             edges,
             diagnostics);
-        JoinStateAssignments(
-            request,
-            profileId,
-            entryPointId,
-            composition.FalseArm.ResolvedMethod,
-            falseServiceNode,
-            nodes,
-            edges);
+        if (!HasEfSlice(request, composition.FalseArm.ResolvedMethod))
+        {
+            JoinStateAssignments(
+                request,
+                profileId,
+                entryPointId,
+                composition.FalseArm.ResolvedMethod,
+                falseServiceNode,
+                nodes,
+                edges);
+        }
         JoinEntityMutations(
             request,
             profileId,
@@ -2012,10 +2023,26 @@ public static class ScenarioGraphBuilder
             return;
         }
 
-        foreach (var assignment in request.NonGetSemanticFacts.StateAssignments
-                     .Where(fact => fact.Method == serviceMethod)
-                      .OrderBy(fact => fact.SequenceOrdinal)
-                      .ThenBy(fact => fact.Operation.Value, StringComparer.Ordinal))
+        var methodMutations = request.NonGetSemanticFacts.EntityFrameworkMutations
+            .Where(fact => fact.Method == serviceMethod)
+            .ToArray();
+        var entityMutations = methodMutations
+            .Where(fact => fact.MutationKind is not (EntityFrameworkMutationKind.SaveChangesAsync or EntityFrameworkMutationKind.SaveChanges))
+            .ToArray();
+        var saves = methodMutations
+            .Where(fact => fact.MutationKind is EntityFrameworkMutationKind.SaveChangesAsync or EntityFrameworkMutationKind.SaveChanges)
+            .ToArray();
+
+        var assignments = request.NonGetSemanticFacts.StateAssignments
+            .Where(fact => fact.Method == serviceMethod);
+        if (methodMutations.Length > 0)
+        {
+            assignments = assignments.Where(fact => HasCompatibleMutationSaveRequest(fact, entityMutations, saves));
+        }
+
+        foreach (var assignment in assignments
+                       .OrderBy(fact => fact.SequenceOrdinal)
+                       .ThenBy(fact => fact.Operation.Value, StringComparer.Ordinal))
         {
             var stateNode = CreateNode(
                 profileId,
@@ -2039,6 +2066,33 @@ public static class ScenarioGraphBuilder
                 assignment.Evidence,
                 assignment.Certainty,
                 assignment.SequenceOrdinal));
+        }
+
+        static bool HasCompatibleMutationSaveRequest(
+            StateAssignmentSemanticFact assignment,
+            IReadOnlyCollection<EntityFrameworkMutationFact> entityMutations,
+            IReadOnlyCollection<EntityFrameworkMutationFact> saves)
+        {
+            var separator = assignment.TargetMember.LastIndexOf('.');
+            if (separator <= 0)
+            {
+                return entityMutations.Count == 0 && saves.Count == 0;
+            }
+
+            var containingType = assignment.TargetMember[..separator];
+            foreach (var mutation in entityMutations
+                         .Where(candidate => string.Equals(candidate.EntityType, containingType, StringComparison.Ordinal))
+                         .Where(candidate => candidate.SequenceOrdinal > assignment.SequenceOrdinal))
+            {
+                if (saves.Any(save => string.Equals(save.DbContextType, mutation.DbContextType, StringComparison.Ordinal)
+                    && save.SequenceOrdinal > mutation.SequenceOrdinal
+                    && save.SequenceOrdinal > assignment.SequenceOrdinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 
@@ -2544,6 +2598,36 @@ public static class ScenarioGraphBuilder
     {
         var last = fullyQualifiedName.Split(['.', '+'], StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
         return string.IsNullOrWhiteSpace(last) ? fullyQualifiedName : last;
+    }
+
+    private static string? AssignmentContainingType(string targetMember)
+    {
+        var separator = targetMember.LastIndexOf('.');
+        return separator > 0 ? targetMember[..separator] : null;
+    }
+
+    private static bool HasEfSlice(ScenarioAnalysisRequest request, MethodId method)
+        => request.NonGetSemanticFacts.EntityFrameworkMutations.Any(fact => fact.Method == method);
+
+    private static void RemoveWithheldPersistenceAssignments(
+        List<ScenarioNode> nodes,
+        List<ScenarioEdge> edges,
+        ref ScenarioTopology topology,
+        HashSet<ScenarioNodeId> withheld)
+    {
+        if (withheld.Count == 0)
+        {
+            return;
+        }
+
+        nodes.RemoveAll(node => withheld.Contains(node.Id));
+        edges.RemoveAll(edge => withheld.Contains(edge.Source) || withheld.Contains(edge.Target));
+        topology = topology with
+        {
+            Memberships = topology.Memberships
+                .Where(membership => !withheld.Contains(membership.ScenarioNode))
+                .ToImmutableArray(),
+        };
     }
 
     /// <summary>
@@ -3691,13 +3775,16 @@ public static class ScenarioGraphBuilder
         NormalizedEntry entryPoint,
         MethodId serviceMethod,
         ImmutableArray<ScenarioNode> nodes,
-        List<ScenarioGraphDiagnostic> diagnostics)
+        List<ScenarioGraphDiagnostic> diagnostics,
+        HashSet<ScenarioNodeId>? withheldPersistenceAssignments = null)
     {
         var decisions = new List<ScenarioDecision>();
         var arms = new List<ScenarioArm>();
         var memberships = new List<ScenarioMembership>();
         var terminals = new List<ScenarioArmTerminal>();
         var unsupportedDecisions = new HashSet<FlowNodeId>();
+        var validOperationPlacements = new Dictionary<string, ImmutableHashSet<string>>(StringComparer.Ordinal);
+        var conflictingOperationPlacements = new HashSet<string>(StringComparer.Ordinal);
         var rootMethod = entryPoint.RootMethod;
 
         var flows = request.Behavior.MethodFlows
@@ -3873,6 +3960,27 @@ public static class ScenarioGraphBuilder
                         "The material scenario node is withheld because its unsupported decision topology cannot place the claim safely.",
                         $"{node.Method!.Value}\u001f{operation.Value}\u001funsupported-decision-topology"));
                 }
+                if (conflictDecisions.Length > 0
+                    || (withholdUnsupportedTopology
+                        && firstSet.Any(dependence => unsupportedDecisions.Contains(dependence.ControllingDecision))))
+                {
+                    conflictingOperationPlacements.Add(operation.Value);
+                }
+                else
+                {
+                    var placement = firstSet
+                        .Select(dependence => $"{dependence.ControllingDecision.Value}\u001f{dependence.ControlledOnTrue}")
+                        .ToImmutableHashSet(StringComparer.Ordinal);
+                    if (validOperationPlacements.TryGetValue(operation.Value, out var existingPlacement)
+                        && !existingPlacement.SetEquals(placement))
+                    {
+                        conflictingOperationPlacements.Add(operation.Value);
+                    }
+                    else
+                    {
+                        validOperationPlacements[operation.Value] = placement;
+                    }
+                }
                 foreach (var dependence in firstSet
                              .Where(dependence => !withholdUnsupportedTopology
                                  || !unsupportedDecisions.Contains(dependence.ControllingDecision))
@@ -3900,6 +4008,48 @@ public static class ScenarioGraphBuilder
                         dependence.Certainty));
                 }
             }
+        }
+
+        if (withheldPersistenceAssignments is not null
+            && decisions.Count > 0
+            && request.NonGetSemanticFacts.EntityFrameworkMutations.Length > 0)
+        {
+            var stateNodes = nodes.Where(node => node.Kind == ScenarioNodeKind.StateAssignment && node.Operation is not null);
+            foreach (var stateNode in stateNodes)
+            {
+                var matchingAssignments = request.NonGetSemanticFacts.StateAssignments
+                    .Where(fact => fact.Method == serviceMethod && fact.Operation == stateNode.Operation)
+                    .ToArray();
+                if (matchingAssignments.Length != 1 || conflictingOperationPlacements.Contains(stateNode.Operation!.Value.Value)
+                    || !validOperationPlacements.TryGetValue(stateNode.Operation.Value.Value, out var assignmentPlacement))
+                {
+                    withheldPersistenceAssignments.Add(stateNode.Id);
+                    continue;
+                }
+                var assignment = matchingAssignments[0];
+
+                var compatible = request.NonGetSemanticFacts.EntityFrameworkMutations
+                    .Where(fact => fact.Method == serviceMethod
+                        && fact.MutationKind is not (EntityFrameworkMutationKind.SaveChangesAsync or EntityFrameworkMutationKind.SaveChanges)
+                        && string.Equals(fact.EntityType, AssignmentContainingType(assignment.TargetMember), StringComparison.Ordinal)
+                        && fact.SequenceOrdinal > assignment.SequenceOrdinal
+                        && !conflictingOperationPlacements.Contains(fact.Operation.Value)
+                        && validOperationPlacements.TryGetValue(fact.Operation.Value, out var mutationPlacement)
+                        && mutationPlacement.SetEquals(assignmentPlacement))
+                    .Any(mutation => request.NonGetSemanticFacts.EntityFrameworkMutations.Any(save =>
+                        save.Method == serviceMethod
+                        && save.MutationKind is EntityFrameworkMutationKind.SaveChangesAsync or EntityFrameworkMutationKind.SaveChanges
+                        && string.Equals(save.DbContextType, mutation.DbContextType, StringComparison.Ordinal)
+                        && save.SequenceOrdinal > mutation.SequenceOrdinal
+                        && validOperationPlacements.TryGetValue(save.Operation.Value, out var savePlacement)
+                        && savePlacement.SetEquals(assignmentPlacement)
+                        && !conflictingOperationPlacements.Contains(save.Operation.Value)));
+                if (!compatible)
+                {
+                    withheldPersistenceAssignments.Add(stateNode.Id);
+                }
+            }
+            memberships.RemoveAll(membership => withheldPersistenceAssignments.Contains(membership.ScenarioNode));
         }
 
         // Canonical semantic order (architecture decision and review F7): controlling flow-node identity, then
