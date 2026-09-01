@@ -1,25 +1,25 @@
 {
-  "baseline": null,
+  "baseline": "a3def8c1bb33f4fa9df83298e63dc87e9478b824",
   "branch": null,
   "checkpointId": null,
   "checkpointPath": null,
-  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/17",
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/17#issuecomment-5494748157",
   "dependencies": [
     "GH-16"
   ],
   "expectedGithubState": "OPEN",
   "id": "GH-17",
   "kind": "github-issue",
-  "lifecycle": "Blocked",
-  "lifecycleLabel": "blocked",
-  "nextAction": null,
+  "lifecycle": "Ready",
+  "lifecycleLabel": "ready",
+  "nextAction": "Abood may branch from a3def8c1 and establish the frozen callback worker-context producer-to-observable red assertion.",
   "number": 17,
   "owner": "abood",
   "pr": null,
   "schemaVersion": 1,
   "selectedForExecution": false,
   "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/17",
-  "statusReason": "Blocked by worker polling and retry work.",
+  "statusReason": "Issue #16 merged and the dependency-complete callback/worker readiness baseline passed.",
   "title": "[Workers] Recovery state and callback boundaries",
   "track": "workers"
 }
