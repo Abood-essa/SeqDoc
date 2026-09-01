@@ -903,9 +903,18 @@ public sealed record ScenarioTopology
         ImmutableArray<ScenarioDecision> decisions,
         ImmutableArray<ScenarioArm> arms,
         ImmutableArray<ScenarioMembership> memberships,
+        ImmutableArray<ScenarioArmTerminal> terminals)
+        : this(decisions, arms, memberships, terminals, default, default)
+    {
+    }
+
+    public ScenarioTopology(
+        ImmutableArray<ScenarioDecision> decisions,
+        ImmutableArray<ScenarioArm> arms,
+        ImmutableArray<ScenarioMembership> memberships,
         ImmutableArray<ScenarioArmTerminal> terminals,
-        ImmutableArray<ScenarioFlowContainer> flowContainers = default,
-        ImmutableArray<ScenarioFlowPlacement> flowPlacements = default)
+        ImmutableArray<ScenarioFlowContainer> flowContainers,
+        ImmutableArray<ScenarioFlowPlacement> flowPlacements)
     {
         Decisions = decisions.IsDefault ? [] : decisions;
         Arms = arms.IsDefault ? [] : arms;
