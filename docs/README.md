@@ -17,7 +17,11 @@ boundaries, and preservation of the previous valid state after failed analysis.
 
 ## Execution authority
 
-Read `docs/project/status.md`, `docs/project/workflow.md`, and `docs/project/execution.json` at session start.
+`docs/project/work-items/` is the sole typed current-state authority. Read the applicable record before GitHub or any
+projection. GitHub labels, `execution.json`, status, parallel topology, and checkpoint state are projections or history.
+Use the governance `transition` command for lifecycle changes.
+
+Read the selected record in `docs/project/work-items/`, then `docs/project/status.md`, `docs/project/workflow.md`, and `docs/project/execution.json` at session start.
 `execution.json` identifies the only active checkpoint. When it is idle, planning and repository maintenance may
 continue, but product implementation waits for owner activation.
 

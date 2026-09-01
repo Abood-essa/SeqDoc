@@ -1,0 +1,23 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/1",
+  "dependencies": [],
+  "expectedGithubState": "CLOSED",
+  "id": "GH-1",
+  "kind": "parent",
+  "lifecycle": "Closed",
+  "lifecycleLabel": null,
+  "nextAction": null,
+  "number": 1,
+  "owner": "qais",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/1",
+  "statusReason": "Merged workstream.",
+  "title": "[Workstream] Service contracts and outbound boundaries",
+  "track": "services"
+}

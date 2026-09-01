@@ -1,0 +1,23 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/5",
+  "dependencies": [],
+  "expectedGithubState": "CLOSED",
+  "id": "GH-5",
+  "kind": "github-issue",
+  "lifecycle": "Closed",
+  "lifecycleLabel": null,
+  "nextAction": null,
+  "number": 5,
+  "owner": "qais",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/5",
+  "statusReason": "Completed and merged.",
+  "title": "[Services] Exact contract operation and client compiler facts",
+  "track": "services"
+}

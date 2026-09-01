@@ -1,5 +1,8 @@
 # Project Status
 
+> **Authority:** Current lifecycle and selection live in [`work-items/`](work-items/). This document preserves historical
+> evidence and narrative only; execution, GitHub labels, and checkpoint states are projections. See [workflow](workflow.md).
+
 ## Current state
 
 ### Durable state reconciliation
@@ -14,7 +17,7 @@ Analysis was 257/257.
 PR #32 is closed and unmerged at superseded head `91ccdf373be45cace843db39f4616a2425ce70c7`; its contributor work
 is preserved, but future Issue #16 work must use a fresh branch and selectively reuse compatible changes. Issue #8 is
 open and ready as acceptance-only work, pending Qais's mandatory `Readiness: PASS` comment and exact external-lane
-evidence. Issues #11, #12, and #16 are ready; #13 is blocked by persistence prerequisites, and #17/#18 by worker
+evidence. Canonical lifecycle for Issues #11, #12, and #16 is recorded in [`work-items/`](work-items/); #13 is blocked by persistence prerequisites, and #17/#18 by worker
 prerequisites. No product checkpoint is active; public ready status does not make durable execution active.
 
 The clean canonical repository begins at `42f8819` (`Initial public release`) and contains the accepted product

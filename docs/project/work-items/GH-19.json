@@ -1,0 +1,23 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/19",
+  "dependencies": [],
+  "expectedGithubState": "CLOSED",
+  "id": "GH-19",
+  "kind": "github-issue",
+  "lifecycle": "Closed",
+  "lifecycleLabel": null,
+  "nextAction": null,
+  "number": 19,
+  "owner": "maintainer",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/19",
+  "statusReason": "Completed and merged.",
+  "title": "[Traversal] Implement cycle-safe depthless expansion",
+  "track": "traversal"
+}

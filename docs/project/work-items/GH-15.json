@@ -1,0 +1,23 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/15",
+  "dependencies": [],
+  "expectedGithubState": "CLOSED",
+  "id": "GH-15",
+  "kind": "github-issue",
+  "lifecycle": "Closed",
+  "lifecycleLabel": null,
+  "nextAction": null,
+  "number": 15,
+  "owner": "abood",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/15",
+  "statusReason": "Completed and merged.",
+  "title": "[Workers] Scheduler timer and job invocation facts",
+  "track": "workers"
+}

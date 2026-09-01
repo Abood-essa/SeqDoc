@@ -2,7 +2,7 @@
 
 ## Session start
 
-1. Read `docs/README.md`, `docs/project/status.md`, and `docs/project/execution.json`.
+1. Read `docs/README.md`, the selected record in `docs/project/work-items/`, `docs/project/status.md`, and `docs/project/execution.json`.
 2. Read `docs/roadmap.md` and only the architecture/decision material relevant to the active checkpoint.
 3. Inspect Git status and preserve unrelated work.
 4. If execution is idle, do not begin product implementation without owner activation.
@@ -10,6 +10,11 @@
 
 Durable repository files are execution authority. Conversation summaries, model memory, and raw session exports are
 recovery aids only.
+
+The typed records under `docs/project/work-items/` are the sole current-state authority. `execution.json`, GitHub
+lifecycle labels, status, parallel-workstreams, and capsule state are projections or explanatory history. `Ready` and
+`Active` both authorize a contributor after the contract is frozen; only the selected record authorizes the root
+Orchestrator. Use `work_state.py transition` rather than hand-editing multiple views.
 
 ## Checkpoints
 

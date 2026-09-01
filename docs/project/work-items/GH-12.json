@@ -1,0 +1,26 @@
+{
+  "baseline": "ca5bc4b3be0f3ea97def06f053f7bbd1f7a40d2e",
+  "branch": "orchestrator/activate-issue-12",
+  "checkpointId": "I12",
+  "checkpointPath": "docs/work/persistence/I12",
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/12#issuecomment-5485875430",
+  "dependencies": [
+    "GH-9",
+    "GH-10"
+  ],
+  "expectedGithubState": "OPEN",
+  "id": "GH-12",
+  "kind": "github-issue",
+  "lifecycle": "Active",
+  "lifecycleLabel": "active",
+  "nextAction": "Ahmad may implement Issue #12 from the frozen ca5bc4b baseline and I12 capsule; re-audit shared PR #48 paths before review.",
+  "number": 12,
+  "owner": "ahmad",
+  "pr": "https://github.com/Bilaltariq41/SeqDoc/pull/49",
+  "schemaVersion": 1,
+  "selectedForExecution": true,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/12",
+  "statusReason": "Active on its separate activation branch.",
+  "title": "[Persistence] Persisted state transitions and caller outcomes",
+  "track": "persistence"
+}
