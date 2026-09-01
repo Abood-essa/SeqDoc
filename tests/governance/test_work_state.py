@@ -21,6 +21,14 @@ class WorkStateTests(unittest.TestCase):
         for x in self.items:
             (self.d / "docs/project/work-items" / (x["id"] + ".json")).write_text(json.dumps(x))
     def find(self, i): return next(x for x in self.items if x["id"] == i)
+    def reset_gws1_transition_fixture(self):
+        gws1=self.find("GWS1"); gws1["lifecycle"]="Verifying"; gws1["lifecycleLabel"]="verifying"; gws1["selectedForExecution"]=True
+        self.find("GH-12")["selectedForExecution"]=False
+        capsule=self.d/"docs/work/governance/GWS1/checkpoint.md"
+        lines=capsule.read_text().splitlines(keepends=True)
+        lines[4]="`Verifying`\n"
+        capsule.write_text("".join(lines))
+        self.write(); self.assertEqual(ws.execution(self.d, False),0)
     def test_migrated_registry_is_valid_and_has_one_selection(self): self.assertEqual(ws.validate(self.d), 0)
     def test_missing_dependency_and_cycle_are_rejected(self):
         self.find("GH-13")["dependencies"] = ["GH-999"]; self.write(); self.assertNotEqual(ws.validate(self.d), 0)
@@ -39,6 +47,7 @@ class WorkStateTests(unittest.TestCase):
         x=self.find("GH-16"); x["lifecycle"]="Draft"; x["lifecycleLabel"]=None; self.write()
         self.assertNotEqual(ws.transition(self.d, type("A",(),{"id":"GH-16","state":"Ready","reason":None,"select":True,"check":True,"dry_run":False})()), 0)
     def test_transition_check_is_non_mutating(self):
+        self.reset_gws1_transition_fixture()
         before=(self.d/"docs/project/work-items/GWS1.json").read_text(); a=type("A",(),{"id":"GWS1","state":"ReviewRequired","reason":"returning to review after verification","select":True,"check":True,"dry_run":False})()
         self.assertEqual(ws.transition(self.d,a),0); self.assertEqual(before,(self.d/"docs/project/work-items/GWS1.json").read_text())
     def test_github_drift_parsing_is_read_only(self):
@@ -92,6 +101,7 @@ class WorkStateTests(unittest.TestCase):
     def test_transition_invalid_is_non_mutating(self):
         before={p:p.read_bytes() for p in (self.d/"docs/project/work-items").glob("*.json")}; a=type("A",(),{"id":"GH-12","state":"Closed","reason":None,"select":False,"check":False,"dry_run":False})()
         self.assertNotEqual(ws.transition(self.d,a),0); self.assertEqual(before,{p:p.read_bytes() for p in before})
+        self.reset_gws1_transition_fixture()
         paths=list(before)+[self.d/"docs/work/governance/GWS1/checkpoint.md",self.d/"docs/project/execution.json"]
         before={p:p.read_bytes() for p in paths}
         for recipient_id in ("GH-999", "GH-13"):
@@ -108,6 +118,7 @@ class WorkStateTests(unittest.TestCase):
         self.assertEqual((execution["activeCheckpointId"],execution["activeCheckpointPath"]),("I12","docs/work/persistence/I12"))
 
     def test_replace_failure_rolls_back_all_payloads(self):
+        self.reset_gws1_transition_fixture()
         a=type("A",(),{"id":"GWS1","state":"ReviewRequired","reason":"returning to review after verification","select":True,"check":False,"dry_run":False})(); paths=list((self.d/"docs/project/work-items").glob("*.json"))+[self.d/"docs/work/governance/GWS1/checkpoint.md",self.d/"docs/project/execution.json"]; before={p:p.read_bytes() for p in paths}; real=__import__("os").replace; count=[0]
         def fail(src,dst):
             count[0]+=1
