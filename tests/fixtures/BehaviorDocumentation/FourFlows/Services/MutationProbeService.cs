@@ -33,7 +33,6 @@ public sealed class MutationProbeService(WidgetDbContext context)
         dto.Status = "dto";
 
         GetStatusCarrier().Status = GetComputedStatus();
-        context.Widgets.Add(new Widget { Label = dto.Status });
     }
 
     private static StatusCarrier GetStatusCarrier() => new();
