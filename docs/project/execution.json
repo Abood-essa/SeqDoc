@@ -1,10 +1,10 @@
 {
-  "activeCheckpointId": "I12",
-  "activeCheckpointPath": "docs/work/persistence/I12",
+  "activeCheckpointId": null,
+  "activeCheckpointPath": null,
   "activePlanPath": null,
   "generatedBy": "tools/governance/work_state.py",
-  "mode": "active",
-  "nextAction": "Ahmad may implement Issue #12 from the frozen ca5bc4b baseline and I12 capsule; re-audit shared PR #48 paths before review.",
+  "mode": "idle",
+  "nextAction": "No work item is selected.",
   "schemaVersion": 1,
-  "sourceId": "GH-12"
+  "sourceId": null
 }

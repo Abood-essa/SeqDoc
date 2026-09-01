@@ -2,7 +2,7 @@
 
 ## State
 
-`Building`
+`Blocked`
 
 Owner activation was granted on 2026-09-01. GitHub Issue #12 is the frozen implementation contract. Start from
 `origin/main` at `ca5bc4b3be0f3ea97def06f053f7bbd1f7a40d2e`; stop for a readiness amendment if current compiler evidence cannot

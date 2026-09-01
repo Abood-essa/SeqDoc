@@ -1,0 +1,23 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/52",
+  "dependencies": [],
+  "expectedGithubState": "OPEN",
+  "id": "GH-52",
+  "kind": "parent",
+  "lifecycle": "Blocked",
+  "lifecycleLabel": "blocked",
+  "nextAction": null,
+  "number": 52,
+  "owner": "qais",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/52",
+  "statusReason": "Blocked by unresolved PR #48/#51 shared-path drift.",
+  "title": "[Workstream] Outbound HTTP request boundaries",
+  "track": "services"
+}

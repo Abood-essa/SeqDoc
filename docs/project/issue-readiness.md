@@ -51,9 +51,9 @@ The lifecycle is `Draft` → `Blocked` → `Ready` → `Active` → `ReviewRequi
 `tools/governance/work_state.py transition`; do not hand-edit projections. Lifecycle labels are remote projections and
 generated execution is a local projection.
 
-When closing or otherwise making the selected item unselectable, use `transition --id <target> --state <state> --select-id
-<existing-item>` for an atomic handoff. The recipient must already be selectable and complete; do not hand-edit selection
-or lifecycle fields.
+When closing or otherwise making the selected item unselectable, use `transition --id <target> --state <state>` to leave
+the Orchestrator idle, or add `--select-id <existing-item>` for an atomic handoff. The recipient must already be
+selectable and complete; do not hand-edit selection or lifecycle fields.
 
 Acceptance-only work proves an already-approved contract against an exact external checkout and configuration. It may
 prepare fixtures and inspect artifacts, but may not repair production semantics or rewrite the semantic brief. Any gap

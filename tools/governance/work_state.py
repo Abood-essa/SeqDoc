@@ -76,7 +76,7 @@ def validate_items(items, root=None, capsule_overrides=None):
         if x.get("selectedForExecution") and (s not in {"Active", "ReviewRequired", "ResolvingFindings", "Verifying"} or not x.get("checkpointId") or not x.get("checkpointPath") or not x.get("nextAction")): errors.append(f"selected item incomplete {i}")
         if s == "ReviewRequired" and x.get("kind") == "github-issue" and (not x.get("pr") or not ((x.get("checkpointPath")) or (x.get("contractRevision") and SHA.match(x.get("baseline", ""))))): errors.append(f"{i} review requires PR and frozen evidence")
     selected=[x for x in items if x.get("selectedForExecution")]
-    if len(selected) != 1: errors.append(f"expected exactly one selected item, got {len(selected)}")
+    if len(selected) > 1: errors.append(f"expected at most one selected item, got {len(selected)}")
     for x in items:
         deps=x.get("dependencies", [])
         for d in deps:
@@ -168,10 +168,6 @@ def transition(root, args):
         if (recipient is None or recipient is target or recipient.get("lifecycle") not in {"Active","ReviewRequired","ResolvingFindings","Verifying"}
                 or not recipient.get("checkpointId") or not recipient.get("checkpointPath") or not recipient.get("nextAction")):
             print("selection recipient is missing or not selectable", file=sys.stderr); return 1
-    elif target.get("selectedForExecution") and args.state not in {"Active","ReviewRequired","ResolvingFindings","Verifying"}:
-        others=[x for x in candidate if x is not target and x.get("selectedForExecution")]
-        if len(others) != 1 or others[0].get("lifecycle") not in {"Active","ReviewRequired","ResolvingFindings","Verifying"} or not others[0].get("checkpointId") or not others[0].get("checkpointPath") or not others[0].get("nextAction"):
-            print("selected item would become unselectable",file=sys.stderr); return 1
     target["lifecycle"]=args.state; target["lifecycleLabel"]=LABELS.get(args.state)
     for key in ("reason", "checkpoint_id", "checkpoint_path", "next_action", "pr", "branch", "baseline", "contract_revision"):
         value=getattr(args,key,None)

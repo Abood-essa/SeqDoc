@@ -26,8 +26,8 @@ Generate or validate all other views from those records:
 - checkpoint capsules remain implementation contracts, not independent lifecycle state.
 
 Migrate every existing GitHub issue in the repository plus this maintainer checkpoint. Preserve the distinction between
-`Ready` and `Active`, but store it once. Multiple contributors may have `Active` items; exactly one item may be selected
-for a given Orchestrator execution projection.
+`Ready` and `Active`, but store it once. Multiple contributors may have `Active` items; at most one item may be selected
+for a given Orchestrator execution projection, and zero selected items represent an idle Orchestrator.
 
 ## Canonical lifecycle
 
@@ -130,7 +130,7 @@ Do not infer a lifecycle from arbitrary label combinations after migration. The 
 ## Existing coverage
 
 - `docs/project/issue-readiness.md` defines frozen readiness and amendment rules.
-- `docs/project/workflow.md` defines one selected checkpoint per Orchestrator session.
+- `docs/project/workflow.md` defines at most one selected checkpoint per Orchestrator session; zero represents idle.
 - `docs/project/delegated-contribution-workflow.md` defines review and repair transitions.
 - GitHub labels and dependency links provide the current remote projection.
 - `docs/project/execution.json` provides the current local selection shape.
@@ -144,7 +144,7 @@ No Test Writer is required because this is mechanical governance tooling, not co
 product output, or product acceptance behavior. The Builder owns focused validator tests.
 
 Soft budget: 10 to 14 distinct governance tests covering valid migration, schema rejection, legal/illegal transitions,
-missing/cyclic dependencies, readiness requirements, parallel active items, exactly one selected execution item,
+missing/cyclic dependencies, readiness requirements, parallel active items, at-most-one selected execution item and idle,
 deterministic projection, stale execution detection, offline validation, and GitHub-label drift parsing. Do not test every
 JSON field independently.
 

@@ -23,13 +23,23 @@ class WorkStateTests(unittest.TestCase):
     def find(self, i): return next(x for x in self.items if x["id"] == i)
     def reset_gws1_transition_fixture(self):
         gws1=self.find("GWS1"); gws1["lifecycle"]="Verifying"; gws1["lifecycleLabel"]="verifying"; gws1["selectedForExecution"]=True
-        self.find("GH-12")["selectedForExecution"]=False
+        issue12=self.find("GH-12"); issue12["lifecycle"]="Active"; issue12["lifecycleLabel"]="active"; issue12["selectedForExecution"]=False
         capsule=self.d/"docs/work/governance/GWS1/checkpoint.md"
         lines=capsule.read_text().splitlines(keepends=True)
         lines[4]="`Verifying`\n"
         capsule.write_text("".join(lines))
+        i12=self.d/"docs/work/persistence/I12/checkpoint.md"
+        lines=i12.read_text().splitlines(keepends=True)
+        lines[4]="`Building`\n"
+        i12.write_text("".join(lines))
         self.write(); self.assertEqual(ws.execution(self.d, False),0)
-    def test_migrated_registry_is_valid_and_has_one_selection(self): self.assertEqual(ws.validate(self.d), 0)
+    def test_migrated_registry_is_valid_and_zero_selection_is_idle(self):
+        self.assertEqual(ws.validate(self.d), 0)
+        for x in self.items: x["selectedForExecution"] = False
+        self.write()
+        self.assertEqual(ws.validate(self.d), 0)
+        self.assertEqual(ws.execution_object(self.items)["mode"], "idle")
+        self.assertIsNone(ws.execution_object(self.items)["activeCheckpointId"])
     def test_missing_dependency_and_cycle_are_rejected(self):
         self.find("GH-13")["dependencies"] = ["GH-999"]; self.write(); self.assertNotEqual(ws.validate(self.d), 0)
         self.find("GH-13")["dependencies"] = ["GH-12"]; self.find("GH-12")["dependencies"] = ["GH-13"]; self.write(); self.assertNotEqual(ws.validate(self.d), 0)
@@ -38,7 +48,7 @@ class WorkStateTests(unittest.TestCase):
     def test_closed_dependency_satisfies_active_child_but_active_does_not(self):
         self.assertEqual(ws.validate(self.d), 0)
         self.find("GH-9")["lifecycle"]="Active"; self.find("GH-9")["lifecycleLabel"]="active"; self.write(); self.assertNotEqual(ws.validate(self.d), 0)
-    def test_parallel_active_items_allow_only_one_selection(self):
+    def test_parallel_active_items_reject_two_selections(self):
         self.find("GH-3")["selectedForExecution"] = True; self.write(); self.assertNotEqual(ws.validate(self.d), 0)
     def test_projection_is_deterministic_and_check_detects_stale_output(self):
         self.assertEqual(ws.execution(self.d, False), 0); first=(self.d/"docs/project/execution.json").read_text(); self.assertEqual(ws.execution(self.d, True), 0); self.assertEqual(first,(self.d/"docs/project/execution.json").read_text()); (self.d/"docs/project/execution.json").write_text("{}\n"); self.assertNotEqual(ws.execution(self.d, True), 0)
@@ -77,12 +87,12 @@ class WorkStateTests(unittest.TestCase):
         for x in self.items:
             if "number" not in x: continue
             label=ws.LABELS.get(x["lifecycle"])
-            labels=[{"name":"blocked"},{"name":"keep"}] if x["number"]==12 else ([] if x["number"]==13 else ([{"name":label}] if label else []))
+            labels=[{"name":"active"},{"name":"keep"}] if x["number"]==12 else ([] if x["number"]==13 else ([{"name":label}] if label else []))
             remote.append({"number":x["number"],"state":x["expectedGithubState"],"labels":labels})
         with patch("subprocess.run", return_value=type("R",(),{"stdout":json.dumps(remote)})()):
             with patch("builtins.print") as printed: self.assertEqual(ws.gh(a,self.d),0)
         text=" ".join(str(c) for c in printed.call_args_list)
-        self.assertIn("--remove-label blocked --add-label active", text)
+        self.assertIn("--remove-label active --add-label blocked", text)
         self.assertNotIn("keep", text); self.assertNotIn("issue edit 14", text)
 
     def test_schema_rejects_version_extra_missing_wrong_type_and_duplicate_dependency(self):
@@ -116,6 +126,17 @@ class WorkStateTests(unittest.TestCase):
         self.assertEqual(records["GH-12"]["lifecycle"],"Active"); self.assertTrue(records["GH-12"]["selectedForExecution"])
         execution=json.loads((self.d/"docs/project/execution.json").read_text())
         self.assertEqual((execution["activeCheckpointId"],execution["activeCheckpointPath"]),("I12","docs/work/persistence/I12"))
+
+    def test_transition_selected_to_blocked_without_recipient_leaves_idle(self):
+        self.reset_gws1_transition_fixture()
+        a=type("A",(),{"id":"GWS1","state":"Blocked","reason":"blocked for governance test","select":False,"dry_run":False,"check":False})()
+        self.assertEqual(ws.transition(self.d, a), 0)
+        records=json.loads((self.d/"docs/project/work-items/GWS1.json").read_text())
+        self.assertEqual(records["lifecycle"], "Blocked")
+        self.assertFalse(records["selectedForExecution"])
+        execution=json.loads((self.d/"docs/project/execution.json").read_text())
+        self.assertEqual(execution["mode"], "idle")
+        self.assertIsNone(execution["sourceId"])
 
     def test_replace_failure_rolls_back_all_payloads(self):
         self.reset_gws1_transition_fixture()

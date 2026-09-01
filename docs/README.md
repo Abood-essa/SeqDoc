@@ -22,7 +22,7 @@ projection. GitHub labels, `execution.json`, status, parallel topology, and chec
 Use the governance `transition` command for lifecycle changes.
 
 Read the selected record in `docs/project/work-items/`, then `docs/project/status.md`, `docs/project/workflow.md`, and `docs/project/execution.json` at session start.
-`execution.json` identifies the only active checkpoint. When it is idle, planning and repository maintenance may
+`execution.json` identifies the selected active checkpoint when one exists. When it is idle, planning and repository maintenance may
 continue, but product implementation waits for owner activation.
 
 Raw agent session exports are local recovery artifacts and are not repository authority. Durable decisions and

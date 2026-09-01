@@ -15,8 +15,8 @@ project instruction source for coding agents. Human contributors follow the same
 Canonical work state is the sole authority for lifecycle, selection, ownership, dependencies, contracts, baselines,
 and checkpoints. Use `python tools/governance/work_state.py transition` for normal state edits; do not hand-edit
 execution, status, parallel-workstreams, labels, or capsule state. `Ready` permits a public contributor to start from
-the frozen contract/baseline; `Active` means that implementation has started. Both authorize implementation, while only
-the one selected record authorizes the root Orchestrator.
+the frozen contract/baseline; `Active` means that implementation has started. Both authorize implementation, while at
+most one selected record authorizes the root Orchestrator; zero selected records represent an idle Orchestrator.
 
 Issue bodies are specification authority; canonical work-item records are lifecycle and execution authority. Files under `docs/project/` are maintainer-owned durable
 strategy and execution state; do not edit them unless the issue explicitly requires it.
