@@ -17,7 +17,7 @@
   "schemaVersion": 1,
   "selectedForExecution": false,
   "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/54",
-  "statusReason": "Blocked by unresolved PR #48/#51 shared-path drift; refresh baseline before Ready.",
+  "statusReason": "PR #48 is merged; blocked by unresolved PR #51 shared-path drift and the required current-main baseline refresh before Ready.",
   "title": "[Outbound HTTP] Exact direct HttpClient GET/POST request boundaries",
   "track": "services"
 }

@@ -1,6 +1,6 @@
 {
   "baseline": "ca5bc4b3be0f3ea97def06f053f7bbd1f7a40d2e",
-  "branch": null,
+  "branch": "feature/issue-16-fresh-integration",
   "checkpointId": null,
   "checkpointPath": null,
   "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/16#issuecomment-5468732437",
@@ -8,11 +8,11 @@
     "GH-14",
     "GH-15"
   ],
-  "expectedGithubState": "OPEN",
+  "expectedGithubState": "CLOSED",
   "id": "GH-16",
   "kind": "github-issue",
-  "lifecycle": "ReviewRequired",
-  "lifecycleLabel": "review-required",
+  "lifecycle": "Closed",
+  "lifecycleLabel": null,
   "nextAction": null,
   "number": 16,
   "owner": "abood",
@@ -20,7 +20,7 @@
   "schemaVersion": 1,
   "selectedForExecution": false,
   "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/16",
-  "statusReason": "Review-ready external PR; no local capsule exists.",
+  "statusReason": "PR #48 merged as a3def8c1bb33f4fa9df83298e63dc87e9478b824 after the bounded ABI repair; contributor commits remain attributed.",
   "title": "[Workers] Polling batch retry and cancellation presentation",
   "track": "workers"
 }

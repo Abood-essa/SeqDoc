@@ -17,7 +17,7 @@
   "schemaVersion": 1,
   "selectedForExecution": false,
   "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/52",
-  "statusReason": "Blocked by unresolved PR #48/#51 shared-path drift.",
+  "statusReason": "PR #48 is merged; blocked by unresolved PR #51 shared-path drift and the required current-main baseline refresh.",
   "title": "[Workstream] Outbound HTTP request boundaries",
   "track": "services"
 }
