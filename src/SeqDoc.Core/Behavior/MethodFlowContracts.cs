@@ -46,6 +46,8 @@ public enum FlowRegionKind
     Finally,
     NaturalLoop,
     IrreducibleLoop,
+    TryAndFinally,
+    TryAndCatch,
 }
 
 /// <summary>Base record for all method-flow nodes. Derived records carry the typed shape.</summary>
@@ -136,7 +138,13 @@ public sealed record InvocationFlowNode : FlowNode
          int EvaluationOrdinal = 0,
          string? TargetAssemblyName = null,
          bool IsPlatformTarget = false,
-         ImmutableArray<CompilerProvenArgument> ConstantArguments = default) : base(Id, Method, Evidence, Certainty)
+         ImmutableArray<CompilerProvenArgument> ConstantArguments = default,
+          FrameworkMethodIdentity? TargetIdentity = null,
+          int? ReceiverParameterOrdinal = null,
+          string? ReceiverIdentity = null,
+          string? TargetAssemblyFullIdentity = null,
+          FrameworkTypeIdentity? ReceiverOriginalTypeIdentity = null,
+          string? ReceiverOriginalTypeFullAssemblyIdentity = null) : base(Id, Method, Evidence, Certainty)
     {
         var hasTypedPresentation = TargetContainingTypeName is not null
             || TargetMethodName is not null
@@ -180,9 +188,27 @@ public sealed record InvocationFlowNode : FlowNode
         this.TargetAssemblyName = TargetAssemblyName;
         this.IsPlatformTarget = IsPlatformTarget;
         this.ConstantArguments = ConstantArguments.IsDefault ? [] : ConstantArguments;
+        this.TargetIdentity = TargetIdentity;
+        this.ReceiverParameterOrdinal = ReceiverParameterOrdinal;
+        this.ReceiverIdentity = ReceiverIdentity;
+        this.TargetAssemblyFullIdentity = TargetAssemblyFullIdentity;
+        this.ReceiverOriginalTypeIdentity = ReceiverOriginalTypeIdentity;
+        this.ReceiverOriginalTypeFullAssemblyIdentity = ReceiverOriginalTypeFullAssemblyIdentity;
     }
 
     public ImmutableArray<CompilerProvenArgument> ConstantArguments { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FrameworkMethodIdentity? TargetIdentity { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ReceiverParameterOrdinal { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ReceiverIdentity { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TargetAssemblyFullIdentity { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FrameworkTypeIdentity? ReceiverOriginalTypeIdentity { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ReceiverOriginalTypeFullAssemblyIdentity { get; init; }
 
     public OperationId Operation { get; init; }
     public MethodId? Target { get; init; }
@@ -221,6 +247,23 @@ public sealed record ReturnFlowNode(
     ImmutableArray<EvidenceRef> Evidence,
     CertaintyLevel Certainty) : FlowNode(Id, Method, Evidence, Certainty)
 {
+    /// <summary>Exact compiler basic-block ordinal retained only for narrowly admitted worker terminals.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? BlockOrdinal
+    {
+        get => _blockOrdinal;
+        init
+        {
+            if (value is < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), "Return block ordinal must be nonnegative.");
+            }
+            _blockOrdinal = value;
+        }
+    }
+
+    private int? _blockOrdinal;
+
     public override FlowNodeKind Kind => FlowNodeKind.Return;
 }
 
@@ -336,13 +379,30 @@ public sealed record FlowRegion(
     ImmutableArray<FlowNodeId> Nodes,
     string? ExceptionType,
     ImmutableArray<EvidenceRef> Evidence,
-    CertaintyLevel Certainty);
+    CertaintyLevel Certainty)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? StartBlockOrdinal { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? EndBlockOrdinal { get; init; }
+}
 
 /// <summary>Describes one structural method exit with its supporting terminal evidence.</summary>
 public sealed record FlowOutcome(
     FlowOutcomeKind Kind,
     int? BlockOrdinal,
     OperationId? TerminalOperation,
+    ImmutableArray<EvidenceRef> Evidence,
+    CertaintyLevel Certainty,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    FlowNodeId? TerminalNode = null);
+
+public sealed record CatchContinuation(
+    FlowRegionId CatchRegion,
+    FlowRegionId TryRegion,
+    FlowRegionId LoopRegion,
+    int SourceBlockOrdinal,
+    int DestinationBlockOrdinal,
     ImmutableArray<EvidenceRef> Evidence,
     CertaintyLevel Certainty);
 
@@ -358,4 +418,8 @@ public sealed record MethodFlowSnapshot(
     ImmutableArray<ControlDependence> ControlDependences,
     MethodSummary? Summary,
     ImmutableArray<AnalysisDiagnostic> Diagnostics,
-    string FlowFingerprint);
+    string FlowFingerprint,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    ImmutableArray<CatchContinuation> CatchContinuations = default,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    ImmutableArray<ExtractedOrdinaryBranch> OrdinaryBranches = default);

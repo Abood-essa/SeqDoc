@@ -4359,8 +4359,14 @@ internal static class RoslynBehaviorExtractor
                      IsInsideNestedFunction(operation),
                      projectsByAssembly.ContainsKey(target.ContainingAssembly),
                      target.ContainingAssembly.Identity.Name,
-                      IsPlatformAssembly(target.ContainingAssembly.Identity.Name),
-                      argumentMappings);
+                       IsPlatformAssembly(target.ContainingAssembly.Identity.Name),
+                       argumentMappings,
+                       TargetIdentity: IsWorkerCandidate(target) ? ProjectFrameworkIdentity(target) : null,
+                        ReceiverParameterOrdinal: IsWorkerCandidate(target) ? ResolveDirectParameterOrdinal(call.Instance) : null,
+                        ReceiverIdentity: IsWorkerCandidate(target) ? ResolveReceiverIdentity(call.Instance, methodId, documents, project, projectsByAssembly) : null,
+                        TargetAssemblyFullIdentity: IsWorkerCandidate(target) ? (target.ReducedFrom ?? target).OriginalDefinition.ContainingAssembly?.Identity.ToString() : null,
+                        ReceiverOriginalTypeIdentity: IsWorkerCandidate(target) ? ResolveReceiverOriginalTypeIdentity(call.Instance) : null,
+                        ReceiverOriginalTypeFullAssemblyIdentity: IsWorkerCandidate(target) ? ResolveReceiverOriginalTypeFullAssemblyIdentity(call.Instance) : null);
                 break;
             case IDynamicInvocationOperation dynamicCall:
                 invocation = new ExtractedInvocationPayload(
@@ -4697,6 +4703,84 @@ internal static class RoslynBehaviorExtractor
         IEndOperation => ExtractedOperationKind.End,
         _ => ExtractedOperationKind.Unknown,
     };
+
+    private static FrameworkMethodIdentity ProjectFrameworkIdentity(IMethodSymbol target)
+    {
+        var selected = (target.ReducedFrom ?? target).OriginalDefinition;
+        var assembly = selected.ContainingAssembly;
+        return new FrameworkMethodIdentity(
+            assembly?.Identity.Name ?? string.Empty,
+            RoslynProgramIndexExtractor.GetMetadataName(selected.ContainingType),
+            selected.MetadataName,
+            selected.Arity,
+            selected.Parameters.Select(parameter => new ParameterIdentityDescriptor(
+                RoslynProgramIndexExtractor.ToParameterRefKind(parameter.RefKind),
+                parameter.Type.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat))).ToImmutableArray(),
+            selected.ReturnType.ToDisplayString(RoslynProgramIndexExtractor.IdentityFormat),
+            assembly?.Identity.Version?.ToString());
+    }
+
+    private static bool IsWorkerCandidate(IMethodSymbol target)
+        => target.Name is "Wait" or "WaitAsync" or "Release" or "ThrowIfCancellationRequested";
+
+    private static int? ResolveDirectParameterOrdinal(IOperation? receiver)
+    {
+        return receiver is null ? null : UnwrapImplicitConversions(receiver) is IParameterReferenceOperation parameter
+            ? parameter.Parameter.Ordinal : null;
+    }
+
+    private static string? ResolveReceiverIdentity(
+        IOperation? receiver,
+        MethodId methodId,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents,
+        StableProjectId project,
+        Dictionary<IAssemblySymbol, StableProjectId> projectsByAssembly)
+         => receiver is null ? null : UnwrapReceiver(receiver!, methodId, documents, project, projectsByAssembly);
+
+    private static FrameworkTypeIdentity? ResolveReceiverOriginalTypeIdentity(IOperation? receiver)
+    {
+        var type = receiver is null ? null : UnwrapImplicitConversions(receiver).Type?.OriginalDefinition;
+        return type is INamedTypeSymbol named
+            ? new FrameworkTypeIdentity(named.ContainingAssembly?.Identity.Name ?? string.Empty,
+                named.ContainingAssembly?.Identity.Version?.ToString() ?? string.Empty,
+                RoslynProgramIndexExtractor.GetMetadataName(named))
+            : null;
+    }
+
+    private static string? ResolveReceiverOriginalTypeFullAssemblyIdentity(IOperation? receiver)
+        => receiver is null ? null : (UnwrapImplicitConversions(receiver).Type?.OriginalDefinition as INamedTypeSymbol)
+            ?.ContainingAssembly?.Identity.ToString();
+
+    private static string? UnwrapReceiver(
+        IOperation? receiver,
+        MethodId methodId,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents,
+        StableProjectId project,
+        Dictionary<IAssemblySymbol, StableProjectId> projectsByAssembly)
+    {
+        receiver = UnwrapImplicitConversions(receiver!);
+        return receiver switch
+        {
+            IFieldReferenceOperation field => CreateSymbolId(field.Field, project, projectsByAssembly).Value,
+            IPropertyReferenceOperation property => CreateSymbolId(property.Property, project, projectsByAssembly).Value,
+            IParameterReferenceOperation parameter => $"{methodId.Value}:parameter:{parameter.Parameter.Ordinal}",
+            ILocalReferenceOperation local => LocalReceiverIdentity(local.Local, methodId, documents),
+            _ => null,
+        };
+    }
+
+    private static string? LocalReceiverIdentity(
+        ILocalSymbol local,
+        MethodId methodId,
+        IReadOnlyDictionary<SyntaxTree, RoslynProgramIndexExtractor.DocumentContext> documents)
+    {
+        var declaration = local.DeclaringSyntaxReferences.FirstOrDefault();
+        if (declaration is null || !documents.TryGetValue(declaration.SyntaxTree, out var document))
+        {
+            return null;
+        }
+        return $"{methodId.Value}:local:{document.Document.Id.Value}:{declaration.Span.Start}:{declaration.Span.Length}";
+    }
 
     private static ExtractedRegionKind MapRegionKind(ControlFlowRegionKind kind) => kind switch
     {

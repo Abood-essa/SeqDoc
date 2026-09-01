@@ -185,10 +185,15 @@ public static class DocumentationPlanner
     {
         ArgumentNullException.ThrowIfNull(graph);
         ValidateStructuralExclusions(graph, excludeParticipants);
+        var hostedTopology = ValidateHostedWorkerTopology(graph);
         var filter = PresentationFilter.Create(graph, excludeParticipants, excludeCalls);
+        if (hostedTopology is not null)
+        {
+            filter.HiddenNodes.UnionWith(hostedTopology.HiddenNodes);
+        }
 
         var phrases = BuildPhrases(graph, filter);
-        var diagram = BuildDiagram(graph, filter, diagramBudget);
+        var diagram = BuildDiagram(graph, filter, diagramBudget, hostedTopology);
 
         var wording = new WordingDocument(
             graph.EntryPoint,
@@ -544,7 +549,8 @@ public static class DocumentationPlanner
         _ => null,
     };
 
-    private static DiagramPlan BuildDiagram(ScenarioGraph graph, PresentationFilter filter, DiagramBudget? diagramBudget)
+    private static DiagramPlan BuildDiagram(ScenarioGraph graph, PresentationFilter filter, DiagramBudget? diagramBudget,
+        HostedTopologyValidation? hostedTopology)
     {
         var participants = new Dictionary<string, DiagramParticipant>(StringComparer.Ordinal);
         var messages = new List<DiagramMessage>();
@@ -909,6 +915,13 @@ public static class DocumentationPlanner
 
         var sequence = DiagramSequence.Empty;
         var diagnostics = ImmutableArray<DiagramPlanDiagnostic>.Empty;
+        if (hostedTopology is not null)
+        {
+            if (hostedTopology.Diagnostic is { } hostedDiagnostic)
+            {
+                diagnostics = diagnostics.Add(hostedDiagnostic);
+            }
+        }
 
         // A selected dispatch handler owns a separate bounded expansion authority. It is appended
         // only when the expansion is complete and every nested step joins an exact top-level parent.
@@ -1085,6 +1098,10 @@ public static class DocumentationPlanner
         {
             sequence = new DiagramSequence(orderedMessageRefs
                 .Select(item => DiagramSequenceElement.MessageRef(item.Ref)).ToImmutableArray());
+        }
+        else if (hostedWorkerRoot)
+        {
+            sequence = BuildHostedWorkerSequence(graph, orderedMessageRefs, hostedTopology?.IsValid ?? true);
         }
 
         // Branches are ordered failure-first; renderers serialize the branch array verbatim. They
@@ -2067,6 +2084,205 @@ public static class DocumentationPlanner
             "Overlapping composition arms, partial or non-conditional callback membership, or multiple/overlapping callback regions have no exact placement; the affected messages are withheld rather than duplicated or guessed.");
     }
 
+    private sealed record HostedTopologyValidation(DiagramPlanDiagnostic? Diagnostic,
+        ImmutableHashSet<ScenarioNodeId> HiddenNodes, bool IsValid);
+
+    private static HostedTopologyValidation? ValidateHostedWorkerTopology(ScenarioGraph graph)
+    {
+        if (graph.RootKind != ScenarioRootKind.HostedWorker) { return null; }
+        var topology = graph.Topology;
+        var containers = topology.FlowContainers;
+        var placements = topology.FlowPlacements;
+        var duplicateNodeIds = graph.Nodes.GroupBy(node => node.Id).Any(group => group.Count() > 1);
+        var nodes = graph.Nodes.GroupBy(node => node.Id).ToDictionary(group => group.Key, group => group.First());
+        var regionOwners = containers.GroupBy(container => container.Region)
+            .ToDictionary(group => group.Key, group => group.Select(item => item.Method).Distinct().ToArray());
+        var regions = regionOwners.Keys.ToHashSet();
+        var controlNodes = graph.Nodes.Where(node => node.Presentation?.HostedWorkerControlKind is not null).ToArray();
+        var byRegion = containers.GroupBy(container => container.Region).ToDictionary(group => group.Key, group => group.ToArray());
+        var invalidContainers = containers.Where(container => !Enum.IsDefined(container.Kind)
+            || string.IsNullOrWhiteSpace(container.Region.Value)
+            || string.IsNullOrWhiteSpace(container.Method.Value)
+            || container.Kind == ScenarioFlowContainerKind.NaturalLoop && container.Header is null
+            || !byRegion.TryGetValue(container.Region, out var sameRegion)
+            || sameRegion.Count(item => item.Method == container.Method) != 1
+            || container.Parent == container.Region
+            || container.Parent is { } parent && (!regions.Contains(parent)
+                || !regionOwners.TryGetValue(parent, out var parentOwners)
+                || parentOwners.Length != 1 || parentOwners[0] != container.Method))
+            .Select(container => container.Region).ToHashSet();
+        var duplicateRegions = regionOwners.Where(item => item.Value.Length > 1
+            || containers.Count(container => container.Region == item.Key) > 1)
+            .Select(item => item.Key).ToHashSet();
+        invalidContainers.UnionWith(duplicateRegions);
+        var invalidClosure = new HashSet<FlowRegionId>(invalidContainers);
+        bool changed;
+        do
+        {
+            changed = false;
+            foreach (var container in containers.Where(item => item.Parent is { } parent && invalidClosure.Contains(parent)))
+            {
+                changed |= invalidClosure.Add(container.Region);
+            }
+        } while (changed);
+        var controlPlacementCounts = placements.GroupBy(placement => placement.ScenarioNode)
+            .ToDictionary(group => group.Key, group => group.ToArray());
+        var invalid = duplicateNodeIds || invalidContainers.Count > 0
+            || placements.Any(placement => !controlNodes.Any(node => node.Id == placement.ScenarioNode))
+            || controlNodes.Any(node => !controlPlacementCounts.TryGetValue(node.Id, out var owned) || owned.Length != 1)
+            || controlNodes.Any(node => controlPlacementCounts.TryGetValue(node.Id, out var owned) && owned.Length == 1
+                && !PlacementIsValid(node, owned[0]))
+            || containers.Any(container => string.IsNullOrWhiteSpace(container.Region.Value)
+            || containers.Count(item => item.Region == container.Region && item.Method == container.Method) != 1
+            || (container.Parent is { } parent && (parent == container.Region || !regionOwners.TryGetValue(parent, out var owners)
+                || owners.Length != 1 || owners[0] != container.Method)))
+            || placements.GroupBy(placement => placement.ScenarioNode).Any(group => group.Count() != 1)
+            || placements.Any(placement => !nodes.TryGetValue(placement.ScenarioNode, out var node)
+                || node.Method != placement.Method
+                || placement.Containers.Any(container => !regionOwners.TryGetValue(container, out var owners)
+                    || owners.Length != 1 || owners[0] != placement.Method)
+                || placement.GuardArms.Any(arm => !topology.Arms.Any(candidate => candidate.Id == arm))
+                || (placement.Anchor is { } anchor && !nodes.Values.Any(node => node.Method == placement.Method
+                    && node.Presentation?.HostedWorkerHeader == anchor)))
+            || HasContainerCycle(containers);
+        if (!invalid) { return new HostedTopologyValidation(null, [], true); }
+        var id = StableIdentity.CreateDiagnosticId(new DiagnosticIdentityDescriptor(
+            "DP-WORKER-INVALID-TOPOLOGY", AnalysisStage.FrameworkModel, graph.Profile,
+            $"scenario:{graph.EntryPoint.Value}", 0));
+        var affected = controlNodes.Where(node =>
+            !controlPlacementCounts.TryGetValue(node.Id, out var owned) || owned.Length != 1
+            || !PlacementIsValid(node, owned[0]))
+            .Select(node => node.Id).ToImmutableHashSet();
+        return new HostedTopologyValidation(new DiagramPlanDiagnostic(id, "DP-WORKER-INVALID-TOPOLOGY",
+            "Hosted-worker topology is invalid; affected controls are withheld from the diagram.",
+            "One or more hosted-worker containers, placements, anchors, parents, or guard references are missing, foreign, duplicated, or cyclic."), affected, false);
+
+        bool PlacementIsValid(ScenarioNode node, ScenarioFlowPlacement placement)
+        {
+            if (placement.Method != node.Method
+                || placement.Containers.Any(container => !regionOwners.TryGetValue(container, out var owners)
+                    || owners.Length != 1 || owners[0] != placement.Method || invalidClosure.Contains(container))
+                || placement.GuardArms.Any(arm => !topology.Arms.Any(candidate => candidate.Id == arm)))
+            {
+                return false;
+            }
+            var declared = placement.Containers.ToArray();
+            if (declared.Distinct().Count() != declared.Length)
+            {
+                return false;
+            }
+            if (declared.Length > 0 && containers.Any(item => item.Method == placement.Method && item.Region == declared[0]
+                && item.Parent is not null))
+            {
+                return false;
+            }
+            for (int i = 1; i < declared.Length; i++)
+            {
+                var child = containers.SingleOrDefault(item => item.Method == placement.Method && item.Region == declared[i]);
+                if (child is null || child.Parent != declared[i - 1])
+                {
+                    return false;
+                }
+            }
+            if (placement.Anchor is { } anchor && !graph.Nodes.Any(candidate => candidate.Method == placement.Method
+                && candidate.Presentation?.HostedWorkerHeader == anchor))
+            {
+                return false;
+            }
+            return true;
+        }
+
+        static bool HasContainerCycle(ImmutableArray<ScenarioFlowContainer> items)
+        {
+            if (items.GroupBy(item => item.Region).Any(group => group.Count() > 1)) { return true; }
+            var byRegion = items.ToDictionary(item => item.Region);
+            foreach (var item in items)
+            {
+                var seen = new HashSet<FlowRegionId>();
+                var current = item;
+                while (current.Parent is { } parent)
+                {
+                    if (!seen.Add(current.Region) || !byRegion.TryGetValue(parent, out current)) { return true; }
+                }
+            }
+            return false;
+        }
+    }
+
+    private static DiagramSequence BuildHostedWorkerSequence(
+        ScenarioGraph graph, IReadOnlyList<(ScenarioNodeId Node, DiagramPlanElementId Ref)> ordered, bool topologyValid)
+    {
+        if (!topologyValid || graph.Topology.FlowContainers.IsDefaultOrEmpty)
+        {
+            return new DiagramSequence(ordered.Select(item => DiagramSequenceElement.MessageRef(item.Ref)).ToImmutableArray());
+        }
+
+        var placements = graph.Topology.FlowPlacements.ToDictionary(item => item.ScenarioNode);
+        var loops = graph.Topology.FlowContainers.Where(item => item.Kind == ScenarioFlowContainerKind.NaturalLoop)
+            .ToDictionary(item => item.Region);
+        var loopChildren = loops.Values.Where(item => item.Parent is { })
+            .GroupBy(item => item.Parent!.Value)
+            .ToDictionary(group => group.Key, group => group.OrderBy(item => item.Region.Value, StringComparer.Ordinal).ToArray());
+        var claimed = new HashSet<DiagramPlanElementId>();
+        var elements = new List<DiagramSequenceElement>();
+        foreach (var item in ordered)
+        {
+            if (claimed.Contains(item.Ref))
+            {
+                continue;
+            }
+            if (placements.TryGetValue(item.Node, out var placement))
+            {
+                FlowRegionId? outer = placement.Containers.FirstOrDefault(region => loops.ContainsKey(region)
+                    && (!loops.TryGetValue(region, out var loop) || loop.Parent is null || !placement.Containers.Contains(loop.Parent.Value)));
+                if (outer is { } outerRegion && loops.TryGetValue(outerRegion, out var outerLoop))
+                {
+                    var fragment = BuildLoop(outerLoop);
+                    if (fragment is not null)
+                    {
+                        elements.Add(DiagramSequenceElement.Fragment(fragment));
+                        continue;
+                    }
+                }
+            }
+            elements.Add(DiagramSequenceElement.MessageRef(item.Ref));
+            claimed.Add(item.Ref);
+        }
+        return new DiagramSequence(elements.ToImmutableArray());
+
+        DiagramFragment? BuildLoop(ScenarioFlowContainer loop)
+        {
+            var memberRefs = ordered.Where(item => placements.TryGetValue(item.Node, out var placement)
+                && placement.Containers.Contains(loop.Region)).ToArray();
+            if (memberRefs.Length == 0)
+            {
+                return null;
+            }
+            var children = loopChildren.TryGetValue(loop.Region, out var nested) ? nested : [];
+            var nestedFragments = children.Select(BuildLoop).Where(item => item is not null).Cast<DiagramFragment>().ToImmutableArray();
+            var childRegions = children.Select(item => item.Region).ToHashSet();
+            var refs = memberRefs.Where(item => !placements[item.Node].Containers.Any(region => childRegions.Contains(region)))
+                .Select(item => item.Ref).ToImmutableArray();
+            foreach (var reference in refs)
+            {
+                claimed.Add(reference);
+            }
+            foreach (var child in nestedFragments)
+            {
+                foreach (var reference in ordered.Where(item => child.MessageRefs.Contains(item.Ref)).Select(item => item.Ref))
+                {
+                    claimed.Add(reference);
+                }
+            }
+            var evidence = loop.Evidence;
+            return new DiagramFragment(
+                new DiagramPlanElementId($"diagram-fragment:v1:worker-loop:{loop.Region.Value}"),
+                $"worker-loop:{loop.Region.Value}", "each iteration", DiagramFragmentKind.Loop,
+                [], refs, nestedFragments, evidence,
+                new[] { loop.Certainty, evidence.Max(item => item.Certainty) }.Max());
+        }
+    }
+
     /// <summary>
     /// A decision is supported when both arms have known terminal classifications, at least one arm
     /// carries material messages, and the arms do not claim the same node. Both one-material shapes
@@ -2635,6 +2851,10 @@ public static class DocumentationPlanner
     /// </summary>
     private static (int Segment, int Ordinal, int Rank) NodeOrderKey(ScenarioGraph graph, ScenarioNode node)
     {
+        if (node.Presentation?.HostedWorkerControlKind is not null)
+        {
+            return (0, node.Presentation.HostedWorkerBlockOrdinal ?? int.MaxValue, SemanticNodeRank(graph, node));
+        }
         int segment = node.Kind switch
         {
             ScenarioNodeKind.EntryPoint or ScenarioNodeKind.Action or ScenarioNodeKind.MethodCall
