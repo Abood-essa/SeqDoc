@@ -1,6 +1,8 @@
 # Delegated Contribution Workflow
 
-Delegated changes remain candidates until the maintainer verifies their complete behavior. Preserve the submitted
+Delegated changes remain candidates until the maintainer verifies their complete behavior. The canonical record under
+`docs/project/work-items/` is the current-state authority; GitHub lifecycle labels and checkpoint prose are projections.
+Preserve the submitted
 branch, record its base revision, inspect the actual diff, and classify each area as accepted, repairable, or rejected.
 Return bounded findings to human contributors with file/line evidence, risk, expected behavior, and one focused
 verification command. The contributor re-reviews the complete candidate; the maintainer reviews the repair delta and

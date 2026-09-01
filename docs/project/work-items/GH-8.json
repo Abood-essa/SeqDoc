@@ -1,0 +1,23 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/8",
+  "dependencies": [],
+  "expectedGithubState": "CLOSED",
+  "id": "GH-8",
+  "kind": "acceptance",
+  "lifecycle": "Closed",
+  "lifecycleLabel": null,
+  "nextAction": null,
+  "number": 8,
+  "owner": "qais",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/8",
+  "statusReason": "Acceptance completed.",
+  "title": "[Services] CreditTransfer and SMSGateway service acceptance",
+  "track": "services"
+}

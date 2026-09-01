@@ -1,0 +1,21 @@
+{
+  "baseline": "d9781db85a1f402c1af1f49442ec5189fb4c3344",
+  "branch": "governance/canonical-work-state",
+  "checkpointId": "GWS1",
+  "checkpointPath": "docs/work/governance/GWS1",
+  "contractRevision": "docs/work/governance/GWS1/checkpoint.md",
+  "dependencies": [],
+  "expectedGithubState": "NONE",
+  "id": "GWS1",
+  "kind": "synthetic",
+  "lifecycle": "Closed",
+  "lifecycleLabel": null,
+  "nextAction": "Owner-authorized takeover focused verification passed; run the declared final gate once.",
+  "owner": "maintainer",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "statusReason": "Owner-authorized takeover completed; independent findings resolved; governance final gate passed with 26 records valid, GitHub projection current, and 14/14 tests.",
+  "title": "GWS1 canonical work-state checkpoint",
+  "track": "governance"
+}

@@ -1,5 +1,9 @@
 ## Linked work
 
+Confirm the linked item's canonical record under `docs/project/work-items/` before relying on GitHub labels or issue state.
+Record ID and checkpoint ID/path:
+Maintainers: transition the canonical record with `work_state.py`; do not hand-edit projections.
+
 Closes #
 Parent workstream: #
 

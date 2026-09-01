@@ -1,12 +1,15 @@
 # Parallel Essential Workstreams
 
+> **Authority:** Current lifecycle, dependencies, ownership, and selection live in [`work-items/`](work-items/). This
+> document retains durable topology and history; it cannot override the canonical registry.
+
 ## Goal and operating model
 
 Make SeqDoc fully useful for large real solutions as quickly as possible. CreditTransfer remains the primary visual
 acceptance target; FraudManagement, SMSGateway, TicketReservation, and the training corpus protect generality. Project
 names may appear publicly, but their source, configuration, and detailed behavioral findings remain external.
 
-Point-in-time issue and PR state is maintained in `docs/project/status.md` and GitHub; this document records durable
+Point-in-time lifecycle state is maintained in `docs/project/work-items/`; this document records durable
 workstream structure and approved boundaries rather than a duplicated mutable execution ledger.
 
 The original A–H plan is background architecture, not the execution target. Approximately 45–50% of its complete
@@ -27,7 +30,7 @@ Public execution graph:
 Foundational service, persistence, worker, and traversal slices are retained as separate delivery boundaries. Issue #16
 must use a fresh branch and selectively reuse compatible work rather than copying superseded PR #32 wholesale. The
 Issue #8 supplied-project slice is acceptance-only and starts only after its readiness gate and external evidence; it is
-not an implementation stream. GitHub sub-issue and `blocked by` relationships remain authoritative for availability.
+not an implementation stream. Canonical dependency records, not GitHub relationships, determine availability.
 
 ## Maintainer stream — Depthless traversal and large diagrams
 

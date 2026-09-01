@@ -1,0 +1,23 @@
+{
+  "baseline": "ca5bc4b3be0f3ea97def06f053f7bbd1f7a40d2e",
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/54",
+  "dependencies": [],
+  "expectedGithubState": "OPEN",
+  "id": "GH-54",
+  "kind": "github-issue",
+  "lifecycle": "Blocked",
+  "lifecycleLabel": "blocked",
+  "nextAction": null,
+  "number": 54,
+  "owner": "qais",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/54",
+  "statusReason": "PR #48 is merged; blocked by unresolved PR #51 shared-path drift and the required current-main baseline refresh before Ready.",
+  "title": "[Outbound HTTP] Exact direct HttpClient GET/POST request boundaries",
+  "track": "services"
+}

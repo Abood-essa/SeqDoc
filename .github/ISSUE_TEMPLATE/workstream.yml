@@ -1,11 +1,18 @@
 name: Workstream
-description: A substantial contributor-owned capability delivered through multiple sub-issues and PRs.
+description: A substantial contributor-owned capability; canonical work-item records own lifecycle and dependencies.
 title: "[Workstream] "
 labels: ["workstream"]
 body:
   - type: markdown
     attributes:
       value: "Workstreams provide meaningful ownership. Implementation is split into linked, reviewable sub-issues."
+  - type: input
+    id: canonical-record
+    attributes:
+      label: Canonical record and checkpoint ID/path
+      description: Maintainers create and transition the canonical record; GitHub labels are only a projection.
+    validations:
+      required: true
   - type: input
     id: owner
     attributes:

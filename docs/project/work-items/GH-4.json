@@ -1,0 +1,23 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/4",
+  "dependencies": [],
+  "expectedGithubState": "OPEN",
+  "id": "GH-4",
+  "kind": "parent",
+  "lifecycle": "Active",
+  "lifecycleLabel": "active",
+  "nextAction": null,
+  "number": 4,
+  "owner": "abood",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/4",
+  "statusReason": "Parent workstream remains active while open children progress.",
+  "title": "[Workstream] Worker scheduler and recovery semantics",
+  "track": "workers"
+}

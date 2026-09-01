@@ -1,0 +1,25 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/53",
+  "dependencies": [
+    "GH-54"
+  ],
+  "expectedGithubState": "OPEN",
+  "id": "GH-53",
+  "kind": "acceptance",
+  "lifecycle": "Blocked",
+  "lifecycleLabel": "blocked",
+  "nextAction": null,
+  "number": 53,
+  "owner": "qais",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/53",
+  "statusReason": "Blocked by GH-54; baseline remains null until merged-A refresh.",
+  "title": "[Outbound HTTP] FraudManagement GET/POST acceptance",
+  "track": "services"
+}
