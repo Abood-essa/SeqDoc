@@ -25,6 +25,13 @@ class WorkStateTests(unittest.TestCase):
     def normalize_lifecycle_fixture(self):
         for i in ("GH-12", "GH-13"):
             x=self.find(i); x["lifecycle"]="Blocked"; x["lifecycleLabel"]="blocked"; x["expectedGithubState"]="OPEN"
+        issue13=self.find("GH-13")
+        issue13["selectedForExecution"]=False
+        issue13["checkpointId"]=None
+        issue13["checkpointPath"]=None
+        issue13["nextAction"]=None
+        issue13["branch"]=None
+        issue13["pr"]=None
         capsule=self.d/"docs/work/persistence/I12/checkpoint.md"
         lines=capsule.read_text().splitlines(keepends=True)
         lines[4]="`Blocked`\n"
