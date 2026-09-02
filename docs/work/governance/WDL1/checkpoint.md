@@ -2,7 +2,7 @@
 
 ## State
 
-`Building`
+`ReviewRequired`
 
 Owner activation was granted at https://github.com/Bilaltariq41/SeqDoc/issues/58#issuecomment-5508271854 from
 `origin/main` at `c6216c25c449b95ac4bb7fce17eff1d37d97c3da`. Issue #58 is the frozen mechanical contract.
