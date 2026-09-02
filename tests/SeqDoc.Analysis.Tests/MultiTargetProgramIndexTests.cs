@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text;
 using SeqDoc.Analysis.Roslyn;
 using SeqDoc.Analysis.Roslyn.Profiles;
 using SeqDoc.Analysis.Roslyn.Workspace;
@@ -112,6 +113,8 @@ public sealed class MultiTargetProgramIndexTests
             Path.GetDirectoryName(request.TargetPath)!,
             "References",
             "WindowsDependency");
+        var lockPath = Path.Combine(dependencyDirectory, "packages.lock.json");
+        var savedLock = File.ReadAllBytes(lockPath);
         var localAssets = Directory.Exists(Path.Combine(dependencyDirectory, "obj"))
             ? Directory.GetFiles(Path.Combine(dependencyDirectory, "obj"), "project.assets.json", SearchOption.AllDirectories)
             : [];
@@ -119,6 +122,7 @@ public sealed class MultiTargetProgramIndexTests
 
         try
         {
+            File.WriteAllText(lockPath, SyntheticWindowsDependencyLock, Encoding.UTF8);
             foreach (var path in localAssets)
             {
                 File.Delete(path);
@@ -138,6 +142,7 @@ public sealed class MultiTargetProgramIndexTests
         }
         finally
         {
+            File.WriteAllBytes(lockPath, savedLock);
             foreach (var (path, contents) in savedAssets)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -172,6 +177,26 @@ public sealed class MultiTargetProgramIndexTests
         CompilationProfileResolutionRequest request,
         CompilationProfile profile) =>
         new(request.RepositoryRoot, request.TargetPath, profile);
+
+    private const string SyntheticWindowsDependencyLock = """
+        {
+          "version": 2,
+          "dependencies": {
+            "net10.0": {
+              "WindowsDependency.PortableLock": {
+                "type": "Direct",
+                "resolved": "1.0.0"
+              }
+            },
+            "net10.0-windows7.0": {
+              "WindowsDependency.WindowsLock": {
+                "type": "Direct",
+                "resolved": "2.0.0"
+              }
+            }
+          }
+        }
+        """;
 
     private static void AssertSucceeded(ApplicationResult<ProgramIndexSnapshot> result) =>
         Assert.True(
