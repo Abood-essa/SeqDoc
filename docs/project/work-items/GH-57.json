@@ -1,0 +1,25 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/57#issuecomment-5508246974",
+  "dependencies": [
+    "GH-13"
+  ],
+  "expectedGithubState": "OPEN",
+  "id": "GH-57",
+  "kind": "github-issue",
+  "lifecycle": "Blocked",
+  "lifecycleLabel": "blocked",
+  "nextAction": null,
+  "number": 57,
+  "owner": "maintainer",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/57",
+  "statusReason": "Queued behind I13. The contract includes transactional maintainer operations, repository-native handoff, synthetic governance fixtures, and compatible parallel checkpoint execution.",
+  "title": "[Governance] Transactional maintainer operations and repository-native handoff",
+  "track": "governance"
+}

@@ -14,6 +14,7 @@ class WorkStateTests(unittest.TestCase):
         shutil.copy(ROOT / "docs/project/work-state.schema.json", self.d / "docs/project/work-state.schema.json")
         shutil.copytree(ROOT / "docs/work", self.d / "docs/work")
         self.items = [json.loads(p.read_text()) for p in (ROOT / "docs/project/work-items").glob("*.json")]
+        self.normalize_lifecycle_fixture()
         self.write()
         self.assertEqual(ws.execution(self.d, False), 0)
     def tearDown(self): self.temp.cleanup()
@@ -21,9 +22,24 @@ class WorkStateTests(unittest.TestCase):
         for x in self.items:
             (self.d / "docs/project/work-items" / (x["id"] + ".json")).write_text(json.dumps(x))
     def find(self, i): return next(x for x in self.items if x["id"] == i)
+    def normalize_lifecycle_fixture(self):
+        for x in self.items: x["selectedForExecution"] = False
+        for i in ("GH-12", "GH-13"):
+            x=self.find(i); x["lifecycle"]="Blocked"; x["lifecycleLabel"]="blocked"; x["expectedGithubState"]="OPEN"
+        issue13=self.find("GH-13")
+        issue13["selectedForExecution"]=False
+        issue13["checkpointId"]=None
+        issue13["checkpointPath"]=None
+        issue13["nextAction"]=None
+        issue13["branch"]=None
+        issue13["pr"]=None
+        capsule=self.d/"docs/work/persistence/I12/checkpoint.md"
+        lines=capsule.read_text().splitlines(keepends=True)
+        lines[4]="`Blocked`\n"
+        capsule.write_text("".join(lines))
     def reset_gws1_transition_fixture(self):
         gws1=self.find("GWS1"); gws1["lifecycle"]="Verifying"; gws1["lifecycleLabel"]="verifying"; gws1["selectedForExecution"]=True
-        issue12=self.find("GH-12"); issue12["lifecycle"]="Active"; issue12["lifecycleLabel"]="active"; issue12["selectedForExecution"]=False
+        issue12=self.find("GH-12"); issue12["lifecycle"]="Active"; issue12["lifecycleLabel"]="active"; issue12["expectedGithubState"]="OPEN"; issue12["nextAction"]="continue governance transition test"; issue12["selectedForExecution"]=False
         capsule=self.d/"docs/work/governance/GWS1/checkpoint.md"
         lines=capsule.read_text().splitlines(keepends=True)
         lines[4]="`Verifying`\n"
@@ -44,7 +60,7 @@ class WorkStateTests(unittest.TestCase):
         self.find("GH-13")["dependencies"] = ["GH-999"]; self.write(); self.assertNotEqual(ws.validate(self.d), 0)
         self.find("GH-13")["dependencies"] = ["GH-12"]; self.find("GH-12")["dependencies"] = ["GH-13"]; self.write(); self.assertNotEqual(ws.validate(self.d), 0)
     def test_active_requires_frozen_contract_and_baseline(self):
-        x=self.find("GH-12"); x["baseline"]="bad"; self.write(); self.assertNotEqual(ws.validate(self.d), 0)
+        x=self.find("GH-12"); x["lifecycle"]="Active"; x["lifecycleLabel"]="active"; x["baseline"]="bad"; self.write(); self.assertNotEqual(ws.validate(self.d), 0)
     def test_closed_dependency_satisfies_active_child_but_active_does_not(self):
         self.assertEqual(ws.validate(self.d), 0)
         self.find("GH-9")["lifecycle"]="Active"; self.find("GH-9")["lifecycleLabel"]="active"; self.write(); self.assertNotEqual(ws.validate(self.d), 0)

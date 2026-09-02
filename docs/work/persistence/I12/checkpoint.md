@@ -2,11 +2,24 @@
 
 ## State
 
-`Blocked`
+`Closed`
 
 Owner activation was granted on 2026-09-01. GitHub Issue #12 is the frozen implementation contract. Start from
 `origin/main` at `ca5bc4b3be0f3ea97def06f053f7bbd1f7a40d2e`; stop for a readiness amendment if current compiler evidence cannot
 satisfy a frozen admission or join.
+
+PR #51 merged as `e145f3c3a5a872ea4369142d2d652ff018a1c0d0`, preserving Ahmad Krarha's commits
+`cdd5f3347da09f6e7968061c0c592e18b34fec6b`, `252ce51403f267054d1d0c1b05658b1a7a8c73e8`, and
+`b1b388b7154c8a2f7f5a06e2ed252d879155bc01` with attribution intact. The required current-main merge was
+`74e3a1e874b754a56eb2deeed02cab89e2d0d580`.
+
+One independent review ran; no second review ran. I12-F1 was rejected with evidence because exact generic assignment
+facts remain available while only unproven persistence presentation is withheld. I12-F2 through I12-F4 and final-gate
+regression S1 were fixed. Direct Analysis passed 1/1, focused Analysis 14/14, Scenarios 113/113, Wording 38/38, and
+EfCoreScenarioProjection 25/25. FourFlows passed 12 tests with the one owner-accepted, baseline-identical
+TicketReservation `SD1102` failure. The authorized final gate built Release with 0 warnings/errors; Core passed 91/91,
+Scenarios 239/239, Wording 129/129, and Rendering 77/77. Remaining complete Analysis and Acceptance failures matched
+the documented current-main, local SDK, or unavailable external-lane signatures. `git diff --check` passed.
 
 ## Objective
 

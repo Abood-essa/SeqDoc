@@ -1,0 +1,23 @@
+{
+  "baseline": "c6216c25c449b95ac4bb7fce17eff1d37d97c3da",
+  "branch": "fixture/windowsdependency-lock",
+  "checkpointId": "WDL1",
+  "checkpointPath": "docs/work/governance/WDL1",
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/58#issuecomment-5508469494",
+  "dependencies": [],
+  "expectedGithubState": "CLOSED",
+  "id": "GH-58",
+  "kind": "github-issue",
+  "lifecycle": "Closed",
+  "lifecycleLabel": null,
+  "nextAction": null,
+  "number": 58,
+  "owner": "maintainer",
+  "pr": "https://github.com/Bilaltariq41/SeqDoc/pull/60",
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/58",
+  "statusReason": "PR #60 merged as 1fcbe0dbde0bfc59a71fdf9fab2ff62d6a9f0bf2. Clean locked restore passed; PF-1 passed 7/7; governance passed 15/15. One independent review ran and WDL1-F1/F2 were fixed. Complete Analysis matched untouched c6216c25 at 205/274 with the identical 69 dependency-unavailable failures.",
+  "title": "[Fixtures] Repair WindowsDependency locked restore",
+  "track": "governance"
+}
