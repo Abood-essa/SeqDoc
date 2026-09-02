@@ -2,13 +2,16 @@
 
 ## State
 
-`ReviewRequired`
+`Verifying`
 
 Owner activation was granted at https://github.com/Bilaltariq41/SeqDoc/issues/58#issuecomment-5508271854 from
 `origin/main` at `c6216c25c449b95ac4bb7fce17eff1d37d97c3da`. Issue #58 is the frozen mechanical contract.
 The failed one-file attempt proved that NuGet regeneration removes synthetic lock identities required by PF-1. Owner
 amendment https://github.com/Bilaltariq41/SeqDoc/issues/58#issuecomment-5508381827 therefore authorizes one test path
 solely to install and restore synthetic lock input around the existing fallback assertion.
+The one independent review produced WDL1-F1 and WDL1-F2. Owner amendment
+https://github.com/Bilaltariq41/SeqDoc/issues/58#issuecomment-5508469494 authorizes the governance fixture test only to
+remove copied live selections before synthetic scenarios and requires exact no-BOM synthetic lock bytes.
 
 ## Objective
 
@@ -20,6 +23,7 @@ repair and authorize Abood to apply only its exact merge SHA to P17-R1 before re
 
 - `tests/fixtures/PassA/MultiTargetProfiles/References/WindowsDependency/packages.lock.json`
 - `tests/SeqDoc.Analysis.Tests/MultiTargetProgramIndexTests.cs`
+- `tests/governance/test_work_state.py` only for WDL1-F1's synthetic-fixture selection normalization
 - `docs/project/work-items/GH-58.json`
 - `docs/project/work-items/GH-13.json` only for local Orchestrator selection transfer; no I13 lifecycle or contract edit
 - `docs/project/execution.json`
@@ -63,11 +67,21 @@ Remove-Item -Recurse -Force "tests/fixtures/PassA/MultiTargetProfiles/References
 Stop at `ReviewRequired` after focused verification. The Orchestrator inspects the generated lock diff and invokes one
 independent mechanical Reviewer. Record every disposition. Run the final gate only after findings are resolved.
 
+## Independent review dispositions
+
+One independent review ran; no second review will run.
+
+- **WDL1-F1 — Fixed.** The copied governance fixture now clears every live selection before constructing synthetic
+  transition scenarios. The real WDL1 and I13 records are untouched. Governance tests pass 15/15.
+- **WDL1-F2 — Fixed.** The fallback test installs exact no-BOM, LF-terminated bytes matching the prior synthetic lock
+  and restores the generated lock byte-for-byte in `finally`. Clean locked restore passes and
+  `MultiTargetProgramIndexTests` pass 7/7.
+
 ## Final gate
 
 ```powershell
 dotnet test tests/SeqDoc.Analysis.Tests/SeqDoc.Analysis.Tests.csproj -c Release
 ```
 
-Also run `git diff --check` and verify no path beyond the amended six-path checkpoint allowlist changed. Record SDK/NuGet
+Also run `git diff --check` and verify no path beyond the amended seven-path checkpoint allowlist changed. Record SDK/NuGet
 identity, exact counts, any baseline failure signature, and the merge SHA.

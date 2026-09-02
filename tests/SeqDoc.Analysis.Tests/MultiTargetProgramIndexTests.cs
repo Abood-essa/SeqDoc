@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Text;
 using SeqDoc.Analysis.Roslyn;
 using SeqDoc.Analysis.Roslyn.Profiles;
 using SeqDoc.Analysis.Roslyn.Workspace;
@@ -122,7 +121,7 @@ public sealed class MultiTargetProgramIndexTests
 
         try
         {
-            File.WriteAllText(lockPath, SyntheticWindowsDependencyLock, Encoding.UTF8);
+            File.WriteAllBytes(lockPath, SyntheticWindowsDependencyLock);
             foreach (var path in localAssets)
             {
                 File.Delete(path);
@@ -178,25 +177,8 @@ public sealed class MultiTargetProgramIndexTests
         CompilationProfile profile) =>
         new(request.RepositoryRoot, request.TargetPath, profile);
 
-    private const string SyntheticWindowsDependencyLock = """
-        {
-          "version": 2,
-          "dependencies": {
-            "net10.0": {
-              "WindowsDependency.PortableLock": {
-                "type": "Direct",
-                "resolved": "1.0.0"
-              }
-            },
-            "net10.0-windows7.0": {
-              "WindowsDependency.WindowsLock": {
-                "type": "Direct",
-                "resolved": "2.0.0"
-              }
-            }
-          }
-        }
-        """;
+    private static readonly byte[] SyntheticWindowsDependencyLock =
+        "{\n  \"version\": 2,\n  \"dependencies\": {\n    \"net10.0\": {\n      \"WindowsDependency.PortableLock\": {\n        \"type\": \"Direct\",\n        \"resolved\": \"1.0.0\"\n      }\n    },\n    \"net10.0-windows7.0\": {\n      \"WindowsDependency.WindowsLock\": {\n        \"type\": \"Direct\",\n        \"resolved\": \"2.0.0\"\n      }\n    }\n  }\n}\n"u8.ToArray();
 
     private static void AssertSucceeded(ApplicationResult<ProgramIndexSnapshot> result) =>
         Assert.True(
