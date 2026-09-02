@@ -1,8 +1,8 @@
 {
-  "baseline": null,
-  "branch": null,
-  "checkpointId": null,
-  "checkpointPath": null,
+  "baseline": "0b8e4b7a91cf52e4a98542bcc307f9262414efdf",
+  "branch": "acceptance/issue-53-outbound-http",
+  "checkpointId": "QHTTP-B",
+  "checkpointPath": "docs/work/outbound-http/QHTTP-B",
   "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/53",
   "dependencies": [
     "GH-54"
@@ -10,16 +10,16 @@
   "expectedGithubState": "OPEN",
   "id": "GH-53",
   "kind": "acceptance",
-  "lifecycle": "Blocked",
-  "lifecycleLabel": "blocked",
-  "nextAction": null,
+  "lifecycle": "Ready",
+  "lifecycleLabel": "ready",
+  "nextAction": "Qais may start QHTTP-B from current main, change only the frozen acceptance test/evidence paths, and stop at ReviewRequired.",
   "number": 53,
   "owner": "qais",
   "pr": null,
   "schemaVersion": 1,
   "selectedForExecution": false,
   "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/53",
-  "statusReason": "Blocked by GH-54; baseline remains null until merged-A refresh.",
+  "statusReason": "Semantic dependency GH-54 is closed through PR #59 merge 0b8e4b7; the frozen FraudManagement acceptance-only contract is ready.",
   "title": "[Outbound HTTP] FraudManagement GET/POST acceptance",
   "track": "services"
 }
