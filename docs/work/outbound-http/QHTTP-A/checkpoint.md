@@ -2,7 +2,7 @@
 
 ## State
 
-`Verifying`
+`Building`
 
 Issue #54 is the frozen semantic contract. Owner continuation authorization and current-main readiness PASS are at
 https://github.com/Bilaltariq41/SeqDoc/issues/54#issuecomment-5509514090. The accepted baseline is
@@ -94,14 +94,14 @@ dotnet build SeqDoc.slnx -c Release; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCO
 
 ## Independent review repair (QHTTP-A-F1..F3)
 
-State: `Verifying` after the bounded repair, focused verification, and one independent review. The earlier contributor-recorded review and
+State: `Building` after the bounded repair, focused verification, and one independent review; final-gate verification is pending. The earlier contributor-recorded review and
 final-gate material below is retained as historical evidence only and is not authoritative for this checkpoint.
 
 | Finding | Disposition | Evidence / repair | Test and observable assertion | Residual |
 | --- | --- | --- | --- | --- |
 | QHTTP-A-F1 Major: a DI-resolved root omitted its root-local outbound HTTP fact. | Fixed | `ScenarioGraphBuilder` now invokes `AddOutboundHttpRequests` on the resolved root's action node immediately before topology construction and finalization. The existing join remains root-local (`CallerMethod == entryPoint.RootMethod`) and therefore does not project callee-local facts or alter service/persistence joins. | Existing `ResolvedHttpRootRetainsItsRootLocalOutboundHttpFact` passes through the real graph builder and asserts one service node plus one outbound HTTP node. | none |
 | QHTTP-A-F2 Medium: claimed isolation coverage did not exercise `ScenarioGraphBuilder`. | Fixed / preserved | The Test Writer's real cross-profile and fingerprint fail-closed graph test remains in `OutboundHttpProjectionTests`. | `ForeignFrameworkProfileAndFingerprintCannotJoinScenarioGraph` passes and asserts no outbound node joins the foreign framework facts. | none |
-| QHTTP-A-F3 Medium: durable state and review/final-gate records were contradictory and premature. | Fixed | State is now coherent: `Verifying`; the historical record is explicitly non-authoritative. No final gate was run or reused for this repair. | Capsule and GH-54 work-item state updated consistently after the one independent review. | Final gate remains pending. |
+| QHTTP-A-F3 Medium: durable state and review/final-gate records were contradictory and premature. | Fixed | State is now coherent: `Building`; the historical record is explicitly non-authoritative. Final-gate verification remains pending, and no gate result is claimed or reused. | Capsule and GH-54 work-item state updated consistently after the one independent review. | Final gate remains pending. |
 
 No additional tests were added for this repair; the existing focused assertions cover the distinct F1 and F2 failure
 modes. No soft-budget exception.
