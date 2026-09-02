@@ -2,7 +2,7 @@
 
 ## State
 
-`Verifying`
+`Closed`
 
 Issue #54 is the frozen semantic contract. Owner continuation authorization and current-main readiness PASS are at
 https://github.com/Bilaltariq41/SeqDoc/issues/54#issuecomment-5509514090. The accepted baseline is
