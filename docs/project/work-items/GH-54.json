@@ -10,14 +10,14 @@
   "kind": "github-issue",
   "lifecycle": "Active",
   "lifecycleLabel": "active",
-  "nextAction": "Qais must merge current main and fix the three current Copilot findings, rerun affected focused lanes, and stop at ReviewRequired before the final gate.",
+  "nextAction": "Run the declared QHTTP-A final gate in docs/work/outbound-http/QHTTP-A/checkpoint.md; do not reuse the historical final-gate evidence.",
   "number": 54,
   "owner": "qais",
   "pr": "https://github.com/Bilaltariq41/SeqDoc/pull/59",
   "schemaVersion": 1,
   "selectedForExecution": false,
   "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/54",
-  "statusReason": "Parallel continuation authorized after PR #48/#51 resolution and a current-main no-overlap audit. PR #59 remains in Building for one bounded three-finding repair before independent review.",
+  "statusReason": "QHTTP-A-F1..F3 are dispositioned after one independent review; the Analysis OutboundHttp focused lane passes 7/7. State is Verifying and the declared final gate is pending; historical contributor review/final-gate evidence remains non-authoritative and is not reused.",
   "title": "[Outbound HTTP] Exact direct HttpClient GET/POST request boundaries",
   "track": "services"
 }

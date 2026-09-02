@@ -148,7 +148,70 @@ public sealed class OutboundHttpProjectionTests
             UnrelatedDiagnostics(withModel.Graphs, httpOperation));
     }
 
-    private static async Task<(ProgramIndexSnapshot ProgramIndex, ImmutableArray<ScenarioGraph> Graphs)>
+    [Fact]
+    public async Task ResolvedHttpRootRetainsItsRootLocalOutboundHttpFact()
+    {
+        var result = await AnalyzeScenarioGraphsAsync("net10.0", [new HttpClientOutboundModel()]);
+        var root = FindMethod(result.ProgramIndex, "BehaviorDocumentation.OutboundHttp.ResolvedHttpRoot", "GetWithResolvedService");
+        var serviceType = "BehaviorDocumentation.OutboundHttp.IResolvedDependency";
+        var serviceCall = result.Behavior.CallGraph.CallSites.Single(site =>
+            site.ContainingMethod == root.Id && site.DeclaredTarget is { } target
+            && target == FindMethod(result.ProgramIndex, serviceType, "Execute").Id);
+        Assert.Equal(serviceType, result.ProgramIndex.Types.Single(type =>
+            type.Id == result.ProgramIndex.Methods.Single(method => method.Id == serviceCall.DeclaredTarget!.Value).ContainingType).MetadataName);
+        Assert.Contains(FindMethod(result.ProgramIndex,
+            "BehaviorDocumentation.OutboundHttp.ResolvedDependency", "Execute").Id,
+            serviceCall.Resolution.Candidates);
+
+        var registration = new DependencyInjectionRegistrationFact(
+            new SemanticFactId("semantic-fact:v1:test:resolved-http-registration"),
+            root.Id, serviceCall.InvocationOperation, serviceType,
+            "BehaviorDocumentation.OutboundHttp.ResolvedDependency",
+            DependencyInjectionLifetime.Singleton, root.Evidence, CertaintyLevel.Exact);
+        var binding = new DependencyInjectionBindingFact(
+            new SemanticFactId("semantic-fact:v1:test:resolved-http-binding"),
+            result.ProgramIndex.Methods.Single(method => method.Name == ".ctor"
+                && method.ContainingType == root.ContainingType).Id,
+            0, "dependency", serviceType, registration.Id, serviceType,
+            "BehaviorDocumentation.OutboundHttp.ResolvedDependency",
+            DependencyInjectionLifetime.Singleton, root.Evidence, CertaintyLevel.Exact);
+        var request = new ScenarioAnalysisRequest(
+            result.Profile, result.ProgramIndex, result.Behavior,
+            result.FrameworkFacts with { Facts = result.FrameworkFacts.Facts.Add(EntryFact(root, "resolved")) },
+            new SemanticFactSet(1, "test", result.Profile, result.ProgramIndex.IndexFingerprint, [], [], [], [], "semantic-test"),
+            new DependencyInjectionFactSet(1, "test", result.Profile, result.ProgramIndex.IndexFingerprint,
+                [registration], [binding], [], "di-test"),
+            new StructuralResultFactSet(1, "test", result.Profile, result.ProgramIndex.IndexFingerprint, [], [], [], "structural-test"),
+            new NonGetSemanticFactSet(1, "test", result.Profile, result.ProgramIndex.IndexFingerprint, [], [], [], [], [], [], [], [], "non-get-test"));
+
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(request).Graphs, item => item.RootMethod == root.Id);
+        Assert.Single(graph.Nodes, node => node.Kind == ScenarioNodeKind.ServiceCall);
+        var outbound = Assert.Single(graph.Nodes, node => node.Kind == ScenarioNodeKind.OutboundHttpRequest);
+        Assert.Equal(OutboundHttpRequestKind.Get, outbound.Presentation?.OutboundHttpRequestKind);
+    }
+
+    [Fact]
+    public async Task ForeignFrameworkProfileAndFingerprintCannotJoinScenarioGraph()
+    {
+        var net9 = await AnalyzeScenarioGraphsAsync("net9.0", [new HttpClientOutboundModel()]);
+        var net10 = await AnalyzeScenarioGraphsAsync("net10.0", [new HttpClientOutboundModel()]);
+        var get = FindMethod(net9.ProgramIndex, SupportedType, "Get");
+        var request = new ScenarioAnalysisRequest(
+            net9.Profile, net9.ProgramIndex, net9.Behavior, net10.FrameworkFacts,
+            new SemanticFactSet(1, "test", net9.Profile, net9.ProgramIndex.IndexFingerprint, [], [], [], [], "semantic-test"),
+            new DependencyInjectionFactSet(1, "test", net9.Profile, net9.ProgramIndex.IndexFingerprint, [], [], [], "di-test"),
+            new StructuralResultFactSet(1, "test", net9.Profile, net9.ProgramIndex.IndexFingerprint, [], [], [], "structural-test"),
+            new NonGetSemanticFactSet(1, "test", net9.Profile, net9.ProgramIndex.IndexFingerprint, [], [], [], [], [], [], [], [], "non-get-test"))
+        {
+            ConfiguredRoots = [get.Id],
+        };
+
+        var graphs = ScenarioGraphBuilder.Build(request).Graphs;
+        var graph = Assert.Single(graphs, item => item.RootMethod == get.Id);
+        Assert.DoesNotContain(graph.Nodes, node => node.Kind == ScenarioNodeKind.OutboundHttpRequest);
+    }
+
+    private static async Task<(ProgramIndexSnapshot ProgramIndex, ImmutableArray<ScenarioGraph> Graphs, BehaviorSnapshot Behavior, FrameworkAnalysisResult FrameworkFacts, CompilationProfile Profile)>
         AnalyzeScenarioGraphsAsync(string targetFramework, IReadOnlyList<IFrameworkBehaviorModel> models)
     {
         var root = FindRepositoryRoot();
@@ -193,7 +256,7 @@ public sealed class OutboundHttpProjectionTests
             new StructuralResultFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], "structural-test"),
             new NonGetSemanticFactSet(1, "test", profile, programIndex.IndexFingerprint, [], [], [], [], [], [], [], [], "non-get-test"));
 
-        return (programIndex, ScenarioGraphBuilder.Build(scenarioRequest).Graphs);
+        return (programIndex, ScenarioGraphBuilder.Build(scenarioRequest).Graphs, behaviorResult.Value!, framework, profile);
     }
 
     private static HttpEntryPointFact EntryFact(ProgramMethod method, string slug)

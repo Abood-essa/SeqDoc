@@ -644,6 +644,7 @@ public static class ScenarioGraphBuilder
         }
 
         var rootWithheldPersistenceAssignments = new HashSet<ScenarioNodeId>();
+        AddOutboundHttpRequests(request, entryPoint, profileId, actionNode, nodes, edges, diagnostics, cancellationToken);
         var topology = BuildTopology(
             request,
             profileId,

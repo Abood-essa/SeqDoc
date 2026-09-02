@@ -52,3 +52,30 @@ public sealed class SupportedRequests
         return this.endpoint.Trim();
     }
 }
+
+public interface IResolvedDependency
+{
+    string Execute();
+}
+
+public sealed class ResolvedDependency : IResolvedDependency
+{
+    public string Execute() => "resolved";
+}
+
+public sealed class ResolvedHttpRoot
+{
+    private readonly IResolvedDependency dependency;
+
+    public ResolvedHttpRoot(IResolvedDependency dependency)
+    {
+        this.dependency = dependency;
+    }
+
+    public System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage> GetWithResolvedService()
+    {
+        _ = this.dependency.Execute();
+        var client = new System.Net.Http.HttpClient();
+        return client.GetAsync("https://example.test/resolved");
+    }
+}

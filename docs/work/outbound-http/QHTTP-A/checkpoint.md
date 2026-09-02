@@ -2,7 +2,7 @@
 
 ## State
 
-`Building`
+`Verifying`
 
 Issue #54 is the frozen semantic contract. Owner continuation authorization and current-main readiness PASS are at
 https://github.com/Bilaltariq41/SeqDoc/issues/54#issuecomment-5509514090. The accepted baseline is
@@ -82,9 +82,9 @@ dotnet test tests/SeqDoc.Core.Tests/SeqDoc.Core.Tests.csproj -c Release --filter
 
 ## Review boundary
 
-Qais must merge current main, resolve the three current Copilot findings in one bounded repair, run the focused command,
-and stop at `ReviewRequired`. The Orchestrator then inspects the complete candidate and invokes one independent Reviewer.
-Record every disposition and run the final gate only after findings are resolved.
+Qais merged current main, resolved the three bounded findings, and ran the focused command. The Orchestrator inspected
+the complete candidate and the independent Reviewer ran once; all QHTTP-A-F1..F3 dispositions are recorded below.
+The declared final gate is now the next action.
 
 ## Final gate
 
@@ -92,60 +92,31 @@ Record every disposition and run the final gate only after findings are resolved
 dotnet build SeqDoc.slnx -c Release; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.Core.Tests/SeqDoc.Core.Tests.csproj -c Release --no-build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.FrameworkModels.Tests/SeqDoc.FrameworkModels.Tests.csproj -c Release --no-build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.Analysis.Tests/SeqDoc.Analysis.Tests.csproj -c Release --no-build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.Scenarios.Tests/SeqDoc.Scenarios.Tests.csproj -c Release --no-build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.Wording.Tests/SeqDoc.Wording.Tests.csproj -c Release --no-build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.Rendering.Tests/SeqDoc.Rendering.Tests.csproj -c Release --no-build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.Cli.Tests/SeqDoc.Cli.Tests.csproj -c Release --no-build
 ```
 
-## Repair round 2 (Copilot findings, post-activation)
+## Independent review repair (QHTTP-A-F1..F3)
 
-State: `ReviewRequired` pending Orchestrator inspection and independent Reviewer.
+State: `Verifying` after the bounded repair, focused verification, and one independent review. The earlier contributor-recorded review and
+final-gate material below is retained as historical evidence only and is not authoritative for this checkpoint.
 
-| Finding | Disposition | Production repair | Test | Observable assertion | Residual |
-| --- | --- | --- | --- | --- | --- |
-| 1. Missing `SuppliedParameterOrdinals` projection coerced to empty array -> spurious `SEQHTTP001` (`MismatchedSuppliedOrdinals`) | Fixed | `HttpClientOutboundModel.cs` AnalyzeOperationAsync: after family-recognition and `requiredVersion is null` checks, added guard `if (operation.SuppliedParameterOrdinals.IsDefault) return ModelResult.Unrecognized;` then `var ordinals = operation.SuppliedParameterOrdinals;` (removed empty-array coercion). Present-but-wrong / present-but-empty ordinal sets still reach `SEQHTTP001` unchanged. | Extended `PartialIdentityForeignLookalikeAndMissingRequiredFieldsFailClosedSilently` with `missingOrdinals` case | `Assert.Empty(missingOrdinals.Facts)` AND `Assert.DoesNotContain(... d.Code == DiagnosticCode)` | none |
-| 2. `SEQHTTP001` identity included `reasonText` (`subjectId = operationId + US + reasonText`), contradicting file contract | Fixed | `HttpClientOutboundModelDiagnostics.cs`: `var subjectId = operationId;` (profileId already a separate `DiagnosticIdentityDescriptor` field). `reasonText` retained in `internalDetail` (`reason={reasonText}`). Code, severity, summary, messages, internalDetail format unchanged. | Added `Seqhttp001IdentityIsReasonIndependentForTheSameProfileAndOperation` (driven through the model: `internal` codes not visible to test project, no `InternalsVisibleTo`) | Two operations, same `operation.Id`, reasons send-async vs wrong-return: `Assert.Equal(first.Id, second.Id)` and `Assert.NotEqual(first.InternalDetail, second.InternalDetail)` | none |
-| 3. XML doc claimed "version-mismatched identity stays silent", contradicting the emitted `SEQHTTP001` | Fixed | `HttpClientOutboundModel.cs` `<summary>`: replaced the "partial, foreign, or version-mismatched identity stays silent" sentence with accurate wording — wrong/missing assembly version on an applicable net9/net10 profile emits one `SEQHTTP001`; only failed family recognition, non-net9/net10 profile, or missing supplied-ordinal projection stays silent. | Doc-only; covered by existing `AtomicProfileAssemblyVersionCrossingEmitsWrongAssemblyVersionSeqHttp001AndNoFact` + new fix-1 test | n/a | none |
+| Finding | Disposition | Evidence / repair | Test and observable assertion | Residual |
+| --- | --- | --- | --- | --- |
+| QHTTP-A-F1 Major: a DI-resolved root omitted its root-local outbound HTTP fact. | Fixed | `ScenarioGraphBuilder` now invokes `AddOutboundHttpRequests` on the resolved root's action node immediately before topology construction and finalization. The existing join remains root-local (`CallerMethod == entryPoint.RootMethod`) and therefore does not project callee-local facts or alter service/persistence joins. | Existing `ResolvedHttpRootRetainsItsRootLocalOutboundHttpFact` passes through the real graph builder and asserts one service node plus one outbound HTTP node. | none |
+| QHTTP-A-F2 Medium: claimed isolation coverage did not exercise `ScenarioGraphBuilder`. | Fixed / preserved | The Test Writer's real cross-profile and fingerprint fail-closed graph test remains in `OutboundHttpProjectionTests`. | `ForeignFrameworkProfileAndFingerprintCannotJoinScenarioGraph` passes and asserts no outbound node joins the foreign framework facts. | none |
+| QHTTP-A-F3 Medium: durable state and review/final-gate records were contradictory and premature. | Fixed | State is now coherent: `Verifying`; the historical record is explicitly non-authoritative. No final gate was run or reused for this repair. | Capsule and GH-54 work-item state updated consistently after the one independent review. | Final gate remains pending. |
 
-No existing assertion required changing. No soft-budget exception (2 assertions added; one extends an existing test, one new `[Fact]`).
+No additional tests were added for this repair; the existing focused assertions cover the distinct F1 and F2 failure
+modes. No soft-budget exception.
 
-Focused verification (build, no `--no-build`), all `FullyQualifiedName~OutboundHttp`:
+Focused verification (the declared Analysis command): `SeqDoc.Analysis.Tests` — 7 passed, 0 failed, 0 skipped.
+The declared final gate is pending and has not been run for this repair.
 
-| Project | Passed | Failed |
-| --- | --- | --- |
-| SeqDoc.Core.Tests | 2 | 0 |
-| SeqDoc.FrameworkModels.Tests | 7 | 0 |
-| SeqDoc.Analysis.Tests | 5 | 0 |
-| SeqDoc.Scenarios.Tests | 4 | 0 |
-| SeqDoc.Wording.Tests | 4 | 0 |
-| SeqDoc.Cli.Tests | 3 | 0 |
+### Historical evidence (non-authoritative)
 
-Total 25 (was 23 matching the filter; +2 this round). Final gate NOT run (deferred to Orchestrator per Review boundary).
+The prior contributor-recorded review, final-gate results, environment notes, and publication references remain below
+for traceability only. They do not establish the current checkpoint state or authorize reuse of that final gate.
 
-## Independent review (reviewer-medium, post-activation repair) — dispositions
-
-Verdict: **Accept as-is.** Zero Blocking/Major/Minor findings. Two Observations, both dispositioned without code change:
-
-| Finding | Severity | Disposition |
-|---|---|---|
-| Capsule "24 focused tests" narrative imprecise vs the FQN-substring focused filter (matches 23 pre-repair / 25 now, including pre-existing shared-lane tests whose names contain "OutboundHttp"). All six projects `Passed!` with `Skipped: 0`; every candidate test file compiled; no intended test lost or undiscovered. | Observation | Fixed — coverage sentence in "Existing relevant coverage" reworded; no code change. |
-| `OperationDescriptor.SuppliedParameterOrdinals` defaults to `default` (`IsDefault == true`). Fix 1's guard correctly fails closed silently on that. The sole production producer `FrameworkAnalysisRequestProjector.ProjectSuppliedParameterOrdinals` always returns a non-default array (`[]` or a populated ascending set), so no real admissible call is silenced. Residual: a hypothetical future second `OperationDescriptor` producer that forgets to project this field would silently drop admissible calls. | Observation | Accepted; out of issue #54 scope. Noted for the maintainer as a possible projector-side assert / record-field comment in future work. |
-
-Repair-round-2 findings 1–3 (Copilot) verified correctly and completely fixed with no weakened assertions; the merge of current `main` is sound and non-destructive (contributor commit `7a6dbde` preserved as an ancestor); scope is exactly the 3 authorized files plus this capsule. All five `AGENTS.md` proof gates hold on the complete candidate.
-
-Focused verification (build, `--filter FullyQualifiedName~OutboundHttp`): Core 2/2, FrameworkModels 7/7, Analysis 5/5, Scenarios 4/4, Wording 4/4, Cli 3/3 — 25/25. `dotnet build SeqDoc.slnx -c Release` 0 warnings / 0 errors. Final 7-suite gate: pending (findings now resolved).
-
-## Final gate (2026-09-02, after review findings resolved)
-
-`dotnet build SeqDoc.slnx -c Release` = 0 warnings / 0 errors, then `dotnet test -c Release --no-build` per suite:
-
-| Suite | Result |
-|---|---|
-| SeqDoc.Core.Tests | 93 / 93 |
-| SeqDoc.FrameworkModels.Tests | 325 / 325 |
-| SeqDoc.Analysis.Tests | 275 / 279 — 4 failed |
-| SeqDoc.Scenarios.Tests | 243 / 243 |
-| SeqDoc.Wording.Tests | 133 / 133 |
-| SeqDoc.Rendering.Tests | 77 / 77 |
-| SeqDoc.Cli.Tests | 24 / 24 |
-
-The 4 `SeqDoc.Analysis.Tests` failures are all `CoreWcfServiceModelProjectionTests` (`PassCFixtureCompilationProducesTheExactAddServiceEndpointRegistrationFromStartup`, `ConfiguredHostChainWithoutBuildOrRunProducesNoRegistrationOrRoot`, `RegisteredCapabilityAdmitsARootAndUnregisteredCapabilityProducesAConservativeDiagramDiagnostic`, `RealRoslynCoexistenceKeepsForeignSameQualifiedAttributesOutOfTheDiagram`) — deterministic across repeated runs, present in the clean-`main` baseline failure set, and this candidate changes no CoreWCF path. `CoreWCF.Primitives 1.9.1` restores assembly version `1.9.0.0`, matching the model expectation, so it is not a version mismatch — the cause is deeper in the maintainer's CoreWCF host-chain proof, out of scope and allowlist.
-
-Local environment: this machine had SDKs `9.0.101`, `10.0.301`, `10.0.302`, `10.0.400` installed while `global.json` pins `10.0.302`; relocation tests analyzing fixtures in `Path.GetTempPath()` temp dirs (no local `global.json`) resolved to `10.0.400` and hit `SD1102` non-deterministically. Fixed locally by `C:\Users\qhata\global.json` pinning `10.0.302`. Not a repository change; the prior 19–77 non-deterministic Analysis failure swing is now a stable 4.
-
-Candidate state: pushed to `origin` as `8b9e064` on branch `issue-54-outbound-http-boundaries` (parents: merge `dc0cffb` + contributor `7a6dbde`). PR #59 updated with the repair summary comment (issuecomment-5510455833). Awaiting maintainer review.
+Historical contributor review recorded an accept-as-is verdict after the earlier repair round, with focused results of
+Core 2/2, FrameworkModels 7/7, Analysis 5/5, Scenarios 4/4, Wording 4/4, and CLI 3/3; it also recorded a full build
+with zero warnings/errors. The historical final gate recorded Core 93/93, FrameworkModels 325/325, Analysis 275/279
+with four unchanged CoreWCF baseline failures, Scenarios 243/243, Wording 133/133, Rendering 77/77, and CLI 24/24.
+It identified local SDK relocation noise and recorded candidate publication as `8b9e064`. These records are retained
+as historical evidence only; this repair did not run or authorize the final gate.
