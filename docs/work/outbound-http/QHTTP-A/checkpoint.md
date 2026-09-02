@@ -129,3 +129,23 @@ Verdict: **Accept as-is.** Zero Blocking/Major/Minor findings. Two Observations,
 Repair-round-2 findings 1–3 (Copilot) verified correctly and completely fixed with no weakened assertions; the merge of current `main` is sound and non-destructive (contributor commit `7a6dbde` preserved as an ancestor); scope is exactly the 3 authorized files plus this capsule. All five `AGENTS.md` proof gates hold on the complete candidate.
 
 Focused verification (build, `--filter FullyQualifiedName~OutboundHttp`): Core 2/2, FrameworkModels 7/7, Analysis 5/5, Scenarios 4/4, Wording 4/4, Cli 3/3 — 25/25. `dotnet build SeqDoc.slnx -c Release` 0 warnings / 0 errors. Final 7-suite gate: pending (findings now resolved).
+
+## Final gate (2026-09-02, after review findings resolved)
+
+`dotnet build SeqDoc.slnx -c Release` = 0 warnings / 0 errors, then `dotnet test -c Release --no-build` per suite:
+
+| Suite | Result |
+|---|---|
+| SeqDoc.Core.Tests | 93 / 93 |
+| SeqDoc.FrameworkModels.Tests | 325 / 325 |
+| SeqDoc.Analysis.Tests | 275 / 279 — 4 failed |
+| SeqDoc.Scenarios.Tests | 243 / 243 |
+| SeqDoc.Wording.Tests | 133 / 133 |
+| SeqDoc.Rendering.Tests | 77 / 77 |
+| SeqDoc.Cli.Tests | 24 / 24 |
+
+The 4 `SeqDoc.Analysis.Tests` failures are all `CoreWcfServiceModelProjectionTests` (`PassCFixtureCompilationProducesTheExactAddServiceEndpointRegistrationFromStartup`, `ConfiguredHostChainWithoutBuildOrRunProducesNoRegistrationOrRoot`, `RegisteredCapabilityAdmitsARootAndUnregisteredCapabilityProducesAConservativeDiagramDiagnostic`, `RealRoslynCoexistenceKeepsForeignSameQualifiedAttributesOutOfTheDiagram`) — deterministic across repeated runs, present in the clean-`main` baseline failure set, and this candidate changes no CoreWCF path. `CoreWCF.Primitives 1.9.1` restores assembly version `1.9.0.0`, matching the model expectation, so it is not a version mismatch — the cause is deeper in the maintainer's CoreWCF host-chain proof, out of scope and allowlist.
+
+Local environment: this machine had SDKs `9.0.101`, `10.0.301`, `10.0.302`, `10.0.400` installed while `global.json` pins `10.0.302`; relocation tests analyzing fixtures in `Path.GetTempPath()` temp dirs (no local `global.json`) resolved to `10.0.400` and hit `SD1102` non-deterministically. Fixed locally by `C:\Users\qhata\global.json` pinning `10.0.302`. Not a repository change; the prior 19–77 non-deterministic Analysis failure swing is now a stable 4.
+
+Candidate state: pushed to `origin` as `8b9e064` on branch `issue-54-outbound-http-boundaries` (parents: merge `dc0cffb` + contributor `7a6dbde`). PR #59 updated with the repair summary comment (issuecomment-5510455833). Awaiting maintainer review.
