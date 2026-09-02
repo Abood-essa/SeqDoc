@@ -1,8 +1,8 @@
 {
   "baseline": "a3def8c1bb33f4fa9df83298e63dc87e9478b824",
-  "branch": null,
-  "checkpointId": null,
-  "checkpointPath": null,
+  "branch": "feature/issue-17-recovery-callbacks",
+  "checkpointId": "P17-R1",
+  "checkpointPath": "docs/work/workers/P17-R1",
   "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/17#issuecomment-5494748157",
   "dependencies": [
     "GH-16"
@@ -10,16 +10,16 @@
   "expectedGithubState": "OPEN",
   "id": "GH-17",
   "kind": "github-issue",
-  "lifecycle": "Ready",
-  "lifecycleLabel": "ready",
-  "nextAction": "Abood may branch from a3def8c1 and establish the frozen callback worker-context producer-to-observable red assertion.",
+  "lifecycle": "ResolvingFindings",
+  "lifecycleLabel": "resolving-findings",
+  "nextAction": "Abood must merge current main 24899f9, repair P17-R1-F1 through F3 with three focused producer-backed regressions, run the focused command, and stop at ReviewRequired.",
   "number": 17,
   "owner": "abood",
-  "pr": null,
+  "pr": "https://github.com/Bilaltariq41/SeqDoc/pull/64",
   "schemaVersion": 1,
   "selectedForExecution": false,
   "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/17",
-  "statusReason": "Issue #16 merged and the dependency-complete callback/worker readiness baseline passed.",
+  "statusReason": "The one independent review found P17-R1-F1 through F4; F4 is fixed by this canonical checkpoint and F1-F3 require one bounded contributor repair after current-main integration.",
   "title": "[Workers] Recovery state and callback boundaries",
   "track": "workers"
 }
