@@ -94,6 +94,8 @@ public static class DocumentationPlanner
     private const string MethodCallPhraseKey = "method-call";
     private const string ServiceCallPhraseKey = "service-call";
     private const string ClientOperationInvocationPhraseKey = "client-operation-invocation";
+    private const string OutboundHttpRequestPhraseKey = "outbound-http-request";
+    private const string HttpBoundaryParticipantKey = "http-boundary";
     private const string EntityQueryPhraseKey = "entity-query";
     private const string StateAssignmentPhraseKey = "state-assignment";
     private const string EntityMutationPhraseKey = "entity-mutation";
@@ -287,6 +289,29 @@ public static class DocumentationPlanner
                         BuildClientOperationInvocationText(node),
                         node.Evidence,
                         node.Certainty);
+                    break;
+                case ScenarioNodeKind.OutboundHttpRequest:
+                    switch (node.Presentation?.OutboundHttpRequestKind)
+                    {
+                        case OutboundHttpRequestKind.Get:
+                            CreatePhrase(
+                                graph, phraseOrdinals, phrases, WordingPhraseKind.Statement,
+                                OutboundHttpRequestPhraseKey,
+                                "The method calls HttpClient.GetAsync at an outbound HTTP GET request boundary.",
+                                node.Evidence, node.Certainty);
+                            break;
+                        case OutboundHttpRequestKind.Post:
+                            CreatePhrase(
+                                graph, phraseOrdinals, phrases, WordingPhraseKind.Statement,
+                                OutboundHttpRequestPhraseKey,
+                                "The method calls HttpClient.PostAsync at an outbound HTTP POST request boundary.",
+                                node.Evidence, node.Certainty);
+                            break;
+                        default:
+                            // Unknown/unkinded outbound HTTP node: withhold, no phrase.
+                            break;
+                    }
+
                     break;
                 case ScenarioNodeKind.MethodCall:
                     if (IsRecognizedLoggingCall(node))
@@ -609,6 +634,14 @@ public static class DocumentationPlanner
             ("service", serviceNode, serviceNode?.Presentation?.ImplementationTypeName, "Service", DiagramParticipantKind.Service),
             ("data", dataNode, dataNode?.Presentation?.DbContextTypeName, "Data store", DiagramParticipantKind.Data),
         ]);
+        var outboundHttpNode = graph.Nodes.FirstOrDefault(node =>
+            node.Kind == ScenarioNodeKind.OutboundHttpRequest
+            && node.Presentation?.OutboundHttpRequestKind is OutboundHttpRequestKind.Get or OutboundHttpRequestKind.Post
+            && !filter.HiddenNodes.Contains(node.Id));
+        if (outboundHttpNode is not null)
+        {
+            participantSources.Add((HttpBoundaryParticipantKey, outboundHttpNode, null, "HTTP boundary", DiagramParticipantKind.Unknown));
+        }
         foreach (var group in graph.Nodes
                      .Where(node => node.Kind is ScenarioNodeKind.MethodCall or ScenarioNodeKind.ClientOperationInvocation
                          && !string.IsNullOrWhiteSpace(node.Presentation?.TargetContainingTypeName)
@@ -764,6 +797,23 @@ public static class DocumentationPlanner
                     var callSource = graph.Nodes.FirstOrDefault(node => node.Id == edge.Source);
                     if (callTarget is null || filter.HiddenNodes.Contains(callTarget.Id))
                     {
+                        break;
+                    }
+                    if (callTarget.Kind == ScenarioNodeKind.OutboundHttpRequest)
+                    {
+                        var httpKind = callTarget.Presentation?.OutboundHttpRequestKind;
+                        if (httpKind is OutboundHttpRequestKind.Get or OutboundHttpRequestKind.Post)
+                        {
+                            messages.Add(CreateMessage(
+                                graph,
+                                edge,
+                                "action",
+                                HttpBoundaryParticipantKey,
+                                httpKind == OutboundHttpRequestKind.Get ? "HTTP GET request" : "HTTP POST request",
+                                DiagramMessageKind.Request));
+                            orderedMessageRefs.Add((edge.Target, CreateMessageRef(edge)));
+                        }
+
                         break;
                     }
                     var sourceKey = callSource?.Kind is ScenarioNodeKind.MethodCall or ScenarioNodeKind.ClientOperationInvocation
