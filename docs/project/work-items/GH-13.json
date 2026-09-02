@@ -3,7 +3,7 @@
   "branch": "acceptance/issue-13-persistence",
   "checkpointId": "I13",
   "checkpointPath": "docs/work/persistence/I13",
-  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/13#issuecomment-5509513784",
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/13#issuecomment-5511399631",
   "dependencies": [
     "GH-12"
   ],
@@ -12,14 +12,14 @@
   "kind": "acceptance",
   "lifecycle": "Active",
   "lifecycleLabel": "active",
-  "nextAction": "Ahmad may begin the acceptance-only I13 candidate from d09ed1c; stop on any identity drift or required semantic change.",
+  "nextAction": "Ahmad must merge the amendment commit, retain only authorized acceptance/evidence paths, and resume I13 from the re-frozen CreditTransfer identity without semantic changes.",
   "number": 13,
   "owner": "ahmad",
   "pr": null,
   "schemaVersion": 1,
   "selectedForExecution": true,
   "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/13",
-  "statusReason": "Active under the owner-corrected CreditTransfer target association: the Web project owns the six configured roots while Engine/EDMX remains the referenced persistence producer. All source, config, root, and semantic identities remain frozen.",
+  "statusReason": "The exact six-root CreditTransfer config, profile, fingerprint, and hash are re-frozen under owner disposition 5511399631; I13 resumes acceptance-only after this amendment merges.",
   "title": "[Persistence] Supplied-project persistence acceptance",
   "track": "persistence"
 }
