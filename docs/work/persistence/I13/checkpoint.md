@@ -10,6 +10,12 @@ https://github.com/Bilaltariq41/SeqDoc/issues/13#issuecomment-5507318372. Start 
 `e145f3c3a5a872ea4369142d2d652ff018a1c0d0`. GitHub Issue #13 and its readiness PASS comment are the frozen
 acceptance contract.
 
+The first required-lane run proved that the six-root config does not belong to the directly targeted Engine profile.
+Owner amendment https://github.com/Bilaltariq41/SeqDoc/issues/13#issuecomment-5509513784 corrects the configured CLI
+target to `CreditTransferWeb/CreditTransfer.csproj`; `CreditTransferEngine/CreditTransferEngine.csproj` and its EDMX
+remain the referenced EF6/EDMX producer identity. Source revision, config hash, roots, profile TFM, and semantics are
+unchanged. The repeated `SD4011` result is accepted red evidence; do not rerun the known-wrong target/config pair.
+
 ## Objective
 
 Prove the accepted persistence semantics against the four pinned supplied applications through the production CLI and
@@ -65,7 +71,7 @@ caches, build output, and generated documentation remain uncommitted.
 
 | Lane | Revision and target | Profile/config identity | Required boundary |
 |---|---|---|---|
-| CreditTransfer | `02b82a5115ef6e2d138c70670f28b959fb646f6e`; `Provided/CreditTransfer-om/CreditTransferEngine/CreditTransferEngine.csproj` | `Release/net9.0`; EF 6.4.4 / assembly 6.0.0.0; EDMX 2.0; `docs/examples/credit-transfer.yaml`, 6 exact roots, SHA-256 `0d6e8560f4dadbfe84834d7516dbb7cb9fcfb8e6904d17b7af7db2ec932a7801` | Exact EF6 query/mutation/save and conservative declaration-only EDMX claims; no FunctionImport execution claim. |
+| CreditTransfer | `02b82a5115ef6e2d138c70670f28b959fb646f6e`; direct configured target `Provided/CreditTransfer-om/CreditTransferWeb/CreditTransfer.csproj`; referenced producer `CreditTransferEngine/CreditTransferEngine.csproj` and `DataAccess/CreditTransfer.edmx` | `Release/net9.0`; EF 6.4.4 / assembly 6.0.0.0; EDMX 2.0; `docs/examples/credit-transfer.yaml`, 6 exact roots, SHA-256 `0d6e8560f4dadbfe84834d7516dbb7cb9fcfb8e6904d17b7af7db2ec932a7801` | Exact EF6 query/mutation/save and conservative declaration-only EDMX claims; no FunctionImport execution claim. |
 | FraudManagement | `7aabfef98fa4d47781bd8a98b9061ddcafb88836`; `Provided/FraudManagement/FraudManagement.sln` with `DAL/DAL.csproj` identity | `Release/net9.0`; EF Core SQL Server 9.0.11; `docs/examples/fraud-management.yaml`, 21 exact roots, SHA-256 `19c7ab43be2cfcdd80d57c3af91d907c24f4e6c221a5833aa0a2eb9144ce53c8` | Unsupported family/version behavior remains diagnostic or withheld unless already admitted exactly. |
 | SMSGateway | `7ca797356b1856eb815922ca977e9d85a569cb84`; `Provided/SMSGateway-om/Source/LP.SMSGateway.WindowsHost/LP.SMSGateway.WindowsHost.csproj` with Manager project identity | `Release/net9.0`; EF Core 9.0.0; `docs/examples/sms-gateway.yaml`, 14 exact roots, SHA-256 `47443392ea3e0d5df1855f47f88c547c62ca5bbf29f94c56156ce15a7f4e0951` | Exact profile/version isolation and deterministic conservative boundaries. Use an isolated worktree; do not consume tracked build-output dirt. |
 | TicketReservation | `1e25b6943a7dcfc443b8dca2ea946ee28afe811f`; `Provided/TicketReservation-Solution/TicketReservation.Api/TicketReservation.Api.csproj` | `Release/net10.0`; EF Core SQL Server 10.0.10; existing resolver, no configurable-root catalog | Preserve accepted PR #27 and #12 behavior with no runtime persistence claim. |
@@ -124,7 +130,7 @@ $env:SEQDOC_TEST_PROJECTS_ROOT = (Resolve-Path "../SeqDoc-TestProjects").Path; d
 ## Focused implementation command
 
 ```powershell
-$env:SEQDOC_TEST_PROJECTS_ROOT = (Resolve-Path "../SeqDoc-TestProjects").Path; dotnet build "$env:SEQDOC_TEST_PROJECTS_ROOT/Provided/CreditTransfer-om/CreditTransferEngine/CreditTransferEngine.csproj" -c Release --no-restore; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.AcceptanceTests/SeqDoc.AcceptanceTests.csproj -c Release --filter "FullyQualifiedName~PersistenceExternalCorpus|FullyQualifiedName~EntityFramework6EdmxProductionTests|FullyQualifiedName~BehaviorDocumentationFourFlow|FullyQualifiedName~PersistenceAcceptanceTests"
+$env:SEQDOC_TEST_PROJECTS_ROOT = (Resolve-Path "../SeqDoc-TestProjects").Path; dotnet build "$env:SEQDOC_TEST_PROJECTS_ROOT/Provided/CreditTransfer-om/CreditTransferWeb/CreditTransfer.csproj" -c Release --no-restore; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.AcceptanceTests/SeqDoc.AcceptanceTests.csproj -c Release --filter "FullyQualifiedName~PersistenceExternalCorpus|FullyQualifiedName~EntityFramework6EdmxProductionTests|FullyQualifiedName~BehaviorDocumentationFourFlow|FullyQualifiedName~PersistenceAcceptanceTests"
 ```
 
 Record nonzero discovery and exact counts. A missing corpus, compile/restore failure, wrong revision, stale identity,

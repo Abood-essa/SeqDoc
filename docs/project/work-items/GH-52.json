@@ -8,8 +8,8 @@
   "expectedGithubState": "OPEN",
   "id": "GH-52",
   "kind": "parent",
-  "lifecycle": "Blocked",
-  "lifecycleLabel": "blocked",
+  "lifecycle": "Active",
+  "lifecycleLabel": "active",
   "nextAction": null,
   "number": 52,
   "owner": "qais",
@@ -17,7 +17,7 @@
   "schemaVersion": 1,
   "selectedForExecution": false,
   "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/52",
-  "statusReason": "PR #48 is merged; blocked by unresolved PR #51 shared-path drift and the required current-main baseline refresh.",
+  "statusReason": "Active through semantic child GH-54 after PR #48/#51 resolution and the current-main readiness audit; acceptance child GH-53 remains blocked until GH-54 merges.",
   "title": "[Workstream] Outbound HTTP request boundaries",
   "track": "services"
 }
