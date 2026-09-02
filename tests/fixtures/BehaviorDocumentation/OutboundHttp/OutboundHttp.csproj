@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework></TargetFramework>
+    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+    <InformationalVersion>1.0.0+fixture</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <ContinuousIntegrationBuild>false</ContinuousIntegrationBuild>
+    <!-- Fixture exercises direct string-URI HttpClient.GetAsync/PostAsync boundaries on purpose;
+         the URI-object and reuse guidance analyzers are noise for this scenario only. -->
+    <NoWarn>$(NoWarn);CA1054;CA1707;CA1822;CA2234;CA5399;CA5400;CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OutboundHttpLookalike\OutboundHttpLookalike.csproj" Aliases="OutboundHttpLookalike" />
+  </ItemGroup>
+</Project>

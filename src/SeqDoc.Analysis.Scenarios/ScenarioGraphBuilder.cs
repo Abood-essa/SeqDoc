@@ -70,7 +70,7 @@ public static class ScenarioGraphBuilder
             evidence, certainty);
     }
 
-    public static ScenarioGraphSet Build(ScenarioAnalysisRequest request)
+    public static ScenarioGraphSet Build(ScenarioAnalysisRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         var frameworkEntries = request.FrameworkFacts.Facts
@@ -117,14 +117,14 @@ public static class ScenarioGraphBuilder
             .ToArray();
         var graphs = frameworkEntries
             .OrderBy(fact => fact.EntryPointId.Value, StringComparer.Ordinal)
-            .Select(fact => BuildGraph(request, fact))
+            .Select(fact => BuildGraph(request, fact, cancellationToken))
             .Concat(workerEntries
                 .OrderBy(fact => fact.EntryPointId.Value, StringComparer.Ordinal)
-                .Select(fact => BuildGraph(request, fact)))
+                .Select(fact => BuildGraph(request, fact, cancellationToken)))
             .Concat(serviceOperationEntries
                 .OrderBy(fact => fact.EntryPointId.Value, StringComparer.Ordinal)
-                .Select(fact => BuildGraph(request, fact)))
-            .Concat(configuredEntries.Select(entry => BuildGraph(request, entry)))
+                .Select(fact => BuildGraph(request, fact, cancellationToken)))
+            .Concat(configuredEntries.Select(entry => BuildGraph(request, entry, cancellationToken)))
             .OrderBy(graph => graph.EntryPoint.Value, StringComparer.Ordinal)
             .ToImmutableArray();
         var debugProjection = BuildSetDebugProjection(request, graphs);
@@ -273,7 +273,7 @@ public static class ScenarioGraphBuilder
                 request.ProgramIndex.IndexFingerprint,
                 StringComparison.Ordinal);
 
-    private static ScenarioGraph BuildGraph(ScenarioAnalysisRequest request, NormalizedEntry entryPoint)
+    private static ScenarioGraph BuildGraph(ScenarioAnalysisRequest request, NormalizedEntry entryPoint, CancellationToken cancellationToken = default)
     {
         var profileId = request.Profile.Id;
         var entryPointId = entryPoint.EntryPointId;
@@ -384,6 +384,7 @@ public static class ScenarioGraphBuilder
             var directExpansion = AddConfiguredDirectCalls(request, entryPoint, profileId, actionNode, nodes, edges, diagnostics,
                 configuredClientInvocationOperations);
             AddServiceClientInvocations(request, entryPoint, profileId, actionNode, nodes, edges, diagnostics);
+            AddOutboundHttpRequests(request, entryPoint, profileId, actionNode, nodes, edges, diagnostics, cancellationToken);
 
             JoinEntityQueries(request, profileId, entryPointId, entryPoint.RootMethod, actionNode, nodes, edges, diagnostics);
             JoinStateAssignments(request, profileId, entryPointId, entryPoint.RootMethod, actionNode, nodes, edges);
@@ -546,6 +547,7 @@ public static class ScenarioGraphBuilder
                 : new HashSet<OperationId>();
             AddRootDirectCalls(request, entryPoint, profileId, actionNode, nodes, edges, clientInvocationOperations);
             AddServiceClientInvocations(request, entryPoint, profileId, actionNode, nodes, edges, diagnostics);
+            AddOutboundHttpRequests(request, entryPoint, profileId, actionNode, nodes, edges, diagnostics, cancellationToken);
             var rootTopology = BuildTopology(
                 request,
                 profileId,
@@ -647,6 +649,7 @@ public static class ScenarioGraphBuilder
         }
 
         var rootWithheldPersistenceAssignments = new HashSet<ScenarioNodeId>();
+        AddOutboundHttpRequests(request, entryPoint, profileId, actionNode, nodes, edges, diagnostics, cancellationToken);
         var topology = BuildTopology(
             request,
             profileId,
@@ -1079,6 +1082,184 @@ public static class ScenarioGraphBuilder
             edges.Add(CreateEdge(profileId, entryPoint.EntryPointId, actionNode, node, ScenarioEdgeKind.Call,
                 "outbound service-client call", evidence, certainty, ordinal));
         }
+    }
+
+    private const string OutboundHttpConflictCode = "SC-HTTP-CONFLICT";
+
+    /// <summary>
+    /// Joins each compiler-proven <see cref="OutboundHttpRequestFact"/> whose caller is the scenario
+    /// root's own method with exactly one Method Flow platform invocation and one Call Graph site for
+    /// its operation. Unlike <see cref="DirectCalls"/>, this dedicated admission REQUIRES
+    /// <c>IsPlatformTarget</c>. Zero flow candidates for the operation is silent; a flow invocation that
+    /// exists but cannot be admitted exactly (ambiguous/incomplete resolution, not a platform target)
+    /// is withheld under the existing <c>SC013</c> topology diagnostic; agreeing duplicate facts merge
+    /// to one node with unioned evidence and the weakest certainty; conflicting facts for one operation
+    /// withhold with one deterministic <see cref="OutboundHttpConflictCode"/>. The typed node replaces
+    /// any generic direct-call node for the same site (a platform call never becomes one anyway).
+    /// </summary>
+    private static void AddOutboundHttpRequests(
+        ScenarioAnalysisRequest request,
+        NormalizedEntry entryPoint,
+        CompilationProfileId profileId,
+        ScenarioNode actionNode,
+        List<ScenarioNode> nodes,
+        List<ScenarioEdge> edges,
+        List<ScenarioGraphDiagnostic> diagnostics,
+        CancellationToken cancellationToken)
+    {
+        if (!FrameworkFactsBound(request))
+        {
+            return;
+        }
+
+        var facts = request.FrameworkFacts.Facts.OfType<OutboundHttpRequestFact>()
+            .Where(fact => fact.CallerMethod == entryPoint.RootMethod
+                && fact.RequestKind != OutboundHttpRequestKind.Unknown
+                && !fact.Evidence.IsDefaultOrEmpty
+                && fact.Certainty != CertaintyLevel.Unknown)
+            .ToArray();
+        if (facts.Length == 0)
+        {
+            return;
+        }
+
+        var flow = request.Behavior.MethodFlows.SingleOrDefault(item => item.Method == entryPoint.RootMethod);
+        var flowOperations = flow is null
+            ? new HashSet<OperationId>()
+            : flow.Nodes.OfType<InvocationFlowNode>().Select(invocation => invocation.Operation).ToHashSet();
+
+        var platformCalls = flow is null
+            ? new Dictionary<OperationId, (InvocationFlowNode Invocation, CallSite Site)>()
+            : flow.Nodes.OfType<InvocationFlowNode>()
+                .GroupBy(invocation => invocation.Operation)
+                .Where(group => InvocationFactsAgree(group))
+                .Select(group => group.OrderBy(invocation => invocation.Id.Value, StringComparer.Ordinal).First())
+                .Select(invocation => (Invocation: invocation, Site: CanonicalSite(request, flow, invocation)))
+                .Where(item => item.Site is not null && IsPlatformDirectExact(item.Invocation, item.Site!))
+                .ToDictionary(item => item.Invocation.Operation, item => (Invocation: item.Invocation, Site: item.Site!));
+
+        var groups = facts
+            .GroupBy(fact => fact.InvocationOperation)
+            .OrderBy(group => group.Key.Value, StringComparer.Ordinal)
+            .ToArray();
+
+        var ordinal = 0;
+        foreach (var group in groups)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var operation = group.Key;
+            var groupFacts = group.OrderBy(fact => fact.Id.Value, StringComparer.Ordinal).ToArray();
+
+            if (groupFacts.Length > 1 && !OutboundHttpFactsAgree(groupFacts))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    profileId,
+                    entryPoint.EntryPointId,
+                    OutboundHttpConflictCode,
+                    "Multiple compiler-proven outbound HTTP request facts disagree for the same call site.",
+                    $"operation={operation.Value}; rows={string.Join(" | ", groupFacts.Select(OutboundHttpFactRow).Distinct(StringComparer.Ordinal).OrderBy(row => row, StringComparer.Ordinal))}",
+                    Combine(groupFacts.Select(fact => fact.Evidence).ToArray()),
+                    groupFacts.Select(fact => fact.Certainty).Max()));
+                continue;
+            }
+
+            if (!platformCalls.TryGetValue(operation, out var call))
+            {
+                if (flowOperations.Contains(operation))
+                {
+                    // The canonical EmitOnce("SC013", ...) topology withhold emitter lives inside
+                    // BuildTopology's callee-composition closure and cannot be reached from this
+                    // root-local join. Emit the same code with the canonical
+                    // methodoperationreason detail shape used by the bespoke SC013 emits in
+                    // BuildTopology, and attach the fact-group evidence, so an outbound-HTTP
+                    // withhold is indistinguishable in form from any other SC013 topology withhold.
+                    var withholdEvidence = Combine(groupFacts.Select(fact => fact.Evidence).ToArray());
+                    diagnostics.Add(CreateDiagnostic(
+                        profileId,
+                        entryPoint.EntryPointId,
+                        "SC013",
+                        "The material scenario node is withheld because its unsupported call-site topology cannot place the claim safely.",
+                        $"{entryPoint.RootMethod.Value}{operation.Value}outbound-http-not-platform-direct-exact",
+                        withholdEvidence,
+                        LeastConfident(groupFacts.Select(fact => fact.Certainty).Max(), withholdEvidence)));
+                }
+
+                continue;
+            }
+
+            var factEvidence = Combine(groupFacts.Select(fact => fact.Evidence).ToArray());
+            var evidence = Combine(
+                factEvidence,
+                call.Invocation.Evidence,
+                call.Site.Evidence,
+                call.Site.Resolution.Evidence);
+            var certainty = LeastConfident(groupFacts.Select(fact => fact.Certainty).Max(), evidence);
+            var kind = groupFacts[0].RequestKind;
+
+            var node = CreateNodeWithPresentation(
+                profileId,
+                entryPoint.EntryPointId,
+                ScenarioNodeKind.OutboundHttpRequest,
+                $"outbound-http:{operation.Value}",
+                groupFacts[0].CallerMethod,
+                operation,
+                "outbound HTTP request boundary",
+                new ScenarioNodePresentation(OutboundHttpRequestKind: kind),
+                evidence,
+                certainty,
+                ordinal);
+            nodes.Add(node);
+            edges.Add(CreateEdge(
+                profileId,
+                entryPoint.EntryPointId,
+                actionNode,
+                node,
+                ScenarioEdgeKind.Call,
+                "outbound HTTP request",
+                evidence,
+                certainty,
+                ordinal));
+            ordinal++;
+        }
+    }
+
+    private static bool IsPlatformDirectExact(InvocationFlowNode invocation, CallSite site)
+        => invocation.Certainty == CertaintyLevel.Exact && !invocation.Evidence.IsDefaultOrEmpty && invocation.IsSourceBacked
+            && invocation.IsPlatformTarget
+            && invocation.Target is not null
+            && !invocation.IsInsideNestedFunction && !invocation.IsDynamic
+            && !invocation.IsDelegateOrEventInvoke && !invocation.IsConstructor
+            && site.DeclaredTarget == invocation.Target && site.Certainty == CertaintyLevel.Exact && !site.Evidence.IsDefaultOrEmpty
+            && site.Resolution.Kind == CallResolutionKind.DirectExact && site.Resolution.IsComplete
+            && site.Resolution.Candidates.Length == 1 && site.Resolution.Candidates[0] == invocation.Target
+            && !site.Resolution.Evidence.IsDefaultOrEmpty
+            && invocation.Evidence.All(item => item.Certainty == CertaintyLevel.Exact)
+            && site.Evidence.All(item => item.Certainty == CertaintyLevel.Exact)
+            && site.Resolution.Evidence.All(item => item.Certainty == CertaintyLevel.Exact);
+
+    private static bool OutboundHttpFactsAgree(OutboundHttpRequestFact[] candidates)
+    {
+        var first = OutboundHttpFactRow(candidates[0]);
+        return candidates.All(candidate => string.Equals(OutboundHttpFactRow(candidate), first, StringComparison.Ordinal));
+    }
+
+    private static string OutboundHttpFactRow(OutboundHttpRequestFact fact)
+    {
+        var identity = fact.FrameworkMethodIdentity;
+        var parameters = identity.Parameters.IsDefaultOrEmpty
+            ? string.Empty
+            : string.Join(",", identity.Parameters.Select(parameter => $"{parameter.RefKind} {parameter.FullyQualifiedType}"));
+        return string.Join(
+            "|",
+            fact.RequestKind.ToString(),
+            identity.AssemblyIdentity,
+            identity.ContainingMetadataType,
+            identity.MethodMetadataName,
+            identity.GenericArity.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            identity.ReturnType,
+            identity.AssemblyVersion,
+            identity.AssemblyPublicKeyToken,
+            parameters);
     }
 
     private static ScenarioDirectCallExpansion AddConfiguredDirectCalls(
@@ -4971,6 +5152,7 @@ public static class ScenarioGraphBuilder
     private static bool IsMaterialTopologyNode(ScenarioNode node)
         => node.Kind is ScenarioNodeKind.ServiceCall
             or ScenarioNodeKind.ClientOperationInvocation
+            or ScenarioNodeKind.OutboundHttpRequest
             or ScenarioNodeKind.MethodCall
             or ScenarioNodeKind.EntityQuery
             or ScenarioNodeKind.StateAssignment

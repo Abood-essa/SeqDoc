@@ -2,7 +2,7 @@
 
 ## State
 
-`Verifying`
+`Closed`
 
 Owner activation was granted at https://github.com/Bilaltariq41/SeqDoc/issues/58#issuecomment-5508271854 from
 `origin/main` at `c6216c25c449b95ac4bb7fce17eff1d37d97c3da`. Issue #58 is the frozen mechanical contract.
@@ -92,3 +92,6 @@ MediatR, EF, CoreWCF, and FusionCache fixture dependencies plus the absent exter
 present. The first gate process exceeded the runner's 120-second operational limit; the exact unchanged command was
 rerun with a sufficient timeout and completed in 8 minutes 2 seconds. The baseline comparison completed in 8 minutes
 20 seconds.
+
+PR #60 merged as `1fcbe0dbde0bfc59a71fdf9fab2ff62d6a9f0bf2`. The merged fixture repair is the only
+revision authorized for P17-R1 application. WDL1 is closed and local Orchestrator selection returns to active I13.

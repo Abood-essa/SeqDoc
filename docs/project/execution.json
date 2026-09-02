@@ -1,10 +1,10 @@
 {
-  "activeCheckpointId": "WDL1",
-  "activeCheckpointPath": "docs/work/governance/WDL1",
+  "activeCheckpointId": "I13",
+  "activeCheckpointPath": "docs/work/persistence/I13",
   "activePlanPath": null,
   "generatedBy": "tools/governance/work_state.py",
   "mode": "active",
-  "nextAction": "Run the declared complete Analysis final gate once, then close and merge WDL1 if no candidate regression remains.",
+  "nextAction": "Ahmad must merge the amendment commit, retain only authorized acceptance/evidence paths, and resume I13 from the re-frozen CreditTransfer identity without semantic changes.",
   "schemaVersion": 1,
-  "sourceId": "GH-58"
+  "sourceId": "GH-13"
 }

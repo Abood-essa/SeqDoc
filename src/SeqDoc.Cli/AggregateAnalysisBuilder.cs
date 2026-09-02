@@ -16,6 +16,7 @@ using SeqDoc.FrameworkModels.CoreWcf;
 using SeqDoc.FrameworkModels.EntityFramework;
 using SeqDoc.FrameworkModels.FusionCache;
 using SeqDoc.FrameworkModels.MediatR;
+using SeqDoc.FrameworkModels.OutboundHttp;
 using SeqDoc.FrameworkModels.Workers;
 
 namespace SeqDoc.Cli;
@@ -58,6 +59,7 @@ internal sealed class AggregateAnalysisBuilder : IAnalysisBuilder
             new MediatRDispatchModel(),
             new HostedWorkerModel(),
             new SchedulerModel(),
+            new HttpClientOutboundModel(),
         ]);
     }
 
@@ -122,7 +124,8 @@ internal sealed class AggregateAnalysisBuilder : IAnalysisBuilder
             artifacts.PredicateSemanticFacts,
             artifacts.MinimalApiHandlerFacts,
              ConfiguredRoots: configuredRoots,
-             DiagramBudget: diagramBudget));
+             DiagramBudget: diagramBudget),
+            cancellationToken);
 
         return ApplicationResult.Success(
             new AnalysisProfileCandidate(

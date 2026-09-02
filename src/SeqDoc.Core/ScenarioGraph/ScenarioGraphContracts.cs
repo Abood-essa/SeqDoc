@@ -33,6 +33,15 @@ public enum ScenarioNodeKind
     /// compiler-proven call through a client boundary, never in-process dispatch.
     /// </summary>
     ClientOperationInvocation,
+
+    /// <summary>
+    /// An admitted outbound HTTP request boundary: an exact compiler-proven direct
+    /// <c>System.Net.Http.HttpClient</c> <c>GetAsync(string)</c>/<c>PostAsync(string, HttpContent)</c>
+    /// call. Distinct from <see cref="ClientOperationInvocation"/> (a WCF client boundary) and
+    /// <see cref="MethodCall"/> (a generic in-project direct call); the node never carries the URI
+    /// argument and never claims a response.
+    /// </summary>
+    OutboundHttpRequest,
 }
 
 /// <summary>
@@ -301,7 +310,8 @@ public sealed record ScenarioNodePresentation(
     bool ResultIsAwaited = false,
     string? ResultBindingName = null,
     string? DeclaredResultTypeName = null,
-    string? DeclaredFaultTypeNames = null);
+    string? DeclaredFaultTypeNames = null,
+    OutboundHttpRequestKind? OutboundHttpRequestKind = null);
 
 /// <summary>
 /// One evidence-backed scenario-graph edge connecting two nodes. Every edge carries non-empty
