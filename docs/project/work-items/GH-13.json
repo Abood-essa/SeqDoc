@@ -3,7 +3,7 @@
   "branch": "acceptance/issue-13-persistence",
   "checkpointId": "I13",
   "checkpointPath": "docs/work/persistence/I13",
-  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/13#issuecomment-5507318372",
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/13#issuecomment-5509513784",
   "dependencies": [
     "GH-12"
   ],
@@ -19,7 +19,7 @@
   "schemaVersion": 1,
   "selectedForExecution": true,
   "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/13",
-  "statusReason": "Owner activated and selected I13 after the readiness PASS; all four frozen external identities are verified and production semantics remain read-only.",
+  "statusReason": "Active under the owner-corrected CreditTransfer target association: the Web project owns the six configured roots while Engine/EDMX remains the referenced persistence producer. All source, config, root, and semantic identities remain frozen.",
   "title": "[Persistence] Supplied-project persistence acceptance",
   "track": "persistence"
 }
