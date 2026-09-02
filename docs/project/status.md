@@ -17,8 +17,16 @@ Analysis was 257/257.
 PR #32 is closed and unmerged at superseded head `91ccdf373be45cace843db39f4616a2425ce70c7`; its contributor work
 is preserved, but future Issue #16 work must use a fresh branch and selectively reuse compatible changes. Issue #8 is
 open and ready as acceptance-only work, pending Qais's mandatory `Readiness: PASS` comment and exact external-lane
-evidence. Canonical lifecycle for Issues #11, #12, and #16 is recorded in [`work-items/`](work-items/); #13 is blocked by persistence prerequisites, and #17/#18 by worker
-prerequisites. No product checkpoint is active; public ready status does not make durable execution active.
+evidence. Canonical lifecycle for Issues #11, #12, #13, and #16 is recorded in [`work-items/`](work-items/); #13 is
+ready after its persistence prerequisites closed, and #17/#18 remain governed by their worker prerequisites. No product
+checkpoint is active; public ready status does not make durable execution active.
+
+Issue #12 is closed after PR #51 merged as `e145f3c3a5a872ea4369142d2d652ff018a1c0d0`. Ahmad Krarha's implementation
+commits remain intact and attributed. One independent review ran; all findings and the final fixture regression were
+resolved under explicit owner authorization, focused verification passed, and the authorized final gate found no
+Issue #12 regression. Complete-lane failures retained only the recorded current-main, local SDK, and unavailable
+external-project signatures. No second independent review ran. Issue #13's four frozen external revisions, projects,
+and checked-in root configurations were reverified and it is now ready for acceptance-only work.
 
 The clean canonical repository begins at `42f8819` (`Initial public release`) and contains the accepted product
 snapshot through selected dispatch handler-flow expansion. The historical repository remains historical evidence;

@@ -1,5 +1,5 @@
 {
-  "baseline": null,
+  "baseline": "e145f3c3a5a872ea4369142d2d652ff018a1c0d0",
   "branch": null,
   "checkpointId": null,
   "checkpointPath": null,
@@ -10,8 +10,8 @@
   "expectedGithubState": "OPEN",
   "id": "GH-13",
   "kind": "acceptance",
-  "lifecycle": "Blocked",
-  "lifecycleLabel": "blocked",
+  "lifecycle": "Ready",
+  "lifecycleLabel": "ready",
   "nextAction": null,
   "number": 13,
   "owner": "ahmad",
@@ -19,7 +19,7 @@
   "schemaVersion": 1,
   "selectedForExecution": false,
   "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/13",
-  "statusReason": "Blocked by persistence implementation.",
+  "statusReason": "Ready after accepted #11 and merged #12. Read-only baseline verification matched all four frozen external revisions and project identities; checked-in CreditTransfer, FraudManagement, and SMSGateway configurations retain 6, 21, and 14 exact roots with unchanged hashes. External checkout dirt is confined to generated/tooling files and does not alter the frozen source, project, or configuration identities.",
   "title": "[Persistence] Supplied-project persistence acceptance",
   "track": "persistence"
 }
