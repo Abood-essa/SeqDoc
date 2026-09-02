@@ -85,3 +85,10 @@ dotnet test tests/SeqDoc.Analysis.Tests/SeqDoc.Analysis.Tests.csproj -c Release
 
 Also run `git diff --check` and verify no path beyond the amended seven-path checkpoint allowlist changed. Record SDK/NuGet
 identity, exact counts, any baseline failure signature, and the merge SHA.
+
+The complete Analysis gate ran after review resolution. Candidate and untouched `c6216c25` baseline each reported
+205 passed, 69 failed, and 274 total. All 69 failed test names were identical; their signatures are unavailable
+MediatR, EF, CoreWCF, and FusionCache fixture dependencies plus the absent external corpus. No WDL1 regression was
+present. The first gate process exceeded the runner's 120-second operational limit; the exact unchanged command was
+rerun with a sufficient timeout and completed in 8 minutes 2 seconds. The baseline comparison completed in 8 minutes
+20 seconds.
