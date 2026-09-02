@@ -2,7 +2,7 @@
 
 ## State
 
-`Building`
+`Verifying`
 
 Issue #54 is the frozen semantic contract. Owner continuation authorization and current-main readiness PASS are at
 https://github.com/Bilaltariq41/SeqDoc/issues/54#issuecomment-5509514090. The accepted baseline is
@@ -120,3 +120,16 @@ with zero warnings/errors. The historical final gate recorded Core 93/93, Framew
 with four unchanged CoreWCF baseline failures, Scenarios 243/243, Wording 133/133, Rendering 77/77, and CLI 24/24.
 It identified local SDK relocation noise and recorded candidate publication as `8b9e064`. These records are retained
 as historical evidence only; this repair did not run or authorize the final gate.
+
+## Maintainer-takeover final evidence
+
+The owner authorized the maintainer takeover. Current main was merged at `38a4d30e31cbc93bda434ecf16ebbd76b951022b`.
+The locked fixture restore lane passed `29/29` (27 baseline fixtures plus the two QHTTP fixtures), and the Release
+build passed with `0` warnings/errors. Focused Analysis repair verification passed `7/7`.
+
+The complete Analysis gate timed out after five non-QHTTP failures were observed: one unavailable TicketReservation
+corpus lookup and the same four inherited CoreWCF failures. Downstream continuation passed Scenarios `243/243`,
+Wording `133/133`, Rendering `77/77`, and CLI `24/24`. The worktree was clean at completion of takeover verification.
+
+No QHTTP-scoped regression remained. The environment limitation is accepted on the exact named boundaries above and
+the prior contributor complete lane. No further test rerun is required before merge.
