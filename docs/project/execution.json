@@ -1,10 +1,10 @@
 {
-  "activeCheckpointId": "WDL1",
-  "activeCheckpointPath": "docs/work/governance/WDL1",
+  "activeCheckpointId": "I13",
+  "activeCheckpointPath": "docs/work/persistence/I13",
   "activePlanPath": null,
   "generatedBy": "tools/governance/work_state.py",
   "mode": "active",
-  "nextAction": "Run the declared complete Analysis final gate once, then close and merge WDL1 if no candidate regression remains.",
+  "nextAction": "Ahmad may begin the acceptance-only I13 candidate from d09ed1c; stop on any identity drift or required semantic change.",
   "schemaVersion": 1,
-  "sourceId": "GH-58"
+  "sourceId": "GH-13"
 }
