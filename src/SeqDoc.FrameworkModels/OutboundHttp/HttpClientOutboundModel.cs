@@ -14,8 +14,12 @@ namespace SeqDoc.FrameworkModels.OutboundHttp;
 /// <c>10.0.0.0</c> for <c>net10.0</c>. A recognizable-family call (assembly name, token, containing
 /// type, method name in GetAsync/PostAsync/SendAsync, arity 0) whose profile assembly version matches
 /// but whose overload is not an admitted row emits exactly one deterministic <c>SEQHTTP001</c>
-/// warning and no fact. A partial, foreign, or version-mismatched identity stays silent. This model
-/// never reads the URI argument and never claims a request completed.
+/// warning and no fact. For an applicable <c>net9.0</c>/<c>net10.0</c> profile, a recognizable-family
+/// call whose assembly version is wrong or missing is itself a recognized-but-unsupported shape and
+/// emits exactly one <c>SEQHTTP001</c> and no fact. Only an identity that fails family recognition
+/// (missing or foreign assembly name, token, containing type, method, or arity), a non-<c>net9.0</c>/
+/// <c>net10.0</c> profile, or a missing supplied-ordinal projection stays silent with no diagnostic.
+/// This model never reads the URI argument and never claims a request completed.
 /// </summary>
 public sealed class HttpClientOutboundModel : IFrameworkBehaviorModel
 {
@@ -81,9 +85,15 @@ public sealed class HttpClientOutboundModel : IFrameworkBehaviorModel
             return ValueTask.FromResult(ModelResult.Unrecognized);
         }
 
-        var ordinals = operation.SuppliedParameterOrdinals.IsDefault
-            ? ImmutableArray<int>.Empty
-            : operation.SuppliedParameterOrdinals;
+        // Missing required admission field: a recognizable family with no supplied-ordinal projection
+        // fails closed silently (no fact, no SEQHTTP001). A present-but-unsupported ordinal set stays
+        // on the recognized-but-unsupported path below.
+        if (operation.SuppliedParameterOrdinals.IsDefault)
+        {
+            return ValueTask.FromResult(ModelResult.Unrecognized);
+        }
+
+        var ordinals = operation.SuppliedParameterOrdinals;
 
         // Atomic profile/assembly-version admission: no range, nearest, facade, or missing version.
         // Version is NOT a family-recognition component, so a recognizable-family call on an

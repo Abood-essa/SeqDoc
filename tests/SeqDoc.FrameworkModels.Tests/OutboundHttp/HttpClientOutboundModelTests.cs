@@ -225,12 +225,39 @@ public sealed class HttpClientOutboundModelTests
         // unknown certainty: no fact, fail closed.
         Assert.Empty((await model.AnalyzeOperationAsync(
             Operation(identity: null, [0]), Context(), CancellationToken.None)).Facts);
-        Assert.Empty((await model.AnalyzeOperationAsync(
-            Operation(GetIdentity(), suppliedOrdinals: default), Context(), CancellationToken.None)).Facts);
+        // A missing supplied-ordinal projection is a missing required admission field: it fails closed
+        // fully silent — no fact AND no SEQHTTP001 (never coerced into a mismatched-ordinals diagnostic).
+        var missingOrdinals = await model.AnalyzeOperationAsync(
+            Operation(GetIdentity(), suppliedOrdinals: default), Context(), CancellationToken.None);
+        Assert.Empty(missingOrdinals.Facts);
+        Assert.DoesNotContain(missingOrdinals.Diagnostics, d => d.Code == OutboundHttpDiagnosticCodes.DiagnosticCode);
         Assert.Empty((await model.AnalyzeOperationAsync(
             Operation(GetIdentity(), [0], evidence: ImmutableArray<EvidenceRef>.Empty), Context(), CancellationToken.None)).Facts);
         Assert.Empty((await model.AnalyzeOperationAsync(
             Operation(GetIdentity(), [0], certainty: CertaintyLevel.Unknown), Context(), CancellationToken.None)).Facts);
+    }
+
+    [Fact]
+    public async Task Seqhttp001IdentityIsReasonIndependentForTheSameProfileAndOperation()
+    {
+        var model = new HttpClientOutboundModel();
+
+        // Same profile + same operation subject, two different unsupported reasons (send-async vs a
+        // wrong-return-type GetAsync). The explanatory reason must not contribute to the diagnostic ID.
+        var sendAsync = GetIdentity() with
+        {
+            MethodMetadataName = "SendAsync",
+            Parameters = [new(ParameterRefKind.None, "System.Net.Http.HttpRequestMessage")],
+        };
+        var wrongReturn = GetIdentity() with { ReturnType = "System.Threading.Tasks.Task<System.String>" };
+
+        var first = Assert.Single((await model.AnalyzeOperationAsync(
+            Operation(sendAsync, [0]), Context(), CancellationToken.None)).Diagnostics);
+        var second = Assert.Single((await model.AnalyzeOperationAsync(
+            Operation(wrongReturn, [0]), Context(), CancellationToken.None)).Diagnostics);
+
+        Assert.Equal(first.Id, second.Id);
+        Assert.NotEqual(first.InternalDetail, second.InternalDetail);
     }
 
     [Fact]

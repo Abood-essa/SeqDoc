@@ -64,7 +64,7 @@ No additional path is authorized without owner amendment.
 
 ## Existing relevant coverage
 
-PR #59 adds 24 focused tests across Core, FrameworkModels, Analysis, Scenarios, Wording, and CLI, including real Roslyn,
+PR #59 adds ~24 candidate `[Fact]` tests (the `FullyQualifiedName~OutboundHttp` focused filter additionally exercises pre-existing shared-lane tests, so it reports more), including real Roslyn,
 foreign-assembly, unsupported overload/version, conflict, topology, credential, deterministic output, and contract
 compatibility coverage. Existing current-main CoreWCF failures are baseline evidence only.
 
@@ -91,3 +91,41 @@ Record every disposition and run the final gate only after findings are resolved
 ```powershell
 dotnet build SeqDoc.slnx -c Release; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.Core.Tests/SeqDoc.Core.Tests.csproj -c Release --no-build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.FrameworkModels.Tests/SeqDoc.FrameworkModels.Tests.csproj -c Release --no-build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.Analysis.Tests/SeqDoc.Analysis.Tests.csproj -c Release --no-build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.Scenarios.Tests/SeqDoc.Scenarios.Tests.csproj -c Release --no-build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.Wording.Tests/SeqDoc.Wording.Tests.csproj -c Release --no-build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.Rendering.Tests/SeqDoc.Rendering.Tests.csproj -c Release --no-build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet test tests/SeqDoc.Cli.Tests/SeqDoc.Cli.Tests.csproj -c Release --no-build
 ```
+
+## Repair round 2 (Copilot findings, post-activation)
+
+State: `ReviewRequired` pending Orchestrator inspection and independent Reviewer.
+
+| Finding | Disposition | Production repair | Test | Observable assertion | Residual |
+| --- | --- | --- | --- | --- | --- |
+| 1. Missing `SuppliedParameterOrdinals` projection coerced to empty array -> spurious `SEQHTTP001` (`MismatchedSuppliedOrdinals`) | Fixed | `HttpClientOutboundModel.cs` AnalyzeOperationAsync: after family-recognition and `requiredVersion is null` checks, added guard `if (operation.SuppliedParameterOrdinals.IsDefault) return ModelResult.Unrecognized;` then `var ordinals = operation.SuppliedParameterOrdinals;` (removed empty-array coercion). Present-but-wrong / present-but-empty ordinal sets still reach `SEQHTTP001` unchanged. | Extended `PartialIdentityForeignLookalikeAndMissingRequiredFieldsFailClosedSilently` with `missingOrdinals` case | `Assert.Empty(missingOrdinals.Facts)` AND `Assert.DoesNotContain(... d.Code == DiagnosticCode)` | none |
+| 2. `SEQHTTP001` identity included `reasonText` (`subjectId = operationId + US + reasonText`), contradicting file contract | Fixed | `HttpClientOutboundModelDiagnostics.cs`: `var subjectId = operationId;` (profileId already a separate `DiagnosticIdentityDescriptor` field). `reasonText` retained in `internalDetail` (`reason={reasonText}`). Code, severity, summary, messages, internalDetail format unchanged. | Added `Seqhttp001IdentityIsReasonIndependentForTheSameProfileAndOperation` (driven through the model: `internal` codes not visible to test project, no `InternalsVisibleTo`) | Two operations, same `operation.Id`, reasons send-async vs wrong-return: `Assert.Equal(first.Id, second.Id)` and `Assert.NotEqual(first.InternalDetail, second.InternalDetail)` | none |
+| 3. XML doc claimed "version-mismatched identity stays silent", contradicting the emitted `SEQHTTP001` | Fixed | `HttpClientOutboundModel.cs` `<summary>`: replaced the "partial, foreign, or version-mismatched identity stays silent" sentence with accurate wording — wrong/missing assembly version on an applicable net9/net10 profile emits one `SEQHTTP001`; only failed family recognition, non-net9/net10 profile, or missing supplied-ordinal projection stays silent. | Doc-only; covered by existing `AtomicProfileAssemblyVersionCrossingEmitsWrongAssemblyVersionSeqHttp001AndNoFact` + new fix-1 test | n/a | none |
+
+No existing assertion required changing. No soft-budget exception (2 assertions added; one extends an existing test, one new `[Fact]`).
+
+Focused verification (build, no `--no-build`), all `FullyQualifiedName~OutboundHttp`:
+
+| Project | Passed | Failed |
+| --- | --- | --- |
+| SeqDoc.Core.Tests | 2 | 0 |
+| SeqDoc.FrameworkModels.Tests | 7 | 0 |
+| SeqDoc.Analysis.Tests | 5 | 0 |
+| SeqDoc.Scenarios.Tests | 4 | 0 |
+| SeqDoc.Wording.Tests | 4 | 0 |
+| SeqDoc.Cli.Tests | 3 | 0 |
+
+Total 25 (was 23 matching the filter; +2 this round). Final gate NOT run (deferred to Orchestrator per Review boundary).
+
+## Independent review (reviewer-medium, post-activation repair) — dispositions
+
+Verdict: **Accept as-is.** Zero Blocking/Major/Minor findings. Two Observations, both dispositioned without code change:
+
+| Finding | Severity | Disposition |
+|---|---|---|
+| Capsule "24 focused tests" narrative imprecise vs the FQN-substring focused filter (matches 23 pre-repair / 25 now, including pre-existing shared-lane tests whose names contain "OutboundHttp"). All six projects `Passed!` with `Skipped: 0`; every candidate test file compiled; no intended test lost or undiscovered. | Observation | Fixed — coverage sentence in "Existing relevant coverage" reworded; no code change. |
+| `OperationDescriptor.SuppliedParameterOrdinals` defaults to `default` (`IsDefault == true`). Fix 1's guard correctly fails closed silently on that. The sole production producer `FrameworkAnalysisRequestProjector.ProjectSuppliedParameterOrdinals` always returns a non-default array (`[]` or a populated ascending set), so no real admissible call is silenced. Residual: a hypothetical future second `OperationDescriptor` producer that forgets to project this field would silently drop admissible calls. | Observation | Accepted; out of issue #54 scope. Noted for the maintainer as a possible projector-side assert / record-field comment in future work. |
+
+Repair-round-2 findings 1–3 (Copilot) verified correctly and completely fixed with no weakened assertions; the merge of current `main` is sound and non-destructive (contributor commit `7a6dbde` preserved as an ancestor); scope is exactly the 3 authorized files plus this capsule. All five `AGENTS.md` proof gates hold on the complete candidate.
+
+Focused verification (build, `--filter FullyQualifiedName~OutboundHttp`): Core 2/2, FrameworkModels 7/7, Analysis 5/5, Scenarios 4/4, Wording 4/4, Cli 3/3 — 25/25. `dotnet build SeqDoc.slnx -c Release` 0 warnings / 0 errors. Final 7-suite gate: pending (findings now resolved).

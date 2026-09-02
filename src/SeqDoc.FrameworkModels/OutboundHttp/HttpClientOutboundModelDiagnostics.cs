@@ -49,7 +49,7 @@ public static class OutboundHttpDiagnosticCodes
             _ => "wrong-shape",
         };
 
-        var subjectId = $"{operationId}{reasonText}";
+        var subjectId = operationId;
         var id = StableIdentity.CreateDiagnosticId(new DiagnosticIdentityDescriptor(
             DiagnosticCode,
             AnalysisStage.FrameworkModel,
