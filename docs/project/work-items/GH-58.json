@@ -1,0 +1,23 @@
+{
+  "baseline": "c6216c25c449b95ac4bb7fce17eff1d37d97c3da",
+  "branch": "fixture/windowsdependency-lock",
+  "checkpointId": "WDL1",
+  "checkpointPath": "docs/work/governance/WDL1",
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/58#issuecomment-5508469494",
+  "dependencies": [],
+  "expectedGithubState": "OPEN",
+  "id": "GH-58",
+  "kind": "github-issue",
+  "lifecycle": "Verifying",
+  "lifecycleLabel": "verifying",
+  "nextAction": "Run the declared complete Analysis final gate once, then close and merge WDL1 if no candidate regression remains.",
+  "number": 58,
+  "owner": "maintainer",
+  "pr": "https://github.com/Bilaltariq41/SeqDoc/pull/60",
+  "schemaVersion": 1,
+  "selectedForExecution": true,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/58",
+  "statusReason": "Every independent review finding is fixed and recorded; WDL1 is ready for its one final gate.",
+  "title": "[Fixtures] Repair WindowsDependency locked restore",
+  "track": "governance"
+}

@@ -23,6 +23,7 @@ class WorkStateTests(unittest.TestCase):
             (self.d / "docs/project/work-items" / (x["id"] + ".json")).write_text(json.dumps(x))
     def find(self, i): return next(x for x in self.items if x["id"] == i)
     def normalize_lifecycle_fixture(self):
+        for x in self.items: x["selectedForExecution"] = False
         for i in ("GH-12", "GH-13"):
             x=self.find(i); x["lifecycle"]="Blocked"; x["lifecycleLabel"]="blocked"; x["expectedGithubState"]="OPEN"
         issue13=self.find("GH-13")
