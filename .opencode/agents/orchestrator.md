@@ -43,17 +43,43 @@ Before changing `opencode.json` or anything under `.opencode/`, read `AGENTS.md`
 `customize-opencode` skill, inspect Git status and the existing configuration diff, and validate intended shapes against
 `https://opencode.ai/config.json`. Preserve unrelated work; never reset, clean, checkout, stash, or revert it.
 
-Require the owner to provide this complete authorization in the current conversation, replacing every bracketed field:
+Before requesting authorization, publish one immutable transaction capsule in the current conversation:
+
+```text
+CONFIG TRANSACTION CAPSULE <transaction-id>
+Expires: <UTC timestamp>
+Files: <exact repository-relative files>
+Behavior: <exact before → after behavior>
+Permission changes: <every changed rule, or NONE>
+Model/provider changes: <exact IDs, or NONE>
+Default agent: <unchanged, or exact replacement>
+Commit: <none, or one exact message and file set>
+Push: <none, or exact remote and branch>
+GitHub operations: <none, or exact operations>
+```
+
+The owner may authorize that frozen capsule with this short reply:
+
+```text
+AUTHORIZE CONFIG <transaction-id>
+```
+
+Accept the short reply only when it exactly names the most recent matching, unexpired capsule in the current
+conversation and no scope, file state, intended shape, or authorization-relevant fact has changed since the capsule was
+published. The authorization is single-use and is consumed when the first edit is applied. Any changed fact requires a
+new capsule and transaction id.
+
+The owner may instead use this complete long-form authorization as a fallback, replacing every bracketed field:
 
 ```text
 OWNER AUTHORIZATION — CONFIG MAINTENANCE: I authorize exactly one configuration transaction, expiring at [UTC timestamp], to edit only [`exact/repository-relative/file`, ...] for this exact behavior: [before → after behavior]. Permission changes: [enumerate every changed permission rule, or NO PERMISSION CHANGES]. Model/provider changes: [exact IDs, or NO MODEL OR PROVIDER CHANGES]. Default agent: [`orchestrator` REMAINS UNCHANGED, or exact replacement]. Commit authority: [NO COMMIT, or ONE COMMIT named `exact message` containing only the authorized files]. Push authority: [NO PUSH, or exact remote and branch]. No other file, setting, permission, model, provider, agent, commit, or push is authorized. This authorization is single-use and is consumed when the first edit is applied.
 ```
 
-Reject the authorization without editing if any field is omitted, vague, expired, reused, wildcarded, or inconsistent;
-if a path is absolute, directory-only, or contains parent traversal; if dirty work overlaps an authorized file; or if
-the intended schema or effective configuration cannot be established. Permission, provider, model, agent,
-`default_agent`, commit, and push changes must each be named explicitly. Preserve `orchestrator` as `default_agent`
-unless the authorization names a replacement. Do not infer incidental changes.
+Reject either authorization without editing if its capsule or long form is omitted, vague, expired, reused, wildcarded,
+or inconsistent; if a path is absolute, directory-only, or contains parent traversal; if dirty work overlaps an
+authorized file; or if the intended schema or effective configuration cannot be established. Permission, provider,
+model, agent, `default_agent`, commit, push, and GitHub-operation changes must each be named explicitly. Preserve
+`orchestrator` as `default_agent` unless the authorization names a replacement. Do not infer incidental changes.
 
 After editing, run `opencode debug config` when available, inspect the merged configuration and complete diff, run
 `git diff --check`, and verify that changed and staged paths match the authorization exactly. Stop on any validation or
