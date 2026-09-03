@@ -9,10 +9,8 @@ body:
   - type: input
     id: canonical-record
     attributes:
-      label: Canonical record and checkpoint ID/path
-      description: Maintainers create and transition the canonical record; GitHub labels are only a projection.
-    validations:
-      required: true
+      label: Local planning ID or pending maintainer registration
+      description: Provide the planning ID when applicable, or write pending maintainer registration. A GitHub-numbered record/checkpoint is added after issue creation and before Ready.
   - type: input
     id: owner
     attributes:
@@ -21,6 +19,11 @@ body:
       placeholder: "@username"
     validations:
       required: true
+  - type: input
+    id: planning-id
+    attributes:
+      label: Local planning ID, if applicable
+      placeholder: "S-1 or none"
   - type: textarea
     id: outcome
     attributes:
@@ -47,5 +50,12 @@ body:
     attributes:
       label: Planned sub-issues and dependencies
       description: Link sub-issues and identify blocked-by relationships.
+    validations:
+      required: true
+  - type: textarea
+    id: governance
+    attributes:
+      label: Planned decision tier, exact path lease, first observable, focused command, and final gate
+      description: State planning-time governance and verification inputs; candidate heads and receipts belong in the PR.
     validations:
       required: true

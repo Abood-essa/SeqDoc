@@ -3,6 +3,9 @@
 Confirm the linked item's canonical record under `docs/project/work-items/` before relying on GitHub labels or issue state.
 Record ID and checkpoint ID/path:
 Maintainers: transition the canonical record with `work_state.py`; do not hand-edit projections.
+Local planning ID, if applicable:
+Decision tier and exact path lease:
+Baseline SHA / candidate head SHA:
 
 Closes #
 Parent workstream: #
@@ -65,6 +68,8 @@ Focused command and result:
 ```text
 
 ```
+
+Reviewer receipt and first observable:
 
 Final gate and result:
 

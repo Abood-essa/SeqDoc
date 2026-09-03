@@ -13,10 +13,18 @@ body:
   - type: input
     id: canonical-record
     attributes:
-      label: Canonical record and checkpoint ID/path
-      description: Name the work-item record and checkpoint ID/path; maintainers must transition the record, not labels.
-    validations:
-      required: true
+      label: Local planning ID or pending maintainer registration
+      description: Provide the planning ID when applicable, or write pending maintainer registration. A GitHub-numbered record/checkpoint is added after issue creation and before Ready.
+  - type: input
+    id: planning-id
+    attributes:
+      label: Local planning ID, if applicable
+      placeholder: "C-2 or none"
+  - type: input
+    id: baseline-head
+    attributes:
+      label: Baseline SHA and planned branch
+      description: Record the frozen baseline and intended branch before implementation; candidate head belongs in the PR and receipt.
   - type: textarea
     id: purpose
     attributes:
@@ -48,5 +56,12 @@ body:
     attributes:
       label: Verification
       description: Focused command, final gate, and realistic acceptance output.
+    validations:
+      required: true
+  - type: textarea
+    id: planned-governance
+    attributes:
+      label: Decision tier, proposed exact path lease, first observable, focused command, and final gate
+      description: Record planning-time governance and verification inputs; candidate head and receipts belong in the PR.
     validations:
       required: true

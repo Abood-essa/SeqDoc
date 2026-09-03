@@ -26,10 +26,12 @@ paths, non-goals, risks, existing coverage, a soft test budget, one focused impl
  and the remaining named states project to their matching capsule state.
 
 The Orchestrator drafts the capsule and delegates implementation; it does not edit product source, tests, build, or
-OpenCode configuration. Implementation stops at `ReviewRequired`. Invoke the independent Reviewer once, inspect the
-actual diff, and record every finding as `Fixed`, `Rejected` with evidence, or `Deferred` with explicit owner
-approval. Run the final gate only after findings are resolved. After two failed repair reruns, preserve the worktree,
- mark the checkpoint `Blocked`, and stop.
+OpenCode configuration. Follow [collaboration-model.md](collaboration-model.md) for review epochs and repair limits.
+DGP1, I13, P17-R1, and QHTTP-B use one independent complete-candidate review under frozen rules. New work after policy
+activation uses readiness/spec before Ready, complete candidate at ReviewRequired, and post-repair only after a changed
+candidate has green focused tests; relevant shared integration may add one. Record every finding as `Fixed`, `Rejected`
+with evidence, or `Deferred` with explicit owner approval. Run the final gate only after findings are resolved. After two
+failed repair rounds, preserve the worktree, mark the checkpoint `Blocked`, and stop.
 
 Accepted pushes to `main` run validation first and then automatically synchronize only GitHub lifecycle labels. The
 explicit `sync-github --dry-run` and manual synchronization commands remain maintainer tools. CI never rewrites pull
@@ -46,8 +48,9 @@ request branches and cannot mutate issue titles, bodies, assignees, non-lifecycl
 
 ## Agent routing
 
-The maintainer may use local orchestration, implementation, test-writing, exploration, and independent-review roles.
-Local agent/tool configuration is not repository authority and is never committed. Public contributors follow
+The maintainer may use tracked portable project-agent definitions for orchestration, implementation, test-writing,
+exploration, and independent review. These definitions may be committed but are never product authority. Machine-local
+tool/MCP configuration, profiles, credentials, and session data are never committed. Public contributors follow
 `AGENTS.md` and their assigned GitHub issue regardless of the coding tool they use.
 
 ## Repository and session safety

@@ -1,5 +1,9 @@
 # SeqDoc Contributor Agent Guide
 
+For collaboration tiers, receipts, path leases, review epochs, repair limits, and owner-only administration, read
+[`docs/project/collaboration-model.md`](docs/project/collaboration-model.md). For owner operations, use
+[`docs/project/collaborator-setup.md`](docs/project/collaborator-setup.md).
+
 SeqDoc is a .NET static-analysis CLI that produces evidence-backed Markdown and Mermaid. This file is the canonical
 project instruction source for coding agents. Human contributors follow the same engineering and review standard.
 

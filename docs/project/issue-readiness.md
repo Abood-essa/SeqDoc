@@ -39,10 +39,10 @@ typed producer and its first observable assertion; hand-built intermediate facts
 evidence. Claims may only preserve or weaken compiler evidence, and identity, profile, snapshot, chronology, guards,
 boundaries, and deterministic ordering remain explicit.
 
-One independent reviewer reviews the complete candidate. The maintainer sends one coherent repair request and the
-contributor receives one repair round. If that round cannot complete the contract, the maintainer may split, reject, or
-take over only with explicit owner authorization, preserving accepted work and attribution. After two failed repair
-reruns, the checkpoint must become `Blocked` and the worktree must be preserved; do not silently continue.
+Use the review epochs and repair limits in [collaboration-model.md](collaboration-model.md). DGP1 and the grandfathered
+I13/P17-R1/QHTTP-B work retain their frozen one-review rules; new work adopts the prospective epochs only after policy
+activation. After two failed repair rounds, block and preserve the work; any split, transfer, or takeover is a separately
+authorized next checkpoint or decision.
 
 ## Status transitions and acceptance boundary
 
