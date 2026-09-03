@@ -1,9 +1,8 @@
 # SeqDoc completion roadmap
 
 This is the owner-approved canonical staged v1 planning map. The registry owns current lifecycle, selection, and
-registered assignments; issue bodies specify work, and checkpoint capsules contract implementation. This roadmap owns
-future planning IDs and the three firm future lane assignments until real issues and records exist; it does not claim
-those future assignments are already registered.
+registered assignments; issue bodies specify work, and checkpoint capsules contract implementation. This roadmap retains
+planning IDs, dependencies, and strategy; the registry owns registered ownership and current state.
 
 ## Definition of v1 complete
 

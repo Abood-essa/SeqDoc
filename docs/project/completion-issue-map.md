@@ -3,8 +3,12 @@
 This is the canonical planning map for the staged completion roadmap. The identifiers below are local planning IDs
 until a real GitHub issue and work-item record exist. The registry owns current lifecycle, selection, and registered
 assignments; issue bodies own specifications; checkpoints own implementation contracts. This owner-approved planning
-map owns future planning IDs and the three firm future lane assignments until real issues and records exist. Suggested
-pickups are not reservations. Do not treat unregistered future assignments as registry state.
+map retains planning IDs, dependencies, and cross-references; the registry owns registered ownership and current state.
+Suggested pickups are not reservations. Do not treat unregistered future assignments as registry state.
+
+The owner-created completion-program parent is [GH-69](https://github.com/Bilaltariq41/SeqDoc/issues/69). Its child
+records [GH-70](https://github.com/Bilaltariq41/SeqDoc/issues/70) through [GH-81](https://github.com/Bilaltariq41/SeqDoc/issues/81)
+are Blocked planning/readiness records, not implementation authority, until PR #68 merges and readiness/dependencies pass.
 
 Every future contract must state outcome, producer/identity, first observable, exact allowlist, non-goals, risks and
 negatives, existing coverage, test budget, focused command, final gate, dependencies, and review receipt. Semantic work
@@ -25,51 +29,51 @@ forbidden; shared paths use one lease; missing capability is diagnosed, withheld
 | A-2 | P17-R1 callback repair through wording/diagram | GH-17 baseline | Abood; worker paths |
 | A-3 | QHTTP-B FraudManagement GET/POST acceptance | GH-53 frozen contract/baseline | Qais; acceptance-only |
 | A-4 | GH-18 worker acceptance/frontier ledger | A-2 | Abood; no duplicated implementation |
-| G-0 | governance rollout and readiness verification | Stage 1 | unassigned; verifies publication adoption without rewriting history |
+| G-0 ([GH-70](https://github.com/Bilaltariq41/SeqDoc/issues/70)) | governance rollout and readiness verification | Stage 1 | unassigned; verifies publication adoption without rewriting history |
 | G-1 | GH-57 transactional multi-execution lifecycle/lease model | Stage 2; GH-13 closes | unassigned; governance |
 | G-2 | epoch receipts pinned to candidate SHAs | G-1; Stage 2 | unassigned; governance |
 | G-3 | receipt validator and mandatory review tests | G-2 | unassigned; CI seam |
 | G-4 | ruleset/CODEOWNERS/emergency bypass plan | G-3 | unassigned; owner required for T4 settings |
-| G-5 | collaborator access and manual receipt pilot | Stage 1 | unassigned; disposable fork, read-only checks |
+| G-5 ([GH-71](https://github.com/Bilaltariq41/SeqDoc/issues/71)) | collaborator access and manual receipt pilot | Stage 1 | unassigned; disposable fork, read-only checks |
 | G-6 | grandfathered-record migration without fabricated receipts | G-1 | unassigned; preserve legacy evidence |
 | G-7 | negative rehearsals for tiers, bypass, owners, leases, forks, containment, repair | G-4/G-6 | unassigned; fail closed |
-| Q-1 | clean baseline manifest and supported test matrix | Stage 1 | unassigned; reproducible identity |
+| Q-1 ([GH-72](https://github.com/Bilaltariq41/SeqDoc/issues/72)) | clean baseline manifest and supported test matrix | Stage 1 | unassigned; reproducible identity |
 | Q-2 | restore/build fixtures outside solution | Q-1; Stage 2 | unassigned; infrastructure only |
 | Q-3 | required corpus CI and artifact validator | Q-2 | unassigned; critical |
-| Q-4 | compatibility/resource measurement protocol | Q-1 | unassigned; measure before optimization |
+| Q-4 ([GH-73](https://github.com/Bilaltariq41/SeqDoc/issues/73)) | compatibility/resource measurement protocol | Q-1 | unassigned; measure before optimization |
 
 ## Capability lanes
 
 | ID | Deliverable | Dependencies | Owner/status and acceptance boundary |
 |---|---|---|---|
-| C-1 | measured control-flow gap inventory/readiness | Stage 1 | Abood; assigned, no producer recreation |
+| C-1 ([GH-75](https://github.com/Bilaltariq41/SeqDoc/issues/75)) | measured control-flow gap inventory/readiness | Stage 1 | Abood; assigned, no producer recreation |
 | C-2 | predicate/branch projection | C-1; Stage 2 | Abood; guarded diagram and negative |
 | C-3 | catch/filter/finally topology | C-2 | Abood; exception placement |
 | C-4 | switch/loop/continue boundaries | C-3 | Abood; bounded diagnostic |
 | C-5 | control-flow evidence/certainty propagation | C-4; Stage 2 | Abood; weakest certainty |
 | C-6 | control-flow corpus acceptance | C-5 | Abood; deterministic negative |
-| S-1 | service/outbound gap inventory/readiness | Stage 1 | Qais; assigned |
+| S-1 ([GH-76](https://github.com/Bilaltariq41/SeqDoc/issues/76)) | service/outbound gap inventory/readiness | Stage 1 | Qais; assigned |
 | S-2 | named CoreWCF/WCF gap slice | S-1; Stage 2 | Qais; exact admission/callback |
 | S-3 | client/fault/source-boundary presentation | S-2 | Qais; no invented outcomes |
 | S-4 | service/outbound corpus acceptance | S-3 | Qais; assigned, repeat-byte gate |
-| P-1 | post-I13 persistence/state gap inventory | Stage 1 after GH-13 | Ahmad; assigned |
+| P-1 ([GH-77](https://github.com/Bilaltariq41/SeqDoc/issues/77)) | post-I13 persistence/state gap inventory | Stage 1 after GH-13 | Ahmad; assigned |
 | P-2 | named persistence expansion | P-1; Stage 2 | Ahmad; exact producer-to-doc proof |
 | P-3 | EF6/EDMX residual expansion | P-2 | Ahmad; declaration never execution |
 | P-4 | assignments/transitions/caller-visible results | P-3 | Ahmad; chronology/guard isolation |
 | P-5 | persistence/state corpus classification | P-4 | Ahmad; four-application matrix |
-| W-1 | post-P17/GH-18 worker gap inventory | Stage 1 after closure | unassigned, suggested Abood; may change |
+| W-1 ([GH-78](https://github.com/Bilaltariq41/SeqDoc/issues/78)) | post-P17/GH-18 worker gap inventory | Stage 1 after closure | unassigned, suggested Abood; may change |
 | W-2 | scheduler/poll/retry/batch gap | W-1; Stage 2 | unassigned, suggested Abood; may change |
 | W-3 | recovery progression/callback boundaries | W-2 | unassigned, suggested Abood; may change |
 | W-4 | worker corpus acceptance | W-3 | unassigned; prior evidence read-only |
-| D-1 | Microsoft DI gap inventory/readiness | Stage 1 | unassigned, suggested Qais; may change |
+| D-1 ([GH-79](https://github.com/Bilaltariq41/SeqDoc/issues/79)) | Microsoft DI gap inventory/readiness | Stage 1 | unassigned, suggested Qais; may change |
 | D-2 | lifetime/factory/constructor gap | D-1; Stage 2 | unassigned; no runtime inference |
 | D-3 | DI fact-to-consumer observable | D-2 | unassigned; exact evidence |
 | D-4 | DI corpus acceptance/diagnostics | D-3 | unassigned; ambiguity diagnostic |
-| O-1 | outcome/error/result gap inventory | Stage 1 | unassigned, suggested Abood; may change; serial shared IR |
+| O-1 ([GH-80](https://github.com/Bilaltariq41/SeqDoc/issues/80)) | outcome/error/result gap inventory | Stage 1 | unassigned, suggested Abood; may change; serial shared IR |
 | O-2 | generic exception/error slice | O-1; Stage 2 | unassigned; placement retained |
 | O-3 | generic result/outcome slice | O-2 | unassigned; no runtime success claim |
 | O-4 | outcome acceptance/forbidden-claim scan | O-3 | unassigned; conservative artifacts |
-| T-1 | traversal/coverage gap inventory | Stage 1 | unassigned; measured boundary |
+| T-1 ([GH-81](https://github.com/Bilaltariq41/SeqDoc/issues/81)) | traversal/coverage gap inventory | Stage 1 | unassigned; measured boundary |
 | T-2 | root/callee coverage accounting | T-1; Stage 2 | unassigned; no invented caller |
 | T-3 | cycle/budget/unavailable/cross-project boundaries | T-2 | unassigned; deterministic limits |
 | T-4 | traversal corpus regression baseline | T-3 | unassigned; useful coverage only |
@@ -91,7 +95,7 @@ forbidden; shared paths use one lease; missing capability is diagnosed, withheld
 | L-2 | diagnostics/order/exit behavior | L-1; Stage 7 | unassigned, serial |
 | L-3 | machine-readable output compatibility | L-2 | unassigned, serial |
 | L-4 | CLI corpus/release acceptance | L-3 | unassigned |
-| M-1 | supported framework inventory | Stage 1 | unassigned |
+| M-1 ([GH-74](https://github.com/Bilaltariq41/SeqDoc/issues/74)) | supported framework inventory | Stage 1 | unassigned |
 | M-2 | unsupported/version/profile boundaries | M-1; Stage 5 | unassigned, serial integration |
 | M-3 | corpus-to-matrix evidence register | M-2 | unassigned |
 | M-4 | published support matrix | M-3 | critical, unassigned |

@@ -1,0 +1,23 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/69",
+  "dependencies": [],
+  "expectedGithubState": "OPEN",
+  "id": "GH-69",
+  "kind": "parent",
+  "lifecycle": "Blocked",
+  "lifecycleLabel": "blocked",
+  "nextAction": null,
+  "number": 69,
+  "owner": "maintainer",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/69",
+  "statusReason": "Blocked pending publication PR #68 and child readiness.",
+  "title": "[Workstream] SeqDoc v1 completion program",
+  "track": "governance"
+}

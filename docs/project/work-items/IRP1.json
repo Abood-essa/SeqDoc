@@ -1,0 +1,21 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": "IRP1",
+  "checkpointPath": "docs/work/governance/IRP1",
+  "contractRevision": "docs/work/governance/IRP1/checkpoint.md",
+  "dependencies": [],
+  "expectedGithubState": "NONE",
+  "id": "IRP1",
+  "kind": "synthetic",
+  "lifecycle": "Closed",
+  "lifecycleLabel": null,
+  "nextAction": "Owner-authorized commit/push update to PR #68.",
+  "owner": "maintainer",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "statusReason": "Closed after final gate exit 0: 47 valid items, current execution projection, silent diff check, complete result; IRP1-F1 fixed in repair rerun 1; no second review.",
+  "title": "IRP1 completion-program issue registration",
+  "track": "governance"
+}
