@@ -17,7 +17,13 @@
       "hidden": true
     }
   },
-  "mcp": { "dart_sdk": { "enabled": false }, "figma": { "enabled": false } },
+  "mcp": {
+    "github": {
+      "enabled": false
+    },
+    "dart_sdk": { "enabled": false },
+    "figma": { "enabled": false }
+  },
   "agent": {
     "build": { "disable": true, "permission": "allow" },
     "plan": { "disable": true },

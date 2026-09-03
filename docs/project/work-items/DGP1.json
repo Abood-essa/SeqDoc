@@ -1,0 +1,21 @@
+{
+  "baseline": "08cb735945a178e93458069d6c42da833e044a74",
+  "branch": null,
+  "checkpointId": "DGP1",
+  "checkpointPath": "docs/work/governance/DGP1",
+  "contractRevision": "docs/work/governance/DGP1/checkpoint.md",
+  "dependencies": [],
+  "expectedGithubState": "NONE",
+  "id": "DGP1",
+  "kind": "synthetic",
+  "lifecycle": "Closed",
+  "lifecycleLabel": null,
+  "nextAction": "Owner-authorized publication batch.",
+  "owner": "maintainer",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "statusReason": "Local candidate verified and ready for the owner-authorized publication batch; corrected final gate passed.",
+  "title": "DGP1 documentation and governance publication",
+  "track": "governance"
+}

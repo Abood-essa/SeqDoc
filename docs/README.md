@@ -8,7 +8,12 @@ This page orients a new development session without relying on conversation hist
 - `docs/architecture.md` describes the compiler-evidence pipeline.
 - `docs/decisions.md` records accepted architectural constraints.
 - `docs/roadmap.md` is the ordered capability direction.
-- `docs/project/parallel-workstreams.md` defines current contributor-owned workstreams and dependencies.
+- Historical topology: `docs/project/parallel-workstreams.md` (not current authority).
+- `docs/project/completion-roadmap.md` is the staged v1 strategy; its visual companion is the plain-English overview.
+- `docs/project/completion-issue-map.md` contains the detailed future plan; its IDs are planning-only until registered.
+- `docs/project/collaboration-model.md` defines decision rights, leases, receipts, review epochs, and repair limits.
+- `docs/project/testing-policy.md` defines risk-based test selection; `docs/project/test-performance.md` records measurements.
+- `docs/project/issue-readiness.md` defines the frozen issue contract.
 - `docs/usage.md` contains reproducible CLI and external-corpus setup.
 
 The non-negotiable invariants are static-analysis authority, explicit evidence and certainty, profile and target-

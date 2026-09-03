@@ -4,6 +4,8 @@ Delegated changes remain candidates until the maintainer verifies their complete
 `docs/project/work-items/` is the current-state authority; GitHub lifecycle labels and checkpoint prose are projections.
 Preserve the submitted
 branch, record its base revision, inspect the actual diff, and classify each area as accepted, repairable, or rejected.
+Follow [collaboration-model.md](collaboration-model.md) for review epochs, receipts, repair limits, and separately
+authorized split, transfer, or takeover decisions.
 Return bounded findings to human contributors with file/line evidence, risk, expected behavior, and one focused
 verification command. The contributor re-reviews the complete candidate; the maintainer reviews the repair delta and
 affected risks when it returns. After two unsuccessful repair rounds, reject, split, or explicitly take ownership.
@@ -49,12 +51,10 @@ shape, registration or admission requirement, evidence chain to the first observ
 negative lookalikes, target paths, and one focused command. Do not split one semantic chain among layer-specific agents
 unless the contract has already been reviewed and the paths are independent.
 
-Invoke one independent reviewer only after the vertical candidate is complete. Batch findings by proof-gate failure,
-repair the same branch and PR, and rerun affected focused tests before the declared final gate. After two unsuccessful
-repair rounds, stop contributor churn: split or reject the candidate, or explicitly transfer ownership to a bounded
-maintainer integration checkpoint. A takeover preserves the contributor's accepted implementation, records every
-maintainer repair, publishes through the original PR when practical, and acknowledges both retained work and the final
-verification. This sequence reduces handoffs; it does not weaken evidence, review, or test requirements.
+Follow [collaboration-model.md](collaboration-model.md) for the applicable review epochs, grandfathered one-review
+rules, repair rounds, and separately authorized split/transfer/takeover decisions. This workflow preserves the complete
+vertical candidate, focused verification, evidence, attribution, and final-gate requirements without redefining review
+counts.
 
 ## Delivery package sizing
 
