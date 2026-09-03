@@ -97,6 +97,8 @@ cross-layer assertions. The independent review findings and repair dispositions 
   diagnoses the overlap directly and preserves only naturally existing outer work.
 - Focused verification passed after the final repair: Analysis `41/41`, Scenarios `22/22`, Wording `14/14`, Rendering
   `2/2`, and `git diff --check`.
+- Current-main integration replaced the removed `SeqDoc.sln` path with `SeqDoc.slnx`; the final-gate solution argument
+  is mechanically corrected below without changing its build configuration, projects, test suites, or acceptance scope.
 - The complete PR candidate remains inside the original seven product/test paths plus this authorized checkpoint
   evidence. No Core contract/collector, DocumentationPlanner repair, build/package/workflow, persistence, or external
   source path changed in this repair round.
@@ -138,7 +140,7 @@ Core, Analysis, Behavior, Scenarios, Wording, and Rendering suites. External Acc
 checkpoint is separately amended.
 
 ```powershell
-dotnet build SeqDoc.sln -c Release --no-restore
+dotnet build SeqDoc.slnx -c Release --no-restore
 dotnet test tests/SeqDoc.Core.Tests/SeqDoc.Core.Tests.csproj -c Release --no-build --no-restore
 dotnet test tests/SeqDoc.Analysis.Tests/SeqDoc.Analysis.Tests.csproj -c Release --no-build --no-restore
 dotnet test tests/SeqDoc.Behavior.Tests/SeqDoc.Behavior.Tests.csproj -c Release --no-build --no-restore
