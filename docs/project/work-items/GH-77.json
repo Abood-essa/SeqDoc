@@ -1,0 +1,25 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/77",
+  "dependencies": [
+    "GH-13"
+  ],
+  "expectedGithubState": "OPEN",
+  "id": "GH-77",
+  "kind": "github-issue",
+  "lifecycle": "Blocked",
+  "lifecycleLabel": "blocked",
+  "nextAction": null,
+  "number": 77,
+  "owner": "ahmad",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/77",
+  "statusReason": "Blocked pending PR #68 publication, GH-13 closure, and parent readiness.",
+  "title": "[Persistence] Inventory post-I13 persistence and state gaps",
+  "track": "persistence"
+}

@@ -1,0 +1,28 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/74",
+  "dependencies": [
+    "GH-13",
+    "GH-17",
+    "GH-18",
+    "GH-53"
+  ],
+  "expectedGithubState": "OPEN",
+  "id": "GH-74",
+  "kind": "github-issue",
+  "lifecycle": "Blocked",
+  "lifecycleLabel": "blocked",
+  "nextAction": null,
+  "number": 74,
+  "owner": "unassigned",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/74",
+  "statusReason": "Unassigned planning/readiness work; blocked pending PR #68 publication and prerequisite evidence.",
+  "title": "[Matrix] Inventory supported frameworks from accepted evidence",
+  "track": "matrix"
+}

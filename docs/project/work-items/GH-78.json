@@ -1,0 +1,26 @@
+{
+  "baseline": null,
+  "branch": null,
+  "checkpointId": null,
+  "checkpointPath": null,
+  "contractRevision": "https://github.com/Bilaltariq41/SeqDoc/issues/78",
+  "dependencies": [
+    "GH-17",
+    "GH-18"
+  ],
+  "expectedGithubState": "OPEN",
+  "id": "GH-78",
+  "kind": "github-issue",
+  "lifecycle": "Blocked",
+  "lifecycleLabel": "blocked",
+  "nextAction": null,
+  "number": 78,
+  "owner": "unassigned",
+  "pr": null,
+  "schemaVersion": 1,
+  "selectedForExecution": false,
+  "sourceUrl": "https://github.com/Bilaltariq41/SeqDoc/issues/78",
+  "statusReason": "Unassigned planning/readiness work; blocked pending PR #68 publication and GH-17/GH-18 closure.",
+  "title": "[Workers] Inventory post-frontier worker and recovery gaps",
+  "track": "workers"
+}

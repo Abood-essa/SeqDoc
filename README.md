@@ -57,7 +57,16 @@ setup, and the reproducible CreditTransfer example.
 - [Contributing](docs/contributing.md)
 - [Using SeqDoc](docs/usage.md)
 - [Roadmap](docs/roadmap.md)
-- [Parallel workstreams](docs/project/parallel-workstreams.md)
+- [Completion roadmap](docs/project/completion-roadmap.md)
+- [Completion issue map](docs/project/completion-issue-map.md)
+- [Plain-English completion visual](docs/project/completion-roadmap-visual.md)
+- [Collaboration and review model](docs/project/collaboration-model.md)
+- [Contributor and owner setup](docs/project/collaborator-setup.md)
+- [Testing policy](docs/project/testing-policy.md)
+- [Issue readiness](docs/project/issue-readiness.md)
+- [Semantic delivery brief](docs/project/semantic-delivery-brief.md)
+- [Current work-item registry](docs/project/work-items/)
+- [Historical checkpoint records](docs/work/)
 
 ## License
 
