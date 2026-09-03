@@ -15,6 +15,8 @@ permission:
     "test-writer": allow
     "review": allow
     "explore": allow
+    "github-observer": allow
+    "gate-runner": allow
   todowrite: allow
   question: allow
   skill: allow
