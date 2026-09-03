@@ -60,6 +60,9 @@ public sealed class RetryWorker : BackgroundService
                 await Task.Delay(1, stoppingToken);
                 WorkerCallbackContracts.RunOnce(() => WorkerCallbackContracts.Observe(iteration));
 
+                WorkerCallbackContracts.RunWhen(iteration > 0, () => WorkerCallbackContracts.Observe(iteration));
+                WorkerCallbackContracts.RunRepeated(() => WorkerCallbackContracts.Observe(iteration));
+
                 void ObserveLocally()
                     => WorkerCallbackContracts.Observe(iteration);
 
@@ -69,6 +72,7 @@ public sealed class RetryWorker : BackgroundService
             }
             catch (InvalidOperationException)
             {
+                WorkerCallbackContracts.RunOnce(() => WorkerCallbackContracts.Observe(iteration));
                 continue;
             }
 
@@ -95,6 +99,22 @@ internal static class WorkerCallbackContracts
     public static void RunOnce(Action callback)
     {
         callback();
+    }
+
+    public static void RunWhen(bool enabled, Action callback)
+    {
+        if (enabled)
+        {
+            callback();
+        }
+    }
+
+    public static void RunRepeated(Action callback)
+    {
+        for (var i = 0; i < 2; i++)
+        {
+            callback();
+        }
     }
 
     public static void Observe(int value)

@@ -94,17 +94,6 @@ public sealed class CallbackBoundaryProjectionTests
         var execute = extraction.ProgramIndex.Methods.Single(method => method.ContainingType == retryType && method.Name == "ExecuteAsync").Id;
         var boundaries = extraction.CallbackBoundaryFacts.Boundaries.Where(boundary => boundary.CallerMethod == execute).ToArray();
 
-        Assert.Equal(
-            [CallbackTargetKind.AnonymousFunction, CallbackTargetKind.LocalFunction, CallbackTargetKind.MethodGroup],
-            boundaries.Select(boundary => boundary.TargetKind).OrderBy(kind => kind));
-        Assert.All(boundaries, boundary =>
-        {
-            Assert.Equal(CallbackContractProvenance.SourceBody, boundary.ContractProvenance);
-            Assert.Equal(CallbackCardinality.ExactlyOnce, boundary.Cardinality);
-            Assert.NotEmpty(boundary.MemberOperations);
-            Assert.NotEmpty(boundary.Evidence);
-        });
-
         var behavior = await new BehaviorAnalyzer().AnalyzeAsync(
             new BehaviorAnalysisRequest(extraction.ProgramIndex, extraction.BehaviorInput), CancellationToken.None);
         Assert.True(behavior.IsSuccess, string.Join(Environment.NewLine, behavior.Diagnostics.Select(item => item.TechnicalCause)));
@@ -116,6 +105,26 @@ public sealed class CallbackBoundaryProjectionTests
                 extraction.Symbols),
             CancellationToken.None);
         var behaviorSnapshot = Assert.IsType<BehaviorSnapshot>(behavior.Value);
+        var retryFlow = behaviorSnapshot.MethodFlows.Single(flow => flow.Method == execute);
+        var catchRegion = Assert.Single(retryFlow.Regions, region => region.Kind == FlowRegionKind.Catch);
+        var catchBoundaries = boundaries.Where(boundary => retryFlow.Nodes.OfType<InvocationFlowNode>().Any(node =>
+            node.Operation == boundary.OuterInvocationOperation
+            && node.BlockOrdinal >= catchRegion.StartBlockOrdinal
+            && node.BlockOrdinal <= catchRegion.EndBlockOrdinal)).ToArray();
+        Assert.Single(catchBoundaries);
+        var originalTryBoundaries = boundaries.Where(boundary => boundary.Cardinality == CallbackCardinality.ExactlyOnce
+                && boundary.Trigger == CallbackTriggerKind.Unconditional
+                && !catchBoundaries.Contains(boundary)).ToArray();
+        Assert.Equal(3, originalTryBoundaries.Length);
+        Assert.Equal(
+            [CallbackTargetKind.AnonymousFunction, CallbackTargetKind.LocalFunction, CallbackTargetKind.MethodGroup],
+            originalTryBoundaries.Select(boundary => boundary.TargetKind).OrderBy(kind => kind));
+        Assert.All(originalTryBoundaries, boundary =>
+        {
+            Assert.Equal(CallbackContractProvenance.SourceBody, boundary.ContractProvenance);
+            Assert.NotEmpty(boundary.MemberOperations);
+            Assert.NotEmpty(boundary.Evidence);
+        });
         var graphs = ScenarioGraphBuilder.Build(new ScenarioAnalysisRequest(
             profile,
             extraction.ProgramIndex,
@@ -190,6 +199,155 @@ public sealed class CallbackBoundaryProjectionTests
         Assert.Equal(documentation.Wording.DebugProjection, repeatedDocumentation.Wording.DebugProjection);
         Assert.DoesNotContain(documentation.Wording.Phrases, phrase => phrase.Text.Contains("runtime", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(documentation.Wording.Phrases, phrase => phrase.Text.Contains("persist", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task HostedWorkerConditionalAndRepeatedCallbacksRemainVisibleAtProducerButAreWithheldFromOutput()
+    {
+        var request = await CreateHostedWorkerRequestAsync();
+        var retryType = request.ProgramIndex.Types.Single(type => type.MetadataName == "HostedWorkers.RetryWorker").Id;
+        var execute = request.ProgramIndex.Methods.Single(method => method.ContainingType == retryType && method.Name == "ExecuteAsync").Id;
+        var boundaries = request.CallbackBoundaryFacts!.Boundaries.Where(boundary => boundary.CallerMethod == execute).ToArray();
+        var conditional = Assert.Single(boundaries, boundary => boundary.Cardinality == CallbackCardinality.ZeroOrOne);
+        var repeated = Assert.Single(boundaries, boundary => boundary.Cardinality == CallbackCardinality.RepeatedOrUnknown);
+        Assert.Equal(CallbackTriggerKind.Conditional, conditional.Trigger);
+        Assert.NotNull(conditional.TriggerCondition);
+        Assert.NotEqual(CallbackCardinality.ExactlyOnce, repeated.Cardinality);
+        Assert.NotEmpty(conditional.MemberOperations);
+        Assert.NotEmpty(repeated.MemberOperations);
+        var affectedMemberOperations = conditional.MemberOperations
+            .Concat(repeated.MemberOperations)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.NotEmpty(affectedMemberOperations);
+
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(request).Graphs,
+            candidate => candidate.OperationKey.Contains("RetryWorker", StringComparison.Ordinal));
+        Assert.DoesNotContain(graph.CallbackRegions, region => region.BoundaryId == conditional.Id || region.BoundaryId == repeated.Id);
+        var affectedNodeIds = graph.Nodes
+            .Where(node => node.Operation is { } operation && affectedMemberOperations.Contains(operation.Value))
+            .Select(node => node.Id)
+            .ToHashSet();
+        Assert.Empty(affectedNodeIds);
+        var plan = DocumentationPlanner.Plan(graph);
+        var affectedMessageIds = graph.Edges
+            .Where(edge => affectedNodeIds.Contains(edge.Source) || affectedNodeIds.Contains(edge.Target))
+            .Select(edge => new DiagramPlanElementId("diagram-element:v1:message:" + edge.Id.Value))
+            .ToHashSet();
+        Assert.DoesNotContain(plan.Diagram.Messages, message => affectedMessageIds.Contains(message.Id));
+        Assert.Contains(graph.Diagnostics, diagnostic => diagnostic.Code == "SC-WORKER-UNSUPPORTED-PLACEMENT"
+            && diagnostic.Detail.Contains(conditional.Id.Value, StringComparison.Ordinal));
+        Assert.Contains(graph.Diagnostics, diagnostic => diagnostic.Code == "SC-WORKER-UNSUPPORTED-PLACEMENT"
+            && diagnostic.Detail.Contains(repeated.Id.Value, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task HostedWorkerCatchCallbackIsProducerVisibleButWithheldFromScenarioDocumentation()
+    {
+        var request = await CreateHostedWorkerRequestAsync();
+        var retryType = request.ProgramIndex.Types.Single(type => type.MetadataName == "HostedWorkers.RetryWorker").Id;
+        var execute = request.ProgramIndex.Methods.Single(method => method.ContainingType == retryType && method.Name == "ExecuteAsync").Id;
+        var flow = request.Behavior.MethodFlows.Single(item => item.Method == execute);
+        var catchRegion = Assert.Single(flow.Regions, region => region.Kind == FlowRegionKind.Catch);
+        var catchBoundary = Assert.Single(request.CallbackBoundaryFacts!.Boundaries.Where(boundary =>
+            boundary.CallerMethod == flow.Method && flow.Nodes.OfType<InvocationFlowNode>().Any(node =>
+                node.Operation == boundary.OuterInvocationOperation
+                && node.BlockOrdinal >= catchRegion.StartBlockOrdinal
+                && node.BlockOrdinal <= catchRegion.EndBlockOrdinal)));
+        Assert.Equal(CallbackCardinality.ExactlyOnce, catchBoundary.Cardinality);
+        Assert.NotEmpty(catchBoundary.MemberOperations);
+        Assert.NotEmpty(catchBoundary.Evidence);
+
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(request).Graphs,
+            candidate => candidate.OperationKey.Contains("RetryWorker", StringComparison.Ordinal));
+        Assert.DoesNotContain(graph.CallbackRegions, region => region.BoundaryId == catchBoundary.Id);
+        Assert.DoesNotContain(graph.Nodes, node => node.Operation is { } operation
+            && catchBoundary.MemberOperations.Contains(operation.Value));
+        var plan = DocumentationPlanner.Plan(graph);
+        Assert.Equal(graph.CallbackRegions.SelectMany(region => region.MemberNodes).Distinct().Count(),
+            plan.Diagram.Messages.Count(message => message.Label == "source callback operation"));
+        Assert.Contains(graph.Diagnostics, diagnostic => diagnostic.Code == "SC-WORKER-UNSUPPORTED-PLACEMENT"
+            && diagnostic.Detail.Contains(catchBoundary.Id.Value, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SameProfileOuterOperationOverlapWithholdsCallbackOwnershipDeterministically()
+    {
+        var request = await CreateHostedWorkerRequestAsync();
+        var retryType = request.ProgramIndex.Types.Single(type => type.MetadataName == "HostedWorkers.RetryWorker").Id;
+        var execute = request.ProgramIndex.Methods.Single(method => method.ContainingType == retryType && method.Name == "ExecuteAsync").Id;
+        var flow = request.Behavior.MethodFlows.Single(item => item.Method == execute);
+        var catchRegion = Assert.Single(flow.Regions, region => region.Kind == FlowRegionKind.Catch);
+        var catchOperations = flow.Nodes.OfType<InvocationFlowNode>()
+            .Where(node => node.BlockOrdinal >= catchRegion.StartBlockOrdinal && node.BlockOrdinal <= catchRegion.EndBlockOrdinal)
+            .Select(node => node.Operation)
+            .ToHashSet();
+        var boundary = request.CallbackBoundaryFacts!.Boundaries
+            .Where(candidate => candidate.Cardinality == CallbackCardinality.ExactlyOnce
+                && candidate.Trigger == CallbackTriggerKind.Unconditional
+                && candidate.CallerMethod == execute
+                && candidate.TargetKind == CallbackTargetKind.LocalFunction
+                && !catchOperations.Contains(candidate.OuterInvocationOperation))
+            .Single();
+        var originalOuterFlowNode = Assert.Single(flow.Nodes.OfType<InvocationFlowNode>(),
+            node => node.Operation == boundary.OuterInvocationOperation);
+        var originalGraph = Assert.Single(ScenarioGraphBuilder.Build(request).Graphs,
+            candidate => candidate.OperationKey.Contains("RetryWorker", StringComparison.Ordinal));
+        var naturallyProducedOuterNodes = originalGraph.Nodes
+            .Where(node => node.Operation == boundary.OuterInvocationOperation)
+            .ToArray();
+        var overlapped = new CallbackBoundaryFact(boundary.Id, boundary.CallerMethod, boundary.OuterInvocationOperation,
+            boundary.ParameterOrdinal, boundary.TargetKind, boundary.TargetMethod, boundary.TargetBodyOperation,
+            boundary.ContractMethod, boundary.ContractInvokeOperation, boundary.Cardinality, boundary.Trigger,
+            boundary.TriggerCondition, boundary.Completion, boundary.ContractProvenance,
+            boundary.MemberOperations.Add(boundary.OuterInvocationOperation.Value), boundary.Evidence, boundary.Certainty);
+        var facts = new CallbackBoundaryFactSet(1, "producer-regression", request.Profile, request.ProgramIndex.IndexFingerprint,
+            request.CallbackBoundaryFacts.Boundaries.Select(item => item.Id == boundary.Id ? overlapped : item).ToImmutableArray(),
+            request.CallbackBoundaryFacts.Diagnostics, "same-profile-outer-overlap");
+        var mutatedRequest = request with { CallbackBoundaryFacts = facts };
+        var mutatedFlow = mutatedRequest.Behavior.MethodFlows.Single(item => item.Method == execute);
+        var mutatedOuterFlowNode = Assert.Single(mutatedFlow.Nodes.OfType<InvocationFlowNode>(),
+            node => node.Operation == boundary.OuterInvocationOperation);
+        Assert.Equal(originalOuterFlowNode.Id, mutatedOuterFlowNode.Id);
+        Assert.Equal(originalOuterFlowNode.Operation, mutatedOuterFlowNode.Operation);
+        Assert.Equal(originalOuterFlowNode.BlockOrdinal, mutatedOuterFlowNode.BlockOrdinal);
+
+        var graph = Assert.Single(ScenarioGraphBuilder.Build(mutatedRequest).Graphs,
+            candidate => candidate.OperationKey.Contains("RetryWorker", StringComparison.Ordinal));
+        var outerNodes = graph.Nodes.Where(node => node.Operation == boundary.OuterInvocationOperation).ToArray();
+        Assert.All(outerNodes, node => Assert.DoesNotContain($"callback:{boundary.Id.Value}:", node.Key, StringComparison.Ordinal));
+        if (naturallyProducedOuterNodes.Length > 0)
+        {
+            Assert.Equal(
+                naturallyProducedOuterNodes.Select(node => node.Id),
+                outerNodes.Where(node => !node.Key.StartsWith($"callback:{boundary.Id.Value}:", StringComparison.Ordinal)).Select(node => node.Id));
+        }
+        var outerNodeIds = outerNodes.Select(node => node.Id).ToHashSet();
+        Assert.DoesNotContain(graph.CallbackRegions, region => region.MemberNodes.Any(outerNodeIds.Contains));
+        var callbackLocalOperations = boundary.MemberOperations
+            .Where(operation => !string.Equals(operation, boundary.OuterInvocationOperation.Value, StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.NotEmpty(callbackLocalOperations);
+        Assert.DoesNotContain(graph.Nodes, node => node.Operation is { } operation
+            && callbackLocalOperations.Contains(operation.Value));
+        Assert.DoesNotContain(graph.Nodes, node => callbackLocalOperations.Any(operation =>
+            node.Key == $"callback:{boundary.Id.Value}:{operation}"));
+        Assert.Contains(graph.Diagnostics, diagnostic => diagnostic.Code == "SC-CALLBACK-OUTER-OVERLAP"
+            && diagnostic.Detail.Contains(boundary.Id.Value, StringComparison.Ordinal));
+
+        var reversedFacts = new CallbackBoundaryFactSet(
+            facts.SchemaVersion,
+            facts.ProducerVersion,
+            facts.Profile,
+            facts.ProgramIndexFingerprint,
+            facts.Boundaries.Reverse().ToImmutableArray(),
+            facts.Diagnostics,
+            "same-profile-outer-overlap-reversed");
+        var reversed = Assert.Single(ScenarioGraphBuilder.Build(request with { CallbackBoundaryFacts = reversedFacts }).Graphs,
+            candidate => candidate.OperationKey.Contains("RetryWorker", StringComparison.Ordinal));
+        Assert.Equal(graph.DebugProjection, reversed.DebugProjection);
+        Assert.Equal(
+            graph.Diagnostics.Select(diagnostic => $"{diagnostic.Code}|{diagnostic.Detail}|{diagnostic.Certainty}").Order(StringComparer.Ordinal),
+            reversed.Diagnostics.Select(diagnostic => $"{diagnostic.Code}|{diagnostic.Detail}|{diagnostic.Certainty}").Order(StringComparer.Ordinal));
     }
 
     [Theory]

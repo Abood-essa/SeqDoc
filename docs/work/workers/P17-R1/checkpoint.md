@@ -2,7 +2,7 @@
 
 ## State
 
-`ResolvingFindings`
+`ReviewRequired`
 
 ## Authority and frozen state
 
@@ -67,14 +67,41 @@ any path outside this allowlist requires explicit maintainer approval.
 
 PR #64 focused coverage passed Analysis `38/38`, Scenarios `19/19`, Wording `13/13`, and Rendering `2/2`, in addition
 to Issue #16 worker-control coverage. That coverage is retained and reused; do not duplicate its hand-built or
-cross-layer assertions. The independent review findings are recorded as pending:
+cross-layer assertions. The independent review findings and repair dispositions are:
 
-- **P17-R1-F1 — Pending:** conditional/repeated callbacks render unguarded.
-- **P17-R1-F2 — Pending:** `MemberOperations` can capture existing outer-worker nodes without exact target-body
-  ownership.
-- **P17-R1-F3 — Pending:** catch-contained callbacks flatten into an ordinary loop.
+- **P17-R1-F1 — Fixed:** hosted-worker callback projection now fails closed unless cardinality is exactly
+  `ExactlyOnce`, the trigger is `Unconditional`, and no trigger condition is present. Conditional and repeated source
+  facts remain producer-visible but contribute no callback member, region, or unconditional message; each exact member
+  receives a conservative evidence-backed diagnostic.
+- **P17-R1-F2 — Fixed:** hosted callback membership now requires the exact
+  `callback:{boundary-id}:{member-operation}` node ownership key. A member that claims the outer invocation or any
+  naturally existing non-callback node withholds the complete callback boundary, preserves outer work unchanged, and
+  emits deterministic `SC-CALLBACK-OUTER-OVERLAP` diagnostics. No outer node or message is synthesized from the
+  malformed callback fact.
+- **P17-R1-F3 — Fixed:** `Catch` is explicitly excluded from supported hosted callback placement. The real-source catch
+  boundary remains producer-visible but its members and region are withheld with complete boundary, outer, loop, and
+  exception-region evidence rather than flattened into ordinary iteration output.
 - **P17-R1-F4 — Fixed:** canonical checkpoint/state now exists, and GH-17 records its checkpoint, PR association,
   branch, `ResolvingFindings` lifecycle, and non-selected status.
+
+## Repair trace
+
+- Local branch synchronization followed the maintainer instruction exactly: the contributor fork branch
+  fast-forwarded cleanly from `11e433fec19f2b9666125da44c4b20e878c4fcca` to
+  `2c1283e8af0ef2ee6bcb32a926b40805d5b70f97` before any repair edit.
+- The Test Writer added exactly three producer-backed groups in the existing Analysis test and `Worker.cs`: one
+  conditional/repeated group, one same-profile outer-operation ownership group, and one catch-placement group. No
+  fourth group or unlisted path was added.
+- Product repair changed only `src/SeqDoc.Analysis.Scenarios/ScenarioGraphBuilder.cs`. Complete-diff inspection removed
+  an intermediate repair that synthesized outer-worker output from a malformed callback fact; the final candidate
+  diagnoses the overlap directly and preserves only naturally existing outer work.
+- Focused verification passed after the final repair: Analysis `41/41`, Scenarios `22/22`, Wording `14/14`, Rendering
+  `2/2`, and `git diff --check`.
+- The complete PR candidate remains inside the original seven product/test paths plus this authorized checkpoint
+  evidence. No Core contract/collector, DocumentationPlanner repair, build/package/workflow, persistence, or external
+  source path changed in this repair round.
+- Per maintainer instruction, implementation stopped at `ReviewRequired`. No second independent review or final gate
+  was run.
 
 ## Test assignment and budget
 

@@ -727,10 +727,13 @@ public static class ScenarioGraphBuilder
                 .Distinct()
                 .ToImmutableArray();
             var supportedPlacement = loopRegions.Length == 1
-                && enclosingRegions.All(region => region.Kind is FlowRegionKind.Try or FlowRegionKind.TryAndCatch or FlowRegionKind.Catch)
+                && enclosingRegions.All(region => region.Kind is FlowRegionKind.Try or FlowRegionKind.TryAndCatch)
                 && enclosingRegions.Any(region => region.Kind is FlowRegionKind.Try or FlowRegionKind.TryAndCatch);
             var ordinal = 0;
-            if (!supportedPlacement)
+            var supportedPresentation = boundary.Cardinality == CallbackCardinality.ExactlyOnce
+                && boundary.Trigger == CallbackTriggerKind.Unconditional
+                && boundary.TriggerCondition is null;
+            if (!supportedPresentation || !supportedPlacement)
             {
                 var placementEvidence = Combine(
                     boundary.Evidence,
@@ -739,13 +742,34 @@ public static class ScenarioGraphBuilder
                     enclosingRegions.SelectMany(region => region.Evidence).ToImmutableArray());
                 foreach (var memberOperation in boundary.MemberOperations.Order(StringComparer.Ordinal))
                 {
-                    diagnosticsForCallbackPlacement(request, entry, boundary, memberOperation, placementEvidence);
+                    diagnosticsForCallbackPlacement(request, entry, boundary, memberOperation, placementEvidence,
+                        supportedPresentation
+                            ? "callback placement was missing or unsupported"
+                            : "unsupported exact hosted callback presentation: only ExactlyOnce unconditional callbacks are currently representable");
+                }
+                continue;
+            }
+            var overlappingNodes = boundary.MemberOperations
+                .SelectMany(memberOperation => nodes.Where(node => node.Operation?.Value == memberOperation
+                    && !node.Key.StartsWith("callback:", StringComparison.Ordinal)))
+                .DistinctBy(node => node.Id)
+                .ToArray();
+            if (overlappingNodes.Length > 0
+                || boundary.MemberOperations.Contains(boundary.OuterInvocationOperation.Value, StringComparer.Ordinal))
+            {
+                var overlapEvidence = Combine(boundary.Evidence, outer[0].Evidence,
+                    overlappingNodes.SelectMany(node => node.Evidence).ToImmutableArray());
+                foreach (var memberOperation in boundary.MemberOperations.Order(StringComparer.Ordinal))
+                {
+                    diagnosticsForCallbackPlacement(request, entry, boundary, memberOperation, overlapEvidence,
+                        "callback presentation was withheld because member ownership overlaps outer worker work",
+                        "SC-CALLBACK-OUTER-OVERLAP");
                 }
                 continue;
             }
             foreach (var memberOperation in boundary.MemberOperations.Order(StringComparer.Ordinal))
             {
-                if (nodes.Any(node => node.Operation?.Value == memberOperation))
+                if (nodes.Any(node => node.Key == $"callback:{boundary.Id.Value}:{memberOperation}"))
                 {
                     continue;
                 }
@@ -806,15 +830,18 @@ public static class ScenarioGraphBuilder
         }
 
         void diagnosticsForCallbackPlacement(ScenarioAnalysisRequest currentRequest, NormalizedEntry currentEntry,
-            CallbackBoundaryFact currentBoundary, string memberOperation, ImmutableArray<EvidenceRef> evidence)
+            CallbackBoundaryFact currentBoundary, string memberOperation, ImmutableArray<EvidenceRef> evidence,
+            string? reason = null, string code = "SC-WORKER-UNSUPPORTED-PLACEMENT")
         {
             // This local helper is called before a callback node is created, so the member identity
             // must be carried directly in the diagnostic rather than inferred by a later layer.
             var detail = $"callback-boundary={currentBoundary.Id.Value}; member-operation={memberOperation}; "
-                + $"member-node=callback:{currentBoundary.Id.Value}:{memberOperation}; callback placement was missing or unsupported.";
+                + $"member-node=callback:{currentBoundary.Id.Value}:{memberOperation}; {reason ?? "callback placement was missing or unsupported"}.";
             diagnostics.Add(CreateDiagnostic(currentRequest.Profile.Id, currentEntry.EntryPointId,
-                "SC-WORKER-UNSUPPORTED-PLACEMENT",
-                "A hosted-worker callback member was withheld because its exact placement was not representable.",
+                code,
+                code == "SC-CALLBACK-OUTER-OVERLAP"
+                    ? "A hosted-worker callback boundary was withheld because callback ownership overlapped outer work."
+                    : "A hosted-worker callback member was withheld because its exact placement was not representable.",
                 detail, evidence, CertaintyLevel.Conservative));
         }
 
@@ -5543,6 +5570,7 @@ public static class ScenarioGraphBuilder
             request,
             profileId,
             entryPoint.EntryPointId,
+            entryPoint.RootKind,
             orderedNodes,
             diagnostics,
             composition);
@@ -5664,6 +5692,7 @@ public static class ScenarioGraphBuilder
         ScenarioAnalysisRequest request,
         CompilationProfileId profileId,
         EntryPointId entryPointId,
+        ScenarioRootKind rootKind,
         ImmutableArray<ScenarioNode> nodes,
         List<ScenarioGraphDiagnostic> diagnostics,
         ScenarioServiceComposition? composition)
@@ -5773,8 +5802,47 @@ public static class ScenarioGraphBuilder
             }
 
             var memberOperations = boundary.MemberOperations.ToHashSet(StringComparer.Ordinal);
+            if (rootKind == ScenarioRootKind.HostedWorker)
+            {
+                var overlappingNodes = nodes
+                    .Where(node => node.Operation is { } operation
+                        && memberOperations.Contains(operation.Value)
+                        && !node.Key.StartsWith($"callback:{boundary.Id.Value}:", StringComparison.Ordinal)
+                        && !node.Key.StartsWith("callback:", StringComparison.Ordinal))
+                    .OrderBy(node => node.Key, StringComparer.Ordinal)
+                    .ToArray();
+                if (overlappingNodes.Length > 0)
+                {
+                    var overlapEvidence = Combine(boundary.Evidence,
+                        overlappingNodes.SelectMany(node => node.Evidence).ToImmutableArray());
+                    foreach (var operation in boundary.MemberOperations.Order(StringComparer.Ordinal))
+                    {
+                        var alreadyDiagnosed = diagnostics.Any(diagnostic =>
+                            diagnostic.Code == "SC-CALLBACK-OUTER-OVERLAP"
+                            && diagnostic.Detail.StartsWith(
+                                $"callback-boundary={boundary.Id.Value}; member-operation={operation};",
+                                StringComparison.Ordinal));
+                        if (!alreadyDiagnosed)
+                        {
+                            diagnostics.Add(CreateDiagnostic(profileId, entryPointId,
+                                "SC-CALLBACK-OUTER-OVERLAP",
+                                "A hosted-worker callback boundary was withheld because callback ownership overlapped outer work.",
+                                $"callback-boundary={boundary.Id.Value}; member-operation={operation}; "
+                                    + $"member-node=callback:{boundary.Id.Value}:{operation}; callback presentation was withheld because member ownership overlaps non-callback node(s): {string.Join(",", overlappingNodes.Select(node => node.Key))}.",
+                                overlapEvidence,
+                                CertaintyLevel.Conservative));
+                        }
+                    }
+                    withheldNodeIds.AddRange(nodes
+                        .Where(node => node.Key.StartsWith($"callback:{boundary.Id.Value}:", StringComparison.Ordinal))
+                        .Select(node => node.Id));
+                    continue;
+                }
+            }
             var memberNodes = nodes
-                .Where(node => node.Operation is { } operation && memberOperations.Contains(operation.Value))
+                .Where(node => node.Operation is { } operation && memberOperations.Contains(operation.Value)
+                    && (rootKind != ScenarioRootKind.HostedWorker
+                        || node.Key == $"callback:{boundary.Id.Value}:{operation.Value}"))
                 .Select(node => node.Id)
                 .OrderBy(id => id.Value, StringComparer.Ordinal)
                 .ToImmutableArray();
