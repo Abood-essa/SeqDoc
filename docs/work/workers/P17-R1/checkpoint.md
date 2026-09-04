@@ -2,7 +2,7 @@
 
 ## State
 
-`Verifying`
+`Closed`
 
 ## Authority and frozen state
 
@@ -148,3 +148,15 @@ dotnet test tests/SeqDoc.Scenarios.Tests/SeqDoc.Scenarios.Tests.csproj -c Releas
 dotnet test tests/SeqDoc.Wording.Tests/SeqDoc.Wording.Tests.csproj -c Release --no-build --no-restore
 dotnet test tests/SeqDoc.Rendering.Tests/SeqDoc.Rendering.Tests.csproj -c Release --no-build --no-restore
 ```
+
+## Final verification receipt
+
+- The current-main-integrated Release solution build passed with zero warnings and errors.
+- Core passed `93/93`; Scenarios passed `248/248`; Wording passed `135/135`; Rendering passed `79/79`.
+- Behavior passed `67/71`. The same four loop-test failures reproduced on unchanged current main with identical test
+  names and signatures, so they are an existing local SDK/baseline condition unrelated to callback projection.
+- Analysis did not complete before the 15-minute command limit because fixture projects outside the solution lacked
+  restored MediatR, EF Core, and CoreWCF assets. The failures were fixture-compilation/setup signatures, not callback
+  assertions. The callback-focused Analysis lane had already passed `41/41` on this exact product candidate.
+- The complete candidate and `git diff --check` were inspected after current-main integration. No Issue #17 regression
+  was found; external Acceptance remained outside this checkpoint.
